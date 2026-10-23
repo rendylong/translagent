@@ -1,0 +1,68 @@
+{
+ "wespeaker-resnet34-LM": {
+  "dur_s": 192,
+  "n_dsegs": 244,
+  "balance": "0:2275s(91%) / 1:124s(5%)",
+  "anchor_acc": 0.0,
+  "whisper_dist": {
+   "0": 261,
+   "1": 8
+  },
+  "iv_spk": [
+   0
+  ]
+ },
+ "3dspeaker-campplus-en": {
+  "dur_s": 120,
+  "n_dsegs": 406,
+  "balance": "0:1590s(64%) / 1:831s(33%)",
+  "anchor_acc": 0.579,
+  "whisper_dist": {
+   "0": 182,
+   "1": 87
+  },
+  "iv_spk": [
+   0
+  ]
+ },
+ "nemo-titanet-large": {
+  "dur_s": 191,
+  "n_dsegs": 270,
+  "balance": "0:1439s(57%) / 1:961s(38%)",
+  "anchor_acc": 0.789,
+  "whisper_dist": {
+   "0": 170,
+   "1": 99
+  },
+  "iv_spk": [
+   0,
+   1
+  ]
+ },
+ "3dspeaker-campplus-zh-en": {
+  "dur_s": 131,
+  "n_dsegs": 218,
+  "balance": "0:2342s(94%) / 1:56s(2%)",
+  "anchor_acc": 0.0,
+  "whisper_dist": {
+   "0": 269
+  },
+  "iv_spk": [
+   0
+  ]
+ },
+ "3dspeaker-eres2net-en": {
+  "dur_s": 279,
+  "n_dsegs": 266,
+  "balance": "0:1417s(57%) / 1:981s(39%)",
+  "anchor_acc": 0.789,
+  "whisper_dist": {
+   "0": 167,
+   "1": 102
+  },
+  "iv_spk": [
+   0,
+   1
+  ]
+ }
+}

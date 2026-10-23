@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>财务软件实战 · 迷你账套实操 · 交互课程（第三部）</title>
+<style>
+:root{--navy:#16324f;--navy-deep:#0f2439;--gold:#c9a227;--gold-soft:#f6efdb;--teal:#0f766e;--teal-soft:#e6f4f2;--red:#b4433a;--red-soft:#fbeeec;--ink:#243342;--ink-soft:#5b6b7c;--line:#e3e8ee;--bg:#f4f6f8;--card:#fff}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;background:var(--bg);color:var(--ink);line-height:1.8;font-size:15.5px}
+.app{display:flex;min-height:100vh}
+aside.sidebar{width:250px;flex:none;background:var(--navy-deep);color:#c8d4e0;position:sticky;top:0;height:100vh;overflow-y:auto;padding:22px 0 30px}
+aside .logo{padding:0 20px 16px;font-size:18px;font-weight:800;color:#fff;border-bottom:1px solid rgba(255,255,255,.12)}
+aside .logo span{color:var(--gold)}
+.prog-wrap{padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.12)}
+.prog-bar{height:8px;background:rgba(255,255,255,.15);border-radius:99px;overflow:hidden}
+.prog-bar div{height:100%;width:0;background:linear-gradient(90deg,var(--gold),#e6c55a);border-radius:99px;transition:width .5s}
+.prog-wrap small{display:block;margin-top:6px;font-size:12px;color:#8fa3b5}
+nav.chapternav a{display:flex;align-items:center;gap:10px;padding:9px 20px;color:#aebfcd;text-decoration:none;font-size:13.5px;border-left:3px solid transparent}
+nav.chapternav a:hover{color:#fff;background:rgba(255,255,255,.06)}
+nav.chapternav a.active{color:#fff;background:rgba(255,255,255,.1);border-left-color:var(--gold)}
+nav.chapternav .dot{width:9px;height:9px;flex:none;border-radius:50%;background:#3d5468}
+nav.chapternav a.done .dot{background:var(--gold)}
+.reset{margin:18px 20px 0;padding:7px 0;width:calc(100% - 40px);background:none;border:1px solid rgba(255,255,255,.25);color:#8fa3b5;border-radius:8px;font-size:12px;cursor:pointer}
+.reset:hover{color:#fff;border-color:#fff}
+main{flex:1;min-width:0;padding:38px 44px 90px;max-width:940px;margin:0 auto}
+@media(max-width:900px){
+  .app{flex-direction:column}
+  aside.sidebar{width:100%;height:auto;position:static;padding-bottom:10px}
+  nav.chapternav{display:flex;overflow-x:auto;padding:0 10px}
+  nav.chapternav a{flex:none;border-left:none;border-bottom:3px solid transparent;padding:8px 12px}
+  nav.chapternav a.active{border-bottom-color:var(--gold)}
+  aside .prog-wrap,aside .reset{display:none}
+  main{padding:26px 18px 70px}
+}
+section.chapter{display:none;animation:fadein .35s}
+section.chapter.active{display:block}
+@keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.chapter-tag{display:inline-block;font-size:12px;font-weight:700;color:var(--gold);background:var(--gold-soft);border-radius:6px;padding:2px 10px;margin-bottom:10px;letter-spacing:1px}
+h1{font-size:29px;color:var(--navy);line-height:1.4;margin-bottom:6px}
+h2{font-size:21px;color:var(--navy);margin:36px 0 12px}
+h2::before{content:"";display:inline-block;width:7px;height:18px;background:var(--gold);border-radius:3px;margin-right:10px;vertical-align:-1px}
+h3{font-size:16.5px;color:var(--navy);margin:22px 0 8px}
+p{margin-bottom:12px}
+.lead{color:var(--ink-soft);font-size:16px}
+ul.pl{padding-left:22px;margin-bottom:12px}
+ul.pl li{margin-bottom:7px}
+b{color:var(--ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin:16px 0;box-shadow:0 1px 3px rgba(22,50,79,.05)}
+.note{background:var(--gold-soft);border-left:4px solid var(--gold);border-radius:0 12px 12px 0;padding:13px 18px;margin:16px 0;font-size:14.5px}
+.note b{color:#7a5f0e}
+.ok-note{background:var(--teal-soft);border-left-color:var(--teal)}
+.ok-note b{color:var(--teal)}
+.warn-note{background:var(--red-soft);border-left-color:var(--red)}
+.warn-note b{color:var(--red)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+table.t{width:100%;border-collapse:collapse;font-size:14px;background:#fff;border-radius:12px;overflow:hidden;margin:14px 0}
+table.t th{background:var(--navy);color:#fff;padding:9px 12px;text-align:left;font-weight:600}
+table.t td{padding:8px 12px;border-bottom:1px solid var(--line)}
+table.t tr:last-child td{border-bottom:none}
+table.t td.n,table.t th.n{text-align:right;font-variant-numeric:tabular-nums}
+table.t tr.sum td{font-weight:700;background:#f2f5f8}
+table.t tr.tot td{font-weight:700;background:var(--gold-soft)}
+details{border:1px solid var(--line);border-radius:10px;background:#fff;margin:8px 0;overflow:hidden}
+details summary{cursor:pointer;padding:11px 16px;font-weight:600;color:var(--navy);font-size:14.5px;list-style:none;display:flex;align-items:center;gap:8px}
+details summary::before{content:"▸";color:var(--gold);transition:transform .2s}
+details[open] summary::before{transform:rotate(90deg)}
+details .dbody{padding:0 16px 13px;font-size:14px;color:var(--ink-soft)}
+.btn{display:inline-block;padding:10px 22px;border-radius:10px;border:none;cursor:pointer;font-size:15px;font-weight:700;text-decoration:none}
+.btn-primary{background:var(--navy);color:#fff}
+.btn-primary:hover{background:var(--navy-deep)}
+.btn-ghost{background:#fff;color:var(--navy);border:1.5px solid var(--line)}
+.btn-ghost.active{border-color:var(--teal);background:var(--teal-soft);color:var(--teal)}
+.quiz{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:22px;margin:26px 0}
+.quiz-title{font-size:16px;font-weight:800;color:var(--navy);margin-bottom:14px}
+.q-item{border-top:1px dashed var(--line);padding:15px 0 6px}
+.q-item:first-of-type{border-top:none}
+.q-t{font-weight:600;margin-bottom:10px}
+.q-opts label{display:flex;gap:9px;align-items:flex-start;padding:8px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;cursor:pointer;font-size:14px}
+.q-opts label:hover{background:#f7f9fb}
+.q-item.right .q-opts label.picked{border-color:var(--teal);background:var(--teal-soft)}
+.q-item.wrong .q-opts label.picked{border-color:var(--red);background:var(--red-soft)}
+.q-item.wrong .q-opts label.answer{border-color:var(--teal)}
+.q-exp{display:none;font-size:13.5px;padding:9px 13px;border-radius:8px;margin:6px 0 10px}
+.q-item.right .q-exp{display:block;background:var(--teal-soft);color:var(--teal)}
+.q-item.wrong .q-exp{display:block;background:var(--red-soft);color:var(--red)}
+.q-result{margin-top:14px;font-weight:700;font-size:15px}
+.q-result.pass{color:var(--teal)} .q-result.fail{color:var(--red)}
+.footnote{font-size:12.5px;color:#9aa7b4;margin-top:30px;border-top:1px solid var(--line);padding-top:14px}
+.badge-final{display:none;text-align:center;padding:36px 20px;border-radius:16px;background:linear-gradient(135deg,var(--navy-deep),var(--navy));color:#fff;margin:22px 0}
+.badge-final.show{display:block;animation:fadein .6s}
+.badge-final .medal{font-size:56px}
+.badge-final h3{color:var(--gold);margin:10px 0 6px}
+.badge-final p{color:#b9c9d8;font-size:14px}
+/* ---------- 迷你财务软件 ---------- */
+.soft{border:1.5px solid #c7d2dd;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 6px 22px rgba(22,50,79,.12);margin:18px 0}
+.soft-bar{background:linear-gradient(90deg,var(--navy-deep),var(--navy));color:#fff;padding:11px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.soft-bar .t{font-weight:700;font-size:14.5px}
+.soft-bar .t small{font-weight:400;color:#9db2c4;margin-left:8px}
+.soft-tabs{display:flex;background:#eef2f6;border-bottom:1px solid var(--line);overflow-x:auto}
+.soft-tabs button{padding:11px 18px;border:none;background:none;cursor:pointer;font-size:14px;font-weight:600;color:var(--ink-soft);white-space:nowrap;border-bottom:3px solid transparent}
+.soft-tabs button.active{color:var(--navy);border-bottom-color:var(--gold);background:#fff}
+.soft-body{padding:18px;min-height:120px}
+.vrow{display:grid;grid-template-columns:minmax(150px,1.4fr) 1fr 1fr;gap:10px;align-items:center;margin-bottom:9px}
+.vrow .lbl{font-size:12.5px;color:var(--ink-soft)}
+.vrow input,.vrow select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-variant-numeric:tabular-nums;background:#fbfcfd}
+.vrow input:focus,.vrow select:focus{outline:2px solid var(--teal);background:#fff}
+.vhead{display:grid;grid-template-columns:minmax(150px,1.4fr) 1fr 1fr;gap:10px;font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:5px}
+.vsum{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:2px solid var(--navy);margin-top:12px;padding-top:11px;flex-wrap:wrap}
+.vsum .nums{font-size:14px;font-variant-numeric:tabular-nums;color:var(--ink-soft)}
+.vsum .nums b{color:var(--navy)}
+.taskcard{border:1px solid var(--line);border-radius:11px;padding:13px 16px;margin-bottom:10px;background:#fff;display:flex;gap:12px;align-items:flex-start;justify-content:space-between}
+.taskcard.done{background:var(--teal-soft);border-color:var(--teal)}
+.taskcard .no{flex:none;width:26px;height:26px;border-radius:50%;background:#eef2f6;color:var(--navy);font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;margin-top:2px}
+.taskcard.done .no{background:var(--teal);color:#fff}
+.taskcard .desc{flex:1;font-size:14px}
+.taskcard .desc details{margin-top:6px;border:none;padding:0}
+.taskcard .desc summary{padding:2px 0;font-size:12.5px;color:var(--ink-soft);font-weight:400}
+.taskcard .desc .dbody{padding:2px 0 0;font-size:13px}
+.taskcard .st{flex:none;font-size:13px;font-weight:700;color:#9aa7b4}
+.taskcard.done .st{color:var(--teal)}
+.soft h4.mini{font-size:14px;color:var(--navy);margin:4px 0 10px}
+.balance-flag{padding:9px 14px;border-radius:9px;font-size:13.5px;margin-top:12px}
+.balance-flag.ok{background:var(--teal-soft);color:var(--teal)}
+.balance-flag.no{background:var(--red-soft);color:var(--red)}
+.soft-actions{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.soft-actions button{padding:8px 16px;border-radius:9px;border:1.5px solid var(--line);background:#fff;cursor:pointer;font-size:13.5px;font-weight:700;color:var(--navy)}
+.soft-actions button:hover{border-color:var(--navy)}
+.vlist-del{padding:3px 11px;border-radius:7px;border:1px solid var(--line);background:#fff;color:var(--red);cursor:pointer;font-size:12.5px;font-weight:700}
+.msg{padding:9px 14px;border-radius:9px;font-size:13.5px;margin:10px 0;display:none}
+.msg.show{display:block}
+.msg.ok{background:var(--teal-soft);color:var(--teal)}
+.msg.err{background:var(--red-soft);color:var(--red)}
+</style>
+</head>
+<body>
+<div class="app">
+
+<aside class="sidebar">
+  <div class="logo">财务<span>·</span>软件课 <small style="display:block;font-size:11px;font-weight:400;color:#8fa3b5">第三部 · 迷你账套实操</small></div>
+  <div class="prog-wrap">
+    <div class="prog-bar"><div id="progFill"></div></div>
+    <small id="progText">已完成 0 / 10</small>
+  </div>
+  <nav class="chapternav" id="chapterNav"></nav>
+  <button class="reset" id="resetBtn">重置学习进度</button>
+</aside>
+
+<main id="main">
+
+<!-- ========== 第0章 ========== -->
+<section class="chapter" id="ch0">
+  <span class="chapter-tag">开篇 · 第三部</span>
+  <h1>财务软件实战：在浏览器里经营一套真账</h1>
+  <p class="lead">第二部你学会了「怎么记账」；这一部把整个流程搬进软件——并且<b>直接在本页内嵌了一个可操作的迷你财务软件</b>：建账、录凭证、结账、自动出报表，零安装、零注册，数据存在你的浏览器里。</p>
+  <div class="ok-note note"><b>📚 系列定位：</b><a href="财务基础课程.html" style="color:var(--teal);font-weight:700">第一部 · 财务基础</a>（读懂报表）→ <a href="会计实操课程.html" style="color:var(--teal);font-weight:700">第二部 · 会计实操</a>（记账报税）→ 本部（软件实战）。三部的案例数字一脉相承。</div>
+
+  <h2>课程地图</h2>
+  <table class="t">
+    <tr><th>模块</th><th>章节</th><th>你将学会</th></tr>
+    <tr><td>认知</td><td>第1章 软件全景与选型</td><td>金蝶/用友/柠檬云怎么选，云与本地之争</td></tr>
+    <tr><td rowspan="2"><b>核心实操</b></td><td>第2章 建账与初始化</td><td>账套、科目级次、期初余额、辅助核算</td></tr>
+    <tr><td>第3章 迷你账套实战 ★</td><td><b>亲手录完一个完整月份</b>，自动生成三表</td></tr>
+    <tr><td rowspan="4">进阶</td><td>第4章 凭证实务细节</td><td>摘要规范、审核过账流、错账更正</td></tr>
+    <tr><td>第5章 期末处理</td><td>自动结转、对账、结账与反结账</td></tr>
+    <tr><td>第6章 功能模块</td><td>出纳、固定资产、工资、发票模块</td></tr>
+    <tr><td>第7–8章 报表 / 数据安全</td><td>取数公式、导出；备份与账套迁移</td></tr>
+    <tr><td>实战</td><td>第9章 真实软件上手 + 结业</td><td>免费云软件实操路线 + 综合测验</td></tr>
+  </table>
+
+  <h2>手工记账 vs 软件记账：什么变了，什么没变</h2>
+  <table class="t">
+    <tr><th>环节</th><th>第二部（手工）</th><th>软件里</th><th>不变的内核</th></tr>
+    <tr><td>登账</td><td>凭证逐笔抄进三本账</td><td>保存凭证即自动登账</td><td rowspan="4">借贷规则、权责发生制、试算平衡——软件只是加速器，会计逻辑一行没变。<b>不懂第二部的分录，软件只会帮你更快地记错账。</b></td></tr>
+    <tr><td>汇总</td><td>手工归集科目合计</td><td>科目余额表实时更新</td></tr>
+    <tr><td>结转</td><td>手工编制结转分录</td><td>一键「期间损益结转」</td></tr>
+    <tr><td>报表</td><td>按余额手工填表</td><td>报表公式自动取数</td></tr>
+  </table>
+  <div style="text-align:center;margin-top:26px"><button class="btn btn-primary" style="padding:13px 40px;font-size:16px" data-goto="ch1">开始学习第 1 章 →</button></div>
+</section>
+
+<!-- ========== 第1章 选型 ========== -->
+<section class="chapter" id="ch1">
+  <span class="chapter-tag">第一章 · 认知</span>
+  <h1>财务软件全景与选型</h1>
+  <p class="lead">国产财务软件生态高度成熟，主流产品的操作逻辑趋同——学会一种，其余触类旁通。</p>
+
+  <h2>1.1 主流产品地图（2026）</h2>
+  <table class="t">
+    <tr><th>阵营</th><th>小微/云</th><th>中大/ suite</th><th>特点</th></tr>
+    <tr><td><b>金蝶系</b></td><td>金蝶云·星辰、精斗云</td><td>金蝶云·星空、苍穹</td><td>界面友好，小微云产品线市占率高</td></tr>
+    <tr><td><b>用友系</b></td><td>畅捷通好会计、T+</td><td>U8 cloud、YonSuite、NC</td><td>大中型企业渗透深，代账行业常用</td></tr>
+    <tr><td><b>互联网免费派</b></td><td>柠檬云（有免费版）</td><td>—</td><td>零门槛，教学与个体户首选</td></tr>
+    <tr><td><b>代账工具</b></td><td>账无忧、亿企代账</td><td>—</td><td>一个会计批量管几十家小公司账套</td></tr>
+    <tr><td><b>自研/其他</b></td><td>速达、浪潮等</td><td>SAP、Oracle（外企/集团）</td><td>特定行业与超大型集团</td></tr>
+  </table>
+
+  <h2>1.2 选型三问</h2>
+  <div class="grid3">
+    <div class="card"><h3>规模与阶段</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">个体户/初创：免费云产品足够；业务复杂（多主体、多仓库、合并报表）再上星空/U8 级。软件以「够用」为度，别为用不上的模块付费。</p></div>
+    <div class="card"><h3>云 or 本地</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">云（网页/APP）：免维护、自动备份、手机看报表，已成主流；本地部署：数据完全自控，但需自管服务器与备份，多为中大型或特殊合规需求选择。</p></div>
+    <div class="card"><h3>生态衔接</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">数电票取数、银行流水导入、个税申报联动、开票一体化——这些「连接器」价值常常超过账务本身，选型时重点比。</p></div>
+  </div>
+  <div class="note"><b>💰 价格常识：</b>小微云财务软件年费普遍在几百到几千元/账套，免费版（如柠檬云）功能足够走完本课全流程；报价以官网当期为准。</div>
+
+  <div class="quiz" data-quiz="ch1" data-pass="0.67">
+    <div class="quiz-title">📝 第 1 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="云软件由厂商负责服务器与备份，手机随时看报表；本地部署数据自控但需自己运维。对小微用户，云的免维护优势通常是决定性的。">
+      <p class="q-t">1. 小微企业选云财务软件（相对本地部署）最直接的收益是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch1q1"><span>可以做更复杂的分录</span></label>
+        <label><input type="radio" name="ch1q1"><span>免维护、自动备份、多端随时访问</span></label>
+        <label><input type="radio" name="ch1q1"><span>税率自动变低</span></label>
+        <label><input type="radio" name="ch1q1"><span>不再需要审核凭证</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="「畅捷通」是用友旗下专注小微企业的子公司，好会计/T+ 是其产品线；与金蝶是两家不同公司。">
+      <p class="q-t">2. 「畅捷通·好会计」属于哪个阵营？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch1q2"><span>用友系</span></label>
+        <label><input type="radio" name="ch1q2"><span>金蝶系</span></label>
+        <label><input type="radio" name="ch1q2"><span>浪潮系</span></label>
+        <label><input type="radio" name="ch1q2"><span>SAP 系</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="无论金蝶、用友还是柠檬云，都遵循同一套会计循环：凭证→审核过账→结账→报表。界面不同，内核相同，所以学一种即可触类旁通。">
+      <p class="q-t">3. 学会了一种财务软件后换用另一种，最大的依仗是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch1q3"><span>各家软件界面完全一样</span></label>
+        <label><input type="radio" name="ch1q3"><span>所有软件共用一个账号</span></label>
+        <label><input type="radio" name="ch1q3"><span>会计循环和借贷逻辑是通用的，只是操作界面不同</span></label>
+        <label><input type="radio" name="ch1q3"><span>换软件必须重新学习会计准则</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第2章 建账 ========== -->
+<section class="chapter" id="ch2">
+  <span class="chapter-tag">第二章 · 核心实操</span>
+  <h1>建账与初始化：软件里的第一屏</h1>
+  <p class="lead">软件不是装完就能用——先要「建账」：告诉软件这是谁家的账、从哪天开始、科目长什么样、期初有多少家底。初始化的质量决定后面每一张报表的对错。</p>
+
+  <h2>2.1 账套：一本独立完整的账</h2>
+  <p><b>账套 = 一家公司 + 一个期间 + 一套科目体系</b>的全部数据。集团有十几家子公司就有十几套账；代账会计的软件里躺着上百套。建账向导通常问四件事：</p>
+  <ul class="pl">
+    <li><b>账套名称与单位信息</b>：公司名、纳税识别号、行业（影响预置科目和报表模板）；</li>
+    <li><b>启用期间</b>：从哪个月开始记账。<b>年初（1 月）启用最干净</b>——期初就是上年末的科目余额；年中启用则要把当年已发生的累计数也补进去，麻烦一倍；</li>
+    <li><b>准则与科目制度</b>：小企业会计准则（多数小微）/ 企业会计准则（上市及大中型）；</li>
+    <li><b>科目级次</b>：如 4-2-2（一级 4 位码，二级、三级各 2 位）。</li>
+  </ul>
+
+  <h2>2.2 科目编码：一门地址学</h2>
+  <div class="card">
+    <p style="font-family:ui-monospace,Menlo,monospace;font-size:15px;text-align:center;margin-bottom:6px">1122<span style="color:#9aa7b4">.</span>01<span style="color:#9aa7b4">.</span>001 ＝ 应收账款<span style="color:#9aa7b4"> · </span>A 公司<span style="color:#9aa7b4"> · </span>华东区</p>
+    <p class="kv" style="text-align:center;margin:0">一级科目全国统一编码（教材附录即国标）；二级往后自己编。软件按编码树状归集，报表只取一级。</p>
+  </div>
+  <div class="note"><b>💡 辅助核算——明细账爆炸的解药：</b>如果给每个客户都建一个二级科目，三年后科目表会有几千行。更聪明的做法：科目只留「应收账款」一级，挂<b>客户辅助核算</b>维度——账还是按客户记，科目表却保持干净。供应商、项目、部门同理。</div>
+
+  <h2>2.3 期初余额：搬家第一课</h2>
+  <p>从手工账/旧软件迁移，要把<b>启用期初的每个科目余额</b>录入新账套。软件会实时做两个校验，全绿才允许开始记账：</p>
+  <div class="grid2">
+    <div class="card"><h3>校验① 借贷平衡</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">全部科目期初借方合计 = 贷方合计。不平衡说明旧账本身有问题，先查清再迁。</p></div>
+    <div class="card"><h3>校验② 账实核对</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">现金与银行余额对实物和对账单；往来余额最好和客户/供应商对账确认。</p></div>
+  </div>
+
+  <div class="quiz" data-quiz="ch2" data-pass="0.67">
+    <div class="quiz-title">📝 第 2 章 · 过关小测</div>
+    <div class="q-item" data-a="2" data-exp="年初启用只需录入上年末余额作期初；年中启用还要补录当年累计发生额，工作量与出错率都翻倍。">
+      <p class="q-t">1. 新账套最省事的启用时点是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch2q1"><span>每月 1 日</span></label>
+        <label><input type="radio" name="ch2q1"><span>季度首日</span></label>
+        <label><input type="radio" name="ch2q1"><span>年初 1 月</span></label>
+        <label><input type="radio" name="ch2q1"><span>任何时候都一样</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="辅助核算把「客户」做成挂在应收账款科目上的维度，按客户记账但科目表不膨胀——这正是不建几百个二级科目的替代方案。">
+      <p class="q-t">2. 客户上千家却不想建上千个二级科目，软件里的标准解法是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch2q2"><span>科目挂「客户」辅助核算</span></label>
+        <label><input type="radio" name="ch2q2"><span>全部记入「其他应收款」</span></label>
+        <label><input type="radio" name="ch2q2"><span>每家客户单独建一个账套</span></label>
+        <label><input type="radio" name="ch2q2"><span>只用一级科目不再细分</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="1" data-exp="科目编码 4-2-2：一级四位（1122 应收账款），后每级两位，1122.01 是「应收账款」下第一个明细（如某客户）。">
+      <p class="q-t">3. 编码「1122.01」在 4-2-2 体系里表示？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch2q3"><span>第 1122 家客户的第 1 笔应收</span></label>
+        <label><input type="radio" name="ch2q3"><span>「应收账款」科目下的第一个二级明细</span></label>
+        <label><input type="radio" name="ch2q3"><span>金额 1122.01 元</span></label>
+        <label><input type="radio" name="ch2q3"><span>1122 号凭证</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第3章 迷你账套 ========== -->
+<section class="chapter" id="ch3">
+  <span class="chapter-tag">第三章 · 核心实操 ★</span>
+  <h1>迷你账套实战：亲手经营一个完整月份</h1>
+  <p class="lead">下面是一套真实的复式记账系统（简化科目版）。你的任务：给「示例科技」录完 <b>2026 年 9 月</b>的 11 笔业务并结账——凭证保存即自动登账，报表实时生成。期初余额已预置并试算平衡。</p>
+
+  <div class="soft">
+    <div class="soft-bar">
+      <div class="t">🖥 迷你财务软件 v1.0<small>示例科技 · 2026 年 9 月账套 · 数据存于本机浏览器</small></div>
+      <div style="font-size:12.5px" id="softClock"></div>
+    </div>
+    <div class="soft-tabs" id="softTabs">
+      <button class="active" data-tab="entry">✏️ 凭证录入</button>
+      <button data-tab="task">📋 业务任务（0/11）</button>
+      <button data-tab="vlist">📚 凭证列表</button>
+      <button data-tab="bal">📊 科目余额表</button>
+      <button data-tab="rpt">📈 财务报表</button>
+    </div>
+    <div class="soft-body">
+
+      <!-- 录入 -->
+      <div id="tab-entry">
+        <div class="vhead"><span>摘要</span><span>借方金额</span><span>贷方金额</span></div>
+        <div id="vrows"></div>
+        <div class="soft-actions">
+          <button id="addRow">＋ 加一行（最多 4 行）</button>
+          <button id="delRow">－ 删一行</button>
+        </div>
+        <div class="vsum">
+          <div class="nums">借方合计 <b id="sumDr">0</b> ｜ 贷方合计 <b id="sumCr">0</b> ｜ 差额 <b id="sumDiff">0</b></div>
+          <button class="btn btn-primary" id="saveV" style="padding:9px 26px">保存凭证</button>
+        </div>
+        <div class="msg" id="entryMsg"></div>
+      </div>
+
+      <!-- 任务 -->
+      <div id="tab-task" style="display:none">
+        <div class="soft-actions" style="margin-top:0">
+          <button id="closeBtn">🔮 期末损益结转（12 笔业务录完后点）</button>
+          <button id="resetLedger">🗑 重置整个账套</button>
+        </div>
+        <div id="taskList"></div>
+        <div class="balance-flag" id="taskFlag">按顺序或不按顺序录都行——系统自动核对借贷科目与金额。卡住时展开每张任务卡下方的提示。</div>
+      </div>
+
+      <!-- 凭证列表 -->
+      <div id="tab-vlist" style="display:none">
+        <div style="overflow-x:auto"><table class="t" id="vlistTable" style="margin:0"></table></div>
+        <p class="kv">删除凭证模拟软件里的「作废」。真实软件中已结账期间的凭证不能直接删，要走红字冲销（第 4 章讲）。</p>
+      </div>
+
+      <!-- 余额表 -->
+      <div id="tab-bal" style="display:none">
+        <div style="overflow-x:auto"><table class="t" id="balTable" style="margin:0"></table></div>
+      </div>
+
+      <!-- 报表 -->
+      <div id="tab-rpt" style="display:none">
+        <div class="grid2" style="gap:14px">
+          <div><h4 class="mini">利润表（2026 年 9 月）</h4><div style="overflow-x:auto"><table class="t" id="isTable" style="margin:0"></table></div></div>
+          <div><h4 class="mini">资产负债表（2026-09-30）</h4><div style="overflow-x:auto"><table class="t" id="bsTable" style="margin:0"></table></div></div>
+        </div>
+        <div class="balance-flag" id="bsFlag"></div>
+      </div>
+
+    </div>
+  </div>
+  <div class="note"><b>🎯 通关条件：</b>11 笔业务全部打勾 + 完成期末结转后，资产负债表自动平衡、利润表算出当月净利润。达成后本章过关。录入时随时切去「科目余额表」看账的变化——这就是软件相对手工的魔力：账证表同步更新。</div>
+
+  <div class="quiz" data-quiz="ch3" data-pass="0.67">
+    <div class="quiz-title">📝 第 3 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="软件的本质优势：凭证保存即同时完成登账、汇总、报表更新——账证表同步，实时一致，这正是手工流程最容易出差错的环节。">
+      <p class="q-t">1. 相比手工记账，财务软件在「登账与报表」环节的本质改进是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch3q1"><span>不再需要编制分录</span></label>
+        <label><input type="radio" name="ch3q1"><span>凭证保存即自动登账并实时更新账表</span></label>
+        <label><input type="radio" name="ch3q1"><span>报表可以不用平衡</span></label>
+        <label><input type="radio" name="ch3q1"><span>凭证无需附件</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="一笔赊销 135,600 = 收入 120,000 + 销项税 15,600，是一借两贷的复合分录——软件凭证天然支持多行借贷，只要借贷合计相等。">
+      <p class="q-t">2. 任务④（赊销含税 135,600）的正确录入形态是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch3q2"><span>借应收 135,600；贷收入 120,000、贷应交税费 15,600</span></label>
+        <label><input type="radio" name="ch3q2"><span>借应收 135,600；贷收入 135,600</span></label>
+        <label><input type="radio" name="ch3q2"><span>借收入 120,000；贷应收 135,600</span></label>
+        <label><input type="radio" name="ch3q2"><span>必须拆成两张凭证分别录入</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="期间损益结转把收入、费用科目余额全部转入「本年利润」，损益类科目清零，余额表只剩资产负债权益——为出报表和开账下月做准备。">
+      <p class="q-t">3. 点下「期末损益结转」后，损益类科目会发生什么？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch3q3"><span>余额翻倍</span></label>
+        <label><input type="radio" name="ch3q3"><span>转入「实收资本」</span></label>
+        <label><input type="radio" name="ch3q3"><span>自动结转到下月继续累计</span></label>
+        <label><input type="radio" name="ch3q3"><span>余额全部转入「本年利润」并清零</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第4章 凭证实务 ========== -->
+<section class="chapter" id="ch4">
+  <span class="chapter-tag">第四章 · 进阶</span>
+  <h1>凭证实务：从「会录」到「录得专业」</h1>
+  <p class="lead">同样的分录，新手和老会计的差别在摘要、附件和流程规范上——这些细节决定了三年后还能不能查清这笔账，以及审计和税务检查时能不能自证。</p>
+
+  <h2>4.1 摘要怎么写</h2>
+  <table class="t">
+    <tr><th>❌ 坏摘要</th><th>✅ 好摘要</th></tr>
+    <tr><td>付款</td><td>付华润物业 9 月办公室房租</td></tr>
+    <tr><td>收入</td><td>收 A 公司 X 项目二期软件款</td></tr>
+    <tr><td>报销</td><td>张三报 9 月差旅费（沪-京，附件 3 张）</td></tr>
+  </table>
+  <p class="kv">公式：<b>对象 + 事项 + 期间</b>。凭证摘要支持模糊搜索——写得具体，就是给未来的自己留检索入口。</p>
+
+  <h2>4.2 制单 → 审核 → 过账：三道闸门</h2>
+  <div class="card">
+    <p><b>制单</b>：会计录入凭证（可保存草稿）；</p>
+    <p><b>审核</b>：另一人复核——借贷方向、金额、附件是否相符。<b>制单与审核原则上不能是同一人</b>（内控的基本分离）；</p>
+    <p style="margin-bottom:0"><b>过账（记账）</b>：审核通过后正式登账，凭证进入账簿，之后不能直接修改。小公司一人多岗时，软件里也保留这条流水线，让每步留痕。</p>
+  </div>
+
+  <h2>4.3 错账更正：三种场景三种药</h2>
+  <details><summary>场景一：还没审核过账，发现录错了</summary><div class="dbody">直接打开凭证修改或作废重录——此时它还没进账簿，改了不留痕（但软件日志仍会记录操作人）。</div></details>
+  <details><summary>场景二：已过账，科目用错 / 方向反了</summary><div class="dbody"><b>红字冲销</b>：录一张与原凭证金额相同、方向相同的「红字」（负数）凭证把原分录冲平，再录正确的蓝字凭证。软件里一键「红冲」生成。痕迹完整保留，这是它的意义——错账史也是账。</div></details>
+  <details><summary>场景三：已过账，金额少记了（科目没错）</summary><div class="dbody"><b>补充登记</b>：只补一张差额凭证。比全额红冲省事。若多记了，则红冲差额部分。</div></details>
+  <div class="warn-note note"><b>⚠️ 大忌：</b>删凭证改数字、无凭证调账、跨期「倒签」日期。审计底稿一碰时间线就露馅，税务金税系统对开票/收款/入账时间差异极其敏感。</div>
+
+  <div class="quiz" data-quiz="ch4" data-pass="0.67">
+    <div class="quiz-title">📝 第 4 章 · 过关小测</div>
+    <div class="q-item" data-a="2" data-exp="制单与审核分离是内控底线：自己录自己审等于没审。小企业一人多岗时至少在软件流程中保留两步，留下复核痕迹。">
+      <p class="q-t">1. 「制单与审核不能是同一人」的原因是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch4q1"><span>软件系统不支持同一人操作</span></label>
+        <label><input type="radio" name="ch4q1"><span>税务局强制规定</span></label>
+        <label><input type="radio" name="ch4q1"><span>自我复核起不到制衡作用，容易掩盖错弊</span></label>
+        <label><input type="radio" name="ch4q1"><span>为了提高效率</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="1" data-exp="已过账且科目用错→红字冲销原凭证再录正确分录，保留完整痕迹；直接修改已过账凭证在正规软件中不被允许。">
+      <p class="q-t">2. 凭证已过账，发现把「管理费用」错记成「销售费用」，正确处理是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch4q2"><span>打开原凭证直接改科目</span></label>
+        <label><input type="radio" name="ch4q2"><span>红字冲销原凭证，再录一张正确凭证</span></label>
+        <label><input type="radio" name="ch4q2"><span>下月反向录一笔抵消即可不留痕</span></label>
+        <label><input type="radio" name="ch4q2"><span>手工在账簿上划线修改</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="对象+事项+期间：「付华润物业 9 月办公室房租」三年后仍可一眼看懂并可搜索定位；「付款」则毫无信息量。">
+      <p class="q-t">3. 高质量凭证摘要的公式是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch4q3"><span>对象 + 事项 + 期间</span></label>
+        <label><input type="radio" name="ch4q3"><span>越短越好</span></label>
+        <label><input type="radio" name="ch4q3"><span>金额 + 日期</span></label>
+        <label><input type="radio" name="ch4q3"><span>科目名称重复一遍</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第5章 期末处理 ========== -->
+<section class="chapter" id="ch5">
+  <span class="chapter-tag">第五章 · 进阶</span>
+  <h1>期末处理：软件里的月末关账</h1>
+  <p class="lead">第二部学的月末四步（计提、对账、结转、试算）在软件里全部保留，只是大半变成了按钮。</p>
+
+  <h2>5.1 软件月末流程图</h2>
+  <div class="card">
+    <p><b>① 日常凭证全部录入并审核过账</b>（月末最后一张凭证前，先确认没有漏单）；</p>
+    <p><b>② 期末调整凭证</b>：计提工资/社保/折旧、摊销、计提税金——多数软件可设「自动凭证模板」一键生成；</p>
+    <p><b>③ 对账中心</b>：总账 vs 明细账 vs 辅助账 vs 出纳账一键核对（软件自动，不平会标红科目）；</p>
+    <p><b>④ 期间损益结转</b>：一键生成结转凭证（你在迷你账套点过的那个按钮）；</p>
+    <p style="margin-bottom:0"><b>⑤ 结账</b>：核对无误后点结账——本月锁死，自动进入下月。试算平衡是结账前置校验，不平不让结。</p>
+  </div>
+
+  <h2>5.2 结账之后：反结账的诱惑</h2>
+  <p>结账后发现漏了一张 9 月的费用票怎么办？正规路径：<b>反结账 → 补录 → 重新结账</b>。所有主流软件都支持反结账，但每次反结账都会留痕。审计视角里，频繁反结账（尤其跨期几个月的）是收入跨期调节的经典信号——偶尔为之是纠错，常态为之就是预警。</p>
+  <div class="note"><b>📅 年度结账特殊动作：</b>年末结账时，软件自动把「本年利润」结转到「利润分配——未分配利润」，提取盈余公积（净利润的 10%），生成新年度账套，期初余额自动接续——第一部学的「净利润 → 未分配利润」勾稽，在软件里是一条自动分录。</div>
+
+  <div class="quiz" data-quiz="ch5" data-pass="0.67">
+    <div class="quiz-title">📝 第 5 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="试算平衡是结账的强制前置：借贷不平说明存在未过账/未审核/录入断行等问题，软件会直接拦截结账。">
+      <p class="q-t">1. 结账时试算平衡表不平，软件会？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch5q1"><span>强制结账并自动调平</span></label>
+        <label><input type="radio" name="ch5q1"><span>拦截结账，标出问题所在</span></label>
+        <label><input type="radio" name="ch5q1"><span>自动删除不平的凭证</span></label>
+        <label><input type="radio" name="ch5q1"><span>无影响，下月自动修复</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="期间损益结转在软件中是一键自动生成：把全部收入、成本费用科目余额转入本年利润，正是迷你账套里「🔮 期末损益结转」按钮做的事。">
+      <p class="q-t">2. 「期间损益结转」功能会自动生成什么？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch5q2"><span>把损益类科目余额转入本年利润的结转凭证</span></label>
+        <label><input type="radio" name="ch5q2"><span>下一年度的空白账套</span></label>
+        <label><input type="radio" name="ch5q2"><span>银行对账单</span></label>
+        <label><input type="radio" name="ch5q2"><span>增值税申报表</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="偶尔反结账补凭证是正常纠错；但频繁、跨长周期反结账意味着账务被反复重写，是收入跨期调节的典型预警信号。">
+      <p class="q-t">3. 关于「反结账」，正确的是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch5q3"><span>任何软件都不提供反结账功能</span></label>
+        <label><input type="radio" name="ch5q3"><span>反结账不留任何痕迹，可随意使用</span></label>
+        <label><input type="radio" name="ch5q3"><span>只能在下个月 1 日操作</span></label>
+        <label><input type="radio" name="ch5q3"><span>可用但留痕，频繁使用是审计预警信号</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第6章 功能模块 ========== -->
+<section class="chapter" id="ch6">
+  <span class="chapter-tag">第六章 · 进阶</span>
+  <h1>账务之外：出纳、固资、工资、发票模块</h1>
+  <p class="lead">现代财务软件是「模块化战舰」：总账是引擎，围绕它还有几个高频模块，各自解决一类手工时代的痛苦。</p>
+
+  <div class="grid2">
+    <div class="card"><h3>🏦 出纳管理</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">现金/银行日记账由出纳在模块里登记；<b>银行对账单网银导出后导入软件，自动勾对</b>，生成余额调节表——第二部第 4 章那张手工调节表，软件一键完成。</p></div>
+    <div class="card"><h3>🏭 固定资产</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">资产建「卡片」（原值、残值、年限、折旧方法），每月<b>自动计提折旧</b>并生成凭证。清理、出售、盘点都在卡片上走全生命周期。</p></div>
+    <div class="card"><h3>👥 工资模块</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">工资表 → 自动拆分计入各费用科目、计提社保公积金、<b>按累计预扣法算个税</b>并生成代扣分录——第二部第 8 章的手算，模块里点一次完成。</p></div>
+    <div class="card"><h3>🧾 发票与税务</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">数电票时代，销项开票数据与进项勾选结果可从税务数字账户<b>直连取数</b>，自动生成收入/税费凭证，申报表预填——票账税一体是云软件的核心卖点。</p></div>
+  </div>
+
+  <div class="note"><b>💡 模块联动的本质：</b>每个模块的终点都是「自动生成一张凭证」进入总账——出纳生成收付款凭证、固资生成折旧凭证、工资生成计提凭证、发票生成收入凭证。总账仍是唯一的真相源，模块只是凭证的高效生产线。</div>
+
+  <div class="quiz" data-quiz="ch6" data-pass="0.67">
+    <div class="quiz-title">📝 第 6 章 · 过关小测</div>
+    <div class="q-item" data-a="2" data-exp="所有模块的输出终点都是总账里的一张凭证：折旧模块生成折旧凭证、工资模块生成计提凭证——总账是唯一真相源。">
+      <p class="q-t">1. 固定资产模块每月自动计提折旧的直接产物是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch6q1"><span>一张银行付款单</span></label>
+        <label><input type="radio" name="ch6q1"><span>税务申报表</span></label>
+        <label><input type="radio" name="ch6q1"><span>一张折旧记账凭证进入总账</span></label>
+        <label><input type="radio" name="ch6q1"><span>固定资产采购合同</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="银行对账单从网银导出、导入软件后自动勾对，系统直接生成余额调节表——手工时代最繁琐的对账工作被自动化了。">
+      <p class="q-t">2. 出纳模块对接银行流水后能一键完成的是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch6q2"><span>自动勾对并生成银行存款余额调节表</span></label>
+        <label><input type="radio" name="ch6q2"><span>自动缴纳增值税</span></label>
+        <label><input type="radio" name="ch6q2"><span>自动计提折旧</span></label>
+        <label><input type="radio" name="ch6q2"><span>自动申报个税</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="1" data-exp="票账税一体化：数电票的销项与进项数据可从税务数字账户直连取数、自动生成凭证并预填申报表，是云财务软件的核心能力。">
+      <p class="q-t">3. 数电票时代，云财务软件「票财税一体化」指的是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch6q3"><span>打印机、扫描仪、装订机一体</span></label>
+        <label><input type="radio" name="ch6q3"><span>发票数据直连取数、自动生成凭证、预填申报表</span></label>
+        <label><input type="radio" name="ch6q3"><span>财务软件与办公软件打包销售</span></label>
+        <label><input type="radio" name="ch6q3"><span>把发票打印成纸质档案</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第7章 报表 ========== -->
+<section class="chapter" id="ch7">
+  <span class="chapter-tag">第七章 · 进阶</span>
+  <h1>报表与取数：报表是怎么「长」出来的</h1>
+  <p class="lead">软件里的资产负债表不是谁填的，是每行「取数公式」算出来的。理解公式，你就理解了报表与账簿的血缘。</p>
+
+  <h2>7.1 取数公式初见</h2>
+  <div class="card">
+    <p style="font-family:ui-monospace,Menlo,monospace;font-size:14px;background:#f2f5f8;border-radius:8px;padding:10px 14px;margin-bottom:8px">货币资金 = QC("1001",月,借) + QC("1002",月,借) + QC("1012",月,借)</p>
+    <p class="kv" style="margin:0">读作：「货币资金」期末数 = 1001 库存现金 + 1002 银行存款 + 1012 其他货币资金三个科目的期末借方余额之和。你改一张凭证，这三格下一秒就变——报表不是月终事件，而是账簿的实时镜像。</p>
+  </div>
+  <ul class="pl">
+    <li><b>QC / QM</b>：期末余额（不同软件缩写不同：金蝶 QC、用友 QM 等）；</li>
+    <li><b>FS</b>：发生额——利润表的「营业收入」= FS("6001",月,贷)；</li>
+    <li><b>方向参数（借/贷）</b>：约定取正的方向，资产取借、负债取贷。</li>
+  </ul>
+
+  <h2>7.2 现金流量表：唯一需要「额外标记」的报表</h2>
+  <p>资产负债表和利润表能直接从科目余额取数，但现金流量表要按<b>经营活动 / 投资活动 / 筹资活动</b>分类——同一张付款凭证，付货款是经营、买设备是投资、还贷款是筹资，科目余额自己说不出这个区别。所以软件要么在录入时<b>指定现金流量项目</b>，要么月末用「现金流量表分配」向导拆分。这也是实务中现金流量表最容易出错的原因。</p>
+
+  <h2>7.3 导出与报送</h2>
+  <ul class="pl">
+    <li>一键导出 Excel/PDF：给银行贷款材料、给投资人、给税务；</li>
+    <li>与申报表联动：季度预缴申报表直接取利润表数；</li>
+    <li>审计导出：标准格式账套数据（序时账、余额表）给事务所年审用。</li>
+  </ul>
+
+  <div class="quiz" data-quiz="ch7" data-pass="0.67">
+    <div class="quiz-title">📝 第 7 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="报表是账簿的实时镜像：每行都是取数公式（期末余额或发生额），凭证一保存，相关格子立即变化。">
+      <p class="q-t">1. 保存一张新凭证后，软件里的资产负债表会？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch7q1"><span>保持不变直到月末结账</span></label>
+        <label><input type="radio" name="ch7q1"><span>实时更新相关科目余额</span></label>
+        <label><input type="radio" name="ch7q1"><span>自动清零重算</span></label>
+        <label><input type="radio" name="ch7q1"><span>需要手动刷新公式</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="现金流量表按经营/投资/筹资分类，同一科目（如银行存款减少）可能属于不同活动，科目余额无法自答——必须录入时指定流量项目或月末分配。">
+      <p class="q-t">2. 三大报表中，为什么现金流量表最难自动生成？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch7q2"><span>因为它最不重要</span></label>
+        <label><input type="radio" name="ch7q2"><span>因为现金科目太多</span></label>
+        <label><input type="radio" name="ch7q2"><span>因为经营活动/投资/筹资的归属无法从科目余额直接判断，需额外指定流量项目</span></label>
+        <label><input type="radio" name="ch7q2"><span>因为它只在年末编制</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="取数公式 FS("6001",月,贷) 取的是 6001 主营业务收入当月贷方发生额——利润表收入行的标准来源。">
+      <p class="q-t">3. 利润表「营业收入」行最可能的取数公式是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch7q3"><span>FS("6001", 月, 贷)</span></label>
+        <label><input type="radio" name="ch7q3"><span>QC("6001", 月, 借)</span></label>
+        <label><input type="radio" name="ch7q3"><span>QC("1002", 月, 借)</span></label>
+        <label><input type="radio" name="ch7q3"><span>FS("1405", 月, 借)</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第8章 数据安全 ========== -->
+<section class="chapter" id="ch8">
+  <span class="chapter-tag">第八章 · 进阶</span>
+  <h1>数据安全与账套迁移</h1>
+  <p class="lead">账套是公司十年的财务记忆。这一章的每一条都是有人用惨痛教训换来的。</p>
+
+  <h2>8.1 备份：3-2-1 原则</h2>
+  <ul class="pl">
+    <li><b>3</b> 份数据：生产账套 + 至少两份备份；</li>
+    <li><b>2</b> 种介质：本地硬盘 + 移动硬盘/U盘/NAS；</li>
+    <li><b>1</b> 份异地：云盘或异地办公室——防火防盗防勒索病毒。</li>
+  </ul>
+  <p class="kv">云软件由厂商自动备份（数据中心多副本），但仍建议每月导出一份标准格式备份文件自存——<b>万一厂商停服、涨价、跑路，你的数据跟得上你走</b>。</p>
+
+  <h2>8.2 换软件迁移四步法</h2>
+  <div class="card">
+    <p><b>① 科目映射表</b>：旧科目 → 新科目一一对应（编码体系常不同，手工对表）；</p>
+    <p><b>② 期初导入</b>：在旧系统出最近一期末余额表，按映射表导入新账套期初，试算平衡校验；</p>
+    <p><b>③ 并行运行一个月</b>：新旧两套同时记一个月，月末两边的余额表和三表<b>逐项核对一致</b>；</p>
+    <p style="margin-bottom:0"><b>④ 正式切换</b>：旧账套封存只读保留（法规要求会计档案保存年限：凭证账簿 30 年），新账套接续。并行期是防翻车的保险绳，千万不要省。</p>
+  </div>
+
+  <h2>8.3 权限与电子档案</h2>
+  <ul class="pl">
+    <li><b>权限最小化</b>：出纳只给出纳模块、会计给凭证、老板只读报表——权限表就是内控落地；</li>
+    <li><b>操作日志</b>：谁在何时改过什么，软件全程留痕；</li>
+    <li><b>电子档案合规</b>：电子会计凭证（数电票、电子回单）满足条件可仅以电子形式归档保存，但要有索引、备份与防篡改措施。</li>
+  </ul>
+
+  <div class="quiz" data-quiz="ch8" data-pass="0.67">
+    <div class="quiz-title">📝 第 8 章 · 过关小测</div>
+    <div class="q-item" data-a="2" data-exp="3-2-1：3 份数据、2 种介质、1 份异地。异地备份防的是火灾、盗窃、勒索病毒这类「一锅端」风险。">
+      <p class="q-t">1. 备份的「3-2-1 原则」中「1」指？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch8q1"><span>每天备份 1 次</span></label>
+        <label><input type="radio" name="ch8q1"><span>1 个管理员</span></label>
+        <label><input type="radio" name="ch8q1"><span>1 份异地备份</span></label>
+        <label><input type="radio" name="ch8q1"><span>保留 1 年</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="1" data-exp="新旧系统并行一个月、月末逐项核对一致后切换——并行期是账套迁移防翻车的标准保险绳。">
+      <p class="q-t">2. 账套迁移中「并行运行」的目的是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch8q2"><span>让员工熟悉两套软件</span></label>
+        <label><input type="radio" name="ch8q2"><span>双系统对账一致后再切换，防止数据丢失错乱</span></label>
+        <label><input type="radio" name="ch8q2"><span>为了向税务局展示</span></label>
+        <label><input type="radio" name="ch8q2"><span>旧软件免费试用期未到</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="会计凭证、账簿的法定保管期限为 30 年——旧账套封存只读是合规动作，不是可选项。">
+      <p class="q-t">3. 会计凭证和账簿的法定保存期限是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch8q3"><span>30 年</span></label>
+        <label><input type="radio" name="ch8q3"><span>10 年</span></label>
+        <label><input type="radio" name="ch8q3"><span>5 年</span></label>
+        <label><input type="radio" name="ch8q3"><span>永久（纸质原件）</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第9章 上手路线与结业 ========== -->
+<section class="chapter" id="ch9">
+  <span class="chapter-tag">第九章 · 实战</span>
+  <h1>真实软件上手路线 + 结业测验</h1>
+  <p class="lead">迷你账套教会你「软件思维」，最后一步是把它带进真实软件。用免费云产品（如柠檬云免费版，或各家试用版）走完下面这条路线，你就是有实操经验的记账人了。</p>
+
+  <h2>9.1 真实软件七步实操路线</h2>
+  <div class="card">
+    <p><b>① 注册并建账</b>：公司名可先用「练习账套」，启用期间选当月；</p>
+    <p><b>② 录期初</b>：直接照搬本课迷你账套的期初（借贷合计 65 万，已平衡）；</p>
+    <p><b>③ 录凭证</b>：把第 3 章 11 笔业务在真实界面重录一遍（科目搜索、摘要、附件上传都体验）；</p>
+    <p><b>④ 审核过账</b>：走完制单→审核→过账流程；</p>
+    <p><b>⑤ 期间损益结转 + 结账</b>：出资产负债表、利润表，与迷你账套结果核对（净利应一致）；</p>
+    <p><b>⑥ 试进阶功能</b>：固定资产卡片建一项、自动折旧一月至报表；银行对账单导入（网银导出样例文件）跑一次勾对；</p>
+    <p style="margin-bottom:0"><b>⑦ 导出备份</b>：备份文件导出留存——完成「建账到备份」的完整生命周期。</p>
+  </div>
+
+  <h2>9.2 学完三部曲，你已具备的能力</h2>
+  <div class="grid3">
+    <div class="card"><h3>第一部 · 读</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">三表勾稽、比率体检、杜邦分析、估值框架、舞弊信号</p></div>
+    <div class="card"><h3>第二部 · 做</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">分录、增值税、汇算清缴、个税代扣、申报日历</p></div>
+    <div class="card"><h3>第三部 · 快</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">软件建账、凭证全流程、期末结账、报表取数、数据迁移</p></div>
+  </div>
+
+  <div class="quiz" data-quiz="ch9" data-pass="0.63">
+    <div class="quiz-title">🎓 结业综合测验（8 题）</div>
+    <div class="q-item" data-a="1" data-exp="科目挂客户辅助核算：既保留按客户记明细的能力，又避免科目表爆炸，是软件时代的标准做法。">
+      <p class="q-t">1. 给 500 家客户记应收明细，最佳实践是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q1"><span>建 500 个二级科目</span></label>
+        <label><input type="radio" name="ch9q1"><span>应收账款科目挂「客户」辅助核算</span></label>
+        <label><input type="radio" name="ch9q1"><span>只记总额不记明细</span></label>
+        <label><input type="radio" name="ch9q1"><span>用 Excel 另记一本</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="启用期间选年初：期初只需录上年末余额。年中启用需补录当年累计发生额，工作量翻倍。">
+      <p class="q-t">2. 建账时选启用期间，最省事的是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q2"><span>随便哪天都一样</span></label>
+        <label><input type="radio" name="ch9q2"><span>月末最后一天</span></label>
+        <label><input type="radio" name="ch9q2"><span>年初 1 月</span></label>
+        <label><input type="radio" name="ch9q2"><span>公司注册日</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="已过账凭证科目错→红字冲销＋重录正确凭证，全程留痕；已过账凭证不允许直接改。">
+      <p class="q-t">3. 已过账凭证发现科目错误，正规处理是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q3"><span>红字冲销原凭证，再录正确凭证</span></label>
+        <label><input type="radio" name="ch9q3"><span>直接打开修改科目</span></label>
+        <label><input type="radio" name="ch9q3"><span>删除账簿对应行</span></label>
+        <label><input type="radio" name="ch9q3"><span>下月反向冲一半</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="取数公式按科目余额/发生额取数：货币资金行=1001+1002 等科目期末借方余额之和。">
+      <p class="q-t">4. 报表「货币资金」行的取数公式本质是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q4"><span>出纳手填的数字</span></label>
+        <label><input type="radio" name="ch9q4"><span>银行对账单余额</span></label>
+        <label><input type="radio" name="ch9q4"><span>现金流量表合计</span></label>
+        <label><input type="radio" name="ch9q4"><span>现金类科目期末余额之和</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="1" data-exp="期间损益结转生成的凭证：收入费用全部转入本年利润，损益类科目清零。">
+      <p class="q-t">5. 月末「期间损益结转」后，损益类科目余额？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q5"><span>结转到下月</span></label>
+        <label><input type="radio" name="ch9q5"><span>转入本年利润并清零</span></label>
+        <label><input type="radio" name="ch9q5"><span>转入实收资本</span></label>
+        <label><input type="radio" name="ch9q5"><span>保留至年末</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="现金流量表需区分经营/投资/筹资，仅凭科目余额无法判断资金流向类别，须在录入时指定现金流量项目或期末分配。">
+      <p class="q-t">6. 现金流量表自动化最难，因为？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q6"><span>金额太大</span></label>
+        <label><input type="radio" name="ch9q6"><span>税务局不要求</span></label>
+        <label><input type="radio" name="ch9q6"><span>流量类别（经营/投资/筹资）需要额外指定，科目余额说不出来</span></label>
+        <label><input type="radio" name="ch9q6"><span>每月现金流都一样</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="云软件也应每月导出标准格式备份自存：防厂商停服、涨价、跑路，数据主权在自己手里。">
+      <p class="q-t">7. 用云财务软件，为什么还要定期导出备份？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q7"><span>厂商停服/换届时，数据主权必须跟自己走</span></label>
+        <label><input type="radio" name="ch9q7"><span>云软件从不自动备份</span></label>
+        <label><input type="radio" name="ch9q7"><span>法律规定每天导出</span></label>
+        <label><input type="radio" name="ch9q7"><span>导出后速度更快</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="并行运行：新旧账套同时记一个月、逐项核对一致后再切换——账套迁移的保险绳。">
+      <p class="q-t">8. 账套迁移最关键的防错措施是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q8"><span>把旧数据全部打印</span></label>
+        <label><input type="radio" name="ch9q8"><span>直接删掉旧账套</span></label>
+        <label><input type="radio" name="ch9q8"><span>新账套从年中启用</span></label>
+        <label><input type="radio" name="ch9q8"><span>新旧并行运行一个月并逐项对账后切换</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交结业答卷</button>
+    <div class="q-result"></div>
+  </div>
+
+  <div class="badge-final" id="finalBadge">
+    <div class="medal">🛡</div>
+    <h3>三部曲全部通关！</h3>
+    <p>读报表（第一部）→ 会记账报税（第二部）→ 玩转软件（第三部）。<br>带着这套体系去看真实年报、开一套真实账——财务世界的大门已经向你敞开。</p>
+  </div>
+
+  <h2>继续去哪</h2>
+  <div class="card">
+    <p><b>回顾第一部：</b><a href="财务基础课程.html" style="color:var(--teal);font-weight:700">财务基础课</a> —— 报表分析与估值。</p>
+    <p><b>回顾第二部：</b><a href="会计实操课程.html" style="color:var(--teal);font-weight:700">会计实操课</a> —— 记账与报税。</p>
+    <p style="margin-bottom:0"><b>再进一步：</b>初级会计职称（理论与实操的官方认证）；管理会计（成本、预算、经营分析）——把财务从「记录过去」用到「决策未来」。</p>
+  </div>
+  <p class="footnote">迷你财务软件为教学简化实现（科目与流程做了精简，未含现金流量分配、辅助核算等完整特性），数据仅存于本机浏览器 localStorage。真实软件以各厂商官方文档为准。本课程不构成投资、税务或合规建议。</p>
+</section>
+
+</main>
+</div>
+
+<script>
+/* ================= 章节与进度 ================= */
+var CHAPTERS=[
+ {id:'ch0',name:'开篇 · 课程地图'},
+ {id:'ch1',name:'第1章 软件全景与选型'},
+ {id:'ch2',name:'第2章 建账与初始化'},
+ {id:'ch3',name:'第3章 迷你账套实战 ★'},
+ {id:'ch4',name:'第4章 凭证实务'},
+ {id:'ch5',name:'第5章 期末处理'},
+ {id:'ch6',name:'第6章 功能模块'},
+ {id:'ch7',name:'第7章 报表与取数'},
+ {id:'ch8',name:'第8章 数据安全与迁移'},
+ {id:'ch9',name:'第9章 上手路线与结业'}
+];
+var PKEY='fin-soft-course-v1';
+var prog=loadProg();
+function loadProg(){try{var p=JSON.parse(localStorage.getItem(PKEY)||'{}');p.done=p.done||{};return p}catch(e){return{done:{}}}}
+function saveProg(){try{localStorage.setItem(PKEY,JSON.stringify(prog))}catch(e){}}
+function markDone(id){if(!prog.done[id]){prog.done[id]=true;saveProg();updateNav();updateProgress()}}
+function updateNav(){document.querySelectorAll('nav.chapternav a').forEach(function(a){a.classList.toggle('done',!!prog.done[a.getAttribute('data-ch')])})}
+function updateProgress(){
+  var n=CHAPTERS.filter(function(c){return prog.done[c.id]}).length;
+  document.getElementById('progFill').style.width=(n/CHAPTERS.length*100)+'%';
+  document.getElementById('progText').textContent='已完成 '+n+' / '+CHAPTERS.length;
+}
+function switchChapter(id,scroll){
+  document.querySelectorAll('section.chapter').forEach(function(s){s.classList.remove('active')});
+  var sec=document.getElementById(id);if(!sec)return;
+  sec.classList.add('active');
+  document.querySelectorAll('nav.chapternav a').forEach(function(a){a.classList.toggle('active',a.getAttribute('data-ch')===id)});
+  if(scroll!==false)window.scrollTo({top:0,behavior:'smooth'});
+  if(history.replaceState)history.replaceState(null,'','#'+id);
+}
+(function(){
+  var nav=document.getElementById('chapterNav');
+  CHAPTERS.forEach(function(c){
+    var a=document.createElement('a');
+    a.href='#'+c.id;a.setAttribute('data-ch',c.id);
+    a.innerHTML='<span class="dot"></span>'+c.name;
+    a.addEventListener('click',function(e){e.preventDefault();switchChapter(c.id)});
+    nav.appendChild(a);
+  });
+  var hash=(location.hash||'#ch0').slice(1);
+  switchChapter(document.getElementById(hash)?hash:'ch0',false);
+  updateNav();updateProgress();
+})();
+document.getElementById('resetBtn').addEventListener('click',function(){
+  if(confirm('确定清空全部学习进度吗？（迷你账套数据不受影响）')){
+    prog={done:{}};saveProg();updateNav();updateProgress();alert('进度已重置。');
+  }
+});
+document.querySelectorAll('[data-goto]').forEach(function(b){
+  b.addEventListener('click',function(){markDone(b.getAttribute('data-goto'));switchChapter(b.getAttribute('data-goto'))});
+});
+/* Quiz */
+document.querySelectorAll('.quiz').forEach(function(quiz){
+  var submit=quiz.querySelector('.q-submit'),result=quiz.querySelector('.q-result');
+  var passRate=parseFloat(quiz.getAttribute('data-pass')||'0.67');
+  var chId=quiz.getAttribute('data-quiz'),locked=false;
+  submit.addEventListener('click',function(){
+    if(locked)return;
+    var items=quiz.querySelectorAll('.q-item'),right=0,total=items.length;
+    items.forEach(function(it){
+      var a=parseInt(it.getAttribute('data-a'),10),picked=-1;
+      var labels=it.querySelectorAll('.q-opts label');
+      labels.forEach(function(l,i){if(l.querySelector('input').checked)picked=i;l.classList.remove('picked','answer')});
+      if(picked>=0)labels[picked].classList.add('picked');
+      it.classList.remove('right','wrong');
+      if(picked===a){it.classList.add('right');right++}
+      else{it.classList.add('wrong');if(labels[a])labels[a].classList.add('answer')}
+    });
+    var rate=right/total;
+    if(rate>=passRate){
+      result.textContent='✅ '+right+' / '+total+' 题正确 —— 本章通过！';
+      result.className='q-result pass';markDone(chId);
+      if(chId==='ch9')document.getElementById('finalBadge').classList.add('show');
+      locked=true;
+    }else{
+      result.textContent='❌ '+right+' / '+total+' 题正确 —— 未达标，看看解析再试一次。';
+      result.className='q-result fail';
+    }
+  });
+});
+
+/* ================= 迷你财务软件 ================= */
+var LKEY='mini-ledger-v1';
+var ACCTS=[
+ {c:'1001',n:'库存现金',cls:'资产',dir:1},{c:'1002',n:'银行存款',cls:'资产',dir:1},
+ {c:'1122',n:'应收账款',cls:'资产',dir:1},{c:'1403',n:'原材料',cls:'资产',dir:1},
+ {c:'1405',n:'库存商品',cls:'资产',dir:1},{c:'1601',n:'固定资产',cls:'资产',dir:1},
+ {c:'1602',n:'累计折旧',cls:'资产',dir:-1},
+ {c:'2001',n:'短期借款',cls:'负债',dir:-1},{c:'2202',n:'应付账款',cls:'负债',dir:-1},
+ {c:'2211',n:'应付职工薪酬',cls:'负债',dir:-1},{c:'2221',n:'应交税费',cls:'负债',dir:-1},
+ {c:'4001',n:'实收资本',cls:'权益',dir:-1},{c:'4103',n:'本年利润',cls:'权益',dir:-1},
+ {c:'4104',n:'未分配利润',cls:'权益',dir:-1},
+ {c:'6001',n:'主营业务收入',cls:'损益',dir:-1},{c:'6401',n:'主营业务成本',cls:'损益',dir:1},
+ {c:'6601',n:'销售费用',cls:'损益',dir:1},{c:'6602',n:'管理费用',cls:'损益',dir:1}
+];
+var INIT={'1002':300000,'1405':150000,'1601':200000,'1602':-40000,'2001':-100000,'4001':-400000,'4104':-110000};
+var TASKS=[
+ {id:1,desc:'收到股东追加投资 200,000 元（银行收款）',map:{'1002':200000,'4001':-200000},hint:'银行存款增加记借方；实收资本（权益）增加记贷方。'},
+ {id:2,desc:'赊购生产用原材料 50,000 元，货款未付',map:{'1403':50000,'2202':-50000},hint:'原材料借方，应付账款贷方。'},
+ {id:3,desc:'银行支付本月办公室房租 8,000 元',map:{'6602':8000,'1002':-8000},hint:'房租进管理费用（借方）。'},
+ {id:4,desc:'赊销商品：不含税价 120,000，增值税 13% 共 15,600，应收合计 135,600',map:{'1122':135600,'6001':-120000,'2221':-15600},hint:'一借两贷：借应收 135,600；贷收入 120,000、贷应交税费 15,600（要用「加一行」）。'},
+ {id:5,desc:'结转上述已售商品的库存成本 70,000 元',map:{'6401':70000,'1405':-70000},hint:'卖掉的货从库存商品（贷）转为主营业务成本（借）。'},
+ {id:6,desc:'收到客户支付的全部货款 135,600 元',map:{'1002':135600,'1122':-135600},hint:'资产内部一换一，利润不动。'},
+ {id:7,desc:'银行支付广告费 8,000 元',map:{'6601':8000,'1002':-8000},hint:'广告费进销售费用。'},
+ {id:8,desc:'月末计提本月员工工资 20,000 元（尚未发放）',map:{'6602':20000,'2211':-20000},hint:'费用在计提时确认：借管理费用，贷应付职工薪酬。'},
+ {id:9,desc:'月末计提办公设备折旧 2,000 元',map:{'6602':2000,'1602':-2000},hint:'折旧进管理费用（借），固定资产价值通过累计折旧（贷）减少。'},
+ {id:10,desc:'银行支付供应商前欠货款 40,000 元',map:{'2202':40000,'1002':-40000},hint:'还债：应付账款借方减少。'},
+ {id:11,desc:'银行缴纳上月增值税 5,000 元',map:{'2221':5000,'1002':-5000},hint:'缴税冲减应交税费（借方）。'}
+];
+var led=loadLedger();
+function loadLedger(){
+  try{var d=JSON.parse(localStorage.getItem(LKEY)||'null');
+    if(d&&d.vouchers)return d;
+  }catch(e){}
+  return {vouchers:[],closed:false};
+}
+function saveLedger(){try{localStorage.setItem(LKEY,JSON.stringify(led))}catch(e){}}
+function acctName(c){for(var i=0;i<ACCTS.length;i++)if(ACCTS[i].c===c)return ACCTS[i];return null}
+function fmt(n){return (Math.round(n)).toLocaleString('zh-CN')}
+/* 余额：借正贷负 */
+function balances(includeInit){
+  var b={};
+  if(includeInit!==false)for(var k in INIT)b[k]=(b[k]||0)+INIT[k];
+  led.vouchers.forEach(function(v){
+    v.lines.forEach(function(l){b[l.acct]=(b[l.acct]||0)+(l.dr-l.cr)});
+  });
+  return b;
+}
+/* ============ Tab 切换 ============ */
+document.querySelectorAll('#softTabs button').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    document.querySelectorAll('#softTabs button').forEach(function(x){x.classList.remove('active')});
+    btn.classList.add('active');
+    ['entry','task','vlist','bal','rpt'].forEach(function(t){
+      document.getElementById('tab-'+t).style.display=(t===btn.dataset.tab)?'':'none';
+    });
+    if(btn.dataset.tab==='vlist')renderVList();
+    if(btn.dataset.tab==='bal')renderBal();
+    if(btn.dataset.tab==='rpt')renderRpt();
+    if(btn.dataset.tab==='task')renderTasks();
+  });
+});
+/* ============ 凭证录入 ============ */
+function acctOptions(){
+  var groups={};
+  ACCTS.forEach(function(a){(groups[a.cls]=groups[a.cls]||[]).push(a)});
+  var html='';
+  ['资产','负债','权益','损益'].forEach(function(g){
+    if(!groups[g])return;
+    html+='<optgroup label="'+g+'类">';
+    groups[g].forEach(function(a){html+='<option value="'+a.c+'">'+a.c+' '+a.n+'</option>'});
+    html+='</optgroup>';
+  });
+  return html;
+}
+function makeRow(){
+  var d=document.createElement('div');d.className='vrow';
+  d.innerHTML='<select class="r-acct"><option value="">— 选择科目 —</option>'+acctOptions()+'</select>'+
+    '<input type="text" class="r-dr" inputmode="numeric" placeholder="0">' +
+    '<input type="text" class="r-cr" inputmode="numeric" placeholder="0">';
+  return d;
+}
+var rowsBox=document.getElementById('vrows');
+function refreshRows(){
+  var rows=rowsBox.querySelectorAll('.vrow');
+  document.getElementById('addRow').disabled=rows.length>=4;
+  document.getElementById('delRow').disabled=rows.length<=2;
+}
+function num(v){var n=parseFloat(String(v).replace(/[,，\s]/g,''));return isNaN(n)?0:n}
+function updSums(){
+  var dr=0,cr=0;
+  rowsBox.querySelectorAll('.vrow').forEach(function(r){
+    dr+=num(r.querySelector('.r-dr').value);cr+=num(r.querySelector('.r-cr').value);
+  });
+  document.getElementById('sumDr').textContent=fmt(dr);
+  document.getElementById('sumCr').textContent=fmt(cr);
+  var diff=dr-cr;
+  var el=document.getElementById('sumDiff');
+  el.textContent=fmt(Math.abs(diff))+(diff===0?'（平）':(diff>0?'（借多）':'（贷多）'));
+  el.style.color=diff===0?'var(--teal)':'var(--red)';
+}
+document.getElementById('addRow').addEventListener('click',function(){
+  if(rowsBox.querySelectorAll('.vrow').length<4){rowsBox.appendChild(makeRow());refreshRows();updSums()}
+});
+document.getElementById('delRow').addEventListener('click',function(){
+  var rows=rowsBox.querySelectorAll('.vrow');
+  if(rows.length>2){rowsBox.removeChild(rows[rows.length-1]);refreshRows();updSums()}
+});
+rowsBox.addEventListener('input',updSums);
+rowsBox.addEventListener('change',updSums);
+function entryMsg(text,ok){
+  var m=document.getElementById('entryMsg');
+  m.className='msg show '+(ok?'ok':'err');m.innerHTML=text;
+}
+document.getElementById('saveV').addEventListener('click',function(){
+  var desc=prompt('请输入本张凭证的摘要（如：收到股东投资款）','');
+  if(desc===null)return;
+  var lines=[],dr=0,cr=0,bad=false;
+  rowsBox.querySelectorAll('.vrow').forEach(function(r){
+    var a=r.querySelector('.r-acct').value,d=num(r.querySelector('.r-dr').value),c=num(r.querySelector('.r-cr').value);
+    if(!a&&(d||c)){bad='科目未选';return}
+    if(!a)return;
+    if(d>0&&c>0){bad='同一行不能同时填借贷';return}
+    if(d===0&&c===0)return;
+    lines.push({acct:a,dr:d,cr:c});dr+=d;cr+=c;
+  });
+  if(bad){entryMsg('✗ '+bad,false);return}
+  if(!lines.length){entryMsg('✗ 请至少录入一行有效分录（科目 + 借或贷金额）',false);return}
+  if(dr!==cr){entryMsg('✗ 借贷不平衡：借方 '+fmt(dr)+' ≠ 贷方 '+fmt(cr)+'，请调整后再保存',false);return}
+  if(desc.trim()===''){desc='（无摘要）'}
+  led.vouchers.push({id:led.vouchers.length+1,desc:desc.trim(),lines:lines});
+  saveLedger();
+  rowsBox.querySelectorAll('.vrow').forEach(function(r){
+    r.querySelector('.r-acct').value='';r.querySelector('.r-dr').value='';r.querySelector('.r-cr').value='';
+  });
+  updSums();
+  entryMsg('✓ 记-'+String(led.vouchers.length).padStart(3,'0')+' 已保存并登账（借贷合计 '+fmt(dr)+' 元）',true);
+  updateTaskBadge();renderTasks();
+});
+/* 初始两行 */
+rowsBox.appendChild(makeRow());rowsBox.appendChild(makeRow());refreshRows();updSums();
+
+/* ============ 任务核对 ============ */
+function voucherMap(v){
+  var m={};
+  v.lines.forEach(function(l){m[l.acct]=(m[l.acct]||0)+(l.dr-l.cr)});
+  return m;
+}
+function mapEqual(a,b){
+  var ka=Object.keys(a),kb=Object.keys(b);
+  if(ka.length!==kb.length)return false;
+  for(var i=0;i<ka.length;i++){if(a[ka[i]]!==b[ka[i]])return false}
+  return true;
+}
+function taskDone(t){
+  return led.vouchers.some(function(v){return mapEqual(voucherMap(v),t.map)});
+}
+function allTasksDone(){return TASKS.every(taskDone)}
+function updateTaskBadge(){
+  var n=TASKS.filter(taskDone).length;
+  document.querySelector('#softTabs button[data-tab="task"]').textContent='📋 业务任务（'+n+'/11）';
+  return n;
+}
+function renderTasks(){
+  var box=document.getElementById('taskList');if(!box)return;
+  box.innerHTML='';
+  TASKS.forEach(function(t){
+    var done=taskDone(t);
+    var d=document.createElement('div');d.className='taskcard'+(done?' done':'');
+    d.innerHTML='<div class="no">'+(done?'✓':t.id)+'</div>'+
+      '<div class="desc">'+t.desc+
+        '<details><summary>卡住了？看提示</summary><div class="dbody">'+t.hint+'</div></details>'+
+      '</div>'+
+      '<div class="st">'+(done?'已入账':'待录入')+'</div>';
+    box.appendChild(d);
+  });
+  var flag=document.getElementById('taskFlag');
+  var n=TASKS.filter(taskDone).length;
+  if(n===11&&!led.closed){flag.className='balance-flag ok';flag.innerHTML='🎉 11 笔业务全部入账！现在点击上方「🔮 期末损益结转」完成第 12 步。'}
+  else if(n===11&&led.closed){flag.className='balance-flag ok';flag.innerHTML='🏆 本月账务全部完成——切到「财务报表」页签查看成果，本章测验也已解锁通过条件。'}
+  else{flag.className='balance-flag';flag.textContent='已完成 '+n+' / 11 ——录入正确后自动打勾（金额需完全一致，含税分录用「加一行」做复合分录）。'}
+}
+/* 期末结转 */
+document.getElementById('closeBtn').addEventListener('click',function(){
+  if(!allTasksDone()){alert('还有业务未入账。请先完成 11 笔业务录入（任务页签可查进度）。');return}
+  if(led.closed){alert('本期已完成损益结转。');return}
+  var b=balances();
+  var lines=[],totalRev=0,totalExp=0;
+  ACCTS.forEach(function(a){
+    if(a.cls!=='损益')return;
+    var bal=b[a.c]||0;
+    if(Math.abs(bal)<0.01)return;
+    if(bal<0){ /* 贷余：收入类 → 借方结转 */
+      lines.push({acct:a.c,dr:-bal,cr:0});totalRev+=-bal;
+    }else{ /* 借余：费用类 → 贷方结转 */
+      lines.push({acct:a.c,dr:0,cr:bal});totalExp+=bal;
+    }
+  });
+  var net=totalRev-totalExp;
+  lines.push(net>=0?{acct:'4103',dr:0,cr:net}:{acct:'4103',dr:-net,cr:0});
+  led.vouchers.push({id:led.vouchers.length+1,desc:'期末损益结转（自动生成）',lines:lines,auto:true});
+  led.closed=true;saveLedger();
+  renderTasks();updateTaskBadge();
+  alert('结转凭证已生成：收入 '+fmt(totalRev)+' − 成本费用 '+fmt(totalExp)+' ＝ 本月净利润 '+fmt(net)+' 元。\n切到「财务报表」页签查看三表！');
+});
+/* 重置账套 */
+document.getElementById('resetLedger').addEventListener('click',function(){
+  if(confirm('确定清空全部已录凭证、恢复期初状态吗？')){
+    led={vouchers:[],closed:false};saveLedger();
+    renderTasks();updateTaskBadge();
+    alert('账套已重置为期初状态。');
+  }
+});
+/* ============ 凭证列表 ============ */
+function renderVList(){
+  var t=document.getElementById('vlistTable');
+  if(!led.vouchers.length){t.innerHTML='<tr><td style="color:var(--ink-soft)">暂无凭证。去「凭证录入」开始第一笔。</td></tr>';return}
+  var html='<tr><th>凭证号</th><th>摘要</th><th>分录（借 / 贷）</th><th class="n">合计</th><th></th></tr>';
+  led.vouchers.slice().reverse().forEach(function(v){
+    var ls=v.lines.map(function(l){
+      var a=acctName(l.acct);
+      return a.n+(l.dr?'（借 '+fmt(l.dr)+'）':'（贷 '+fmt(l.cr)+'）');
+    }).join('； ');
+    var tot=v.lines.reduce(function(s,l){return s+l.dr},0);
+    html+='<tr><td>记-'+String(v.id).padStart(3,'0')+(v.auto?' <span class="chip warn" style="font-size:11px">自动</span>':'')+'</td>'+
+      '<td>'+v.desc+'</td><td style="font-size:13px;max-width:340px">'+ls+'</td><td class="n">'+fmt(tot)+'</td>'+
+      '<td>'+(v.auto?'':'<button class="vlist-del" data-id="'+v.id+'">作废</button>')+'</td></tr>';
+  });
+  t.innerHTML=html;
+  t.querySelectorAll('.vlist-del').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var id=parseInt(btn.getAttribute('data-id'),10);
+      if(led.closed){alert('本期已结转损益。真实软件中此时不能直接作废凭证，需要红字冲销（见第 4 章）。这里允许作废以便练习。');}
+      if(!confirm('作废记-'+String(id).padStart(3,'0')+'？该凭证将从账簿移除。'))return;
+      led.vouchers=led.vouchers.filter(function(v){return v.id!==id});
+      saveLedger();renderVList();updateTaskBadge();renderTasks();
+    });
+  });
+}
+/* ============ 余额表 ============ */
+function renderBal(){
+  var b=balances();
+  var html='<tr><th>科目</th><th class="n">期初余额</th><th class="n">本期借方</th><th class="n">本期贷方</th><th class="n">期末余额</th></tr>';
+  ACCTS.forEach(function(a){
+    var i0=INIT[a.c]||0,b0=b[a.c]||0;
+    /* 本期发生额 */
+    var dr=0,cr=0;
+    led.vouchers.forEach(function(v){v.lines.forEach(function(l){if(l.acct===a.c){dr+=l.dr;cr+=l.cr}})});
+    if(i0===0&&b0===0&&dr===0&&cr===0)return;
+    function fmtDir(x){return x===0?'—':(x>0?fmt(x)+'（借）':fmt(-x)+'（贷）')}
+    html+='<tr><td>'+a.c+' '+a.n+'</td><td class="n">'+fmtDir(i0)+'</td><td class="n">'+(dr?fmt(dr):'—')+'</td><td class="n">'+(cr?fmt(cr):'—')+'</td><td class="n"><b>'+fmtDir(b0)+'</b></td></tr>';
+  });
+  var sum=0;for(var k in b)sum+=b[k];
+  html+='<tr class="tot"><td>借贷合计校验（借−贷）</td><td class="n" colspan="4">'+(Math.abs(sum)<1?'0 ✓ 全部科目借贷平衡':'✗ 差 '+fmt(sum)+' —— 有凭证不平！')+'</td></tr>';
+  document.getElementById('balTable').innerHTML=html;
+}
+/* ============ 报表 ============ */
+function renderRpt(){
+  var b=balances();
+  function val(c){return b[c]||0}
+  /* 利润表 */
+  var rev=-val('6001'),cogs=val('6401'),sell=val('6601'),adm=val('6602');
+  var net=rev-cogs-sell-adm;
+  document.getElementById('isTable').innerHTML=
+   '<tr><th>项目</th><th class="n">本期（9 月）</th></tr>'+
+   '<tr><td>营业收入</td><td class="n">'+fmt(rev)+'</td></tr>'+
+   '<tr><td>减：营业成本</td><td class="n">'+fmt(cogs)+'</td></tr>'+
+   '<tr><td>减：销售费用</td><td class="n">'+fmt(sell)+'</td></tr>'+
+   '<tr><td>减：管理费用</td><td class="n">'+fmt(adm)+'</td></tr>'+
+   '<tr class="tot"><td>净利润</td><td class="n">'+fmt(net)+'</td></tr>';
+  /* 资产负债表 */
+  var cash=val('1001')+val('1002'),ar=val('1122'),mat=val('1403'),inv=val('1405'),
+      fa=val('1601')+val('1602');
+  var assets=cash+ar+mat+inv+fa;
+  var stl=val('2001'),ap=val('2202'),pay=val('2211'),tax=val('2221');
+  var liab=stl+ap+pay+tax;
+  var paid=val('4001'),pl=val('4103'),ret=val('4104');
+  var eq=paid+pl+ret;
+  document.getElementById('bsTable').innerHTML=
+   '<tr><th>资产</th><th class="n">期末</th></tr>'+
+   '<tr><td>货币资金</td><td class="n">'+fmt(cash)+'</td></tr>'+
+   '<tr><td>应收账款</td><td class="n">'+fmt(ar)+'</td></tr>'+
+   '<tr><td>存货（原材料+库存商品）</td><td class="n">'+fmt(mat+inv)+'</td></tr>'+
+   '<tr><td>固定资产净值</td><td class="n">'+fmt(fa)+'</td></tr>'+
+   '<tr class="sum"><td>资产总计</td><td class="n">'+fmt(assets)+'</td></tr>'+
+   '<tr><td>负债：借款/应付/薪酬/税费</td><td class="n">'+fmt(liab)+'</td></tr>'+
+   '<tr><td>权益：实收资本</td><td class="n">'+fmt(-paid)+'</td></tr>'+
+   '<tr><td>权益：本年利润</td><td class="n">'+fmt(-pl)+'</td></tr>'+
+   '<tr><td>权益：未分配利润</td><td class="n">'+fmt(-ret)+'</td></tr>'+
+   '<tr class="tot"><td>负债和权益总计</td><td class="n">'+fmt(-liab-eq)+'</td></tr>';
+  var flag=document.getElementById('bsFlag');
+  var diff=assets-(-liab-eq);
+  if(Math.abs(diff)<1){
+    flag.className='balance-flag ok';
+    flag.innerHTML='✅ 资产 '+fmt(assets)+' ＝ 负债 '+fmt(-liab)+' ＋ 权益 '+fmt(-eq)+' —— 恒等式成立，报表平衡！';
+    if(allTasksDone()&&led.closed)markDone('ch3');
+  }else{
+    flag.className='balance-flag no';
+    flag.innerHTML='当前状态：资产 '+fmt(assets)+'，负债+权益 '+fmt(-liab-eq)+'。11 笔业务全部入账并结转损益后，这里会精确平衡。';
+  }
+}
+/* 软件时钟 */
+(function(){
+  var el=document.getElementById('softClock');
+  function tick(){el.textContent='账套期间：2026-09-01 至 2026-09-30'}
+  tick();
+})();
+/* 初始化任务角标 */
+updateTaskBadge();renderTasks();
+</script>
+</body>
+</html>

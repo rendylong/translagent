@@ -1,0 +1,32 @@
+# 密钥——绝不入库
+env.rtf
+
+# 用户会议资料与音频文件
+会议/
+*.m4a
+*.wav
+*.mp3
+*.aac
+*.aif
+*.aiff
+*.flac
+
+# 大二进制模型与任务数据(脚本与 bench 记录入库)
+transcriber/models/**
+!transcriber/models/bench/
+!transcriber/models/bench/*.py
+!transcriber/models/bench/*.json
+!transcriper/models/bench/
+transcriber/jobs/
+transcriber/live/
+
+# 工具链与构建产物
+.tools/
+.superpowers/
+node_modules/
+会议录制工作台.app/
+.DS_Store
+__pycache__/
+*.pyc
+*.log
+selftest-report.json

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>允许录制系统声音</title>
+<style>
+  :root{
+    --ground:#f6f7f8; --surface:#fff; --border:#e5e7ea;
+    --text:#1b1e23; --muted:#575f6b; --faint:#616a76;
+    --primary:#1e2126;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--text);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB",sans-serif;
+    padding:22px 24px 18px;user-select:none;cursor:default}
+  h1{font-size:16px;font-weight:650;margin:0 0 18px}
+  .step{display:flex;gap:12px;margin-bottom:18px}
+  .n{width:22px;height:22px;border-radius:50%;background:#e4e7ea;color:var(--text);
+    font-size:12.5px;font-weight:650;display:flex;align-items:center;justify-content:center;
+    flex:none;margin-top:2px}
+  .step p{margin:0;font-size:13.5px}
+  .sub{font-size:12px;color:var(--faint);margin-top:2px}
+  .icon-wrap{margin:12px 0 2px 34px;display:flex;align-items:center;gap:12px}
+  .icon{width:72px;height:72px;cursor:grab}
+  .icon:active{cursor:grabbing}
+  .icon-lab{font-size:12px;color:var(--faint)}
+  .btn{margin:8px 0 0 34px;height:34px;padding:0 20px;border:0;border-radius:6px;
+    background:var(--primary);color:#fff;font-size:13.5px;font-weight:600;cursor:pointer}
+  .btn:hover{background:#33373d}
+  .note{font-size:12px;color:var(--faint);margin:7px 0 0 34px}
+  .fallback{border-top:1px solid #eff1f3;margin-top:4px;padding-top:11px;
+    font-size:12px;color:var(--muted)}
+  .fallback a{color:var(--muted)}
+  .fallback a:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<h1>允许录制系统声音</h1>
+
+<div class="step"><span class="n">1</span>
+  <p>已为你打开系统设置的「隐私与安全性」
+     <div class="sub">进入列表中的「系统声音录制」</div></p>
+</div>
+
+<div class="step"><span class="n">2</span>
+  <p>把这个图标拖进设备列表
+    <div class="icon-wrap">
+      <img class="icon" id="appicon" src="app-icon-128.png" alt="会议录制工作台图标" draggable="false">
+      <span class="icon-lab">按住我,拖到列表里</span>
+    </div></p>
+</div>
+
+<div class="step"><span class="n">3</span>
+  <p>打开列表中「会议录制工作台」的开关,然后重启客户端</p>
+  <button class="btn" id="relaunch">重启客户端</button>
+  <div class="note">权限只在启动时读取,重启后生效</div>
+</div>
+
+<div class="fallback">拖拽不生效?<a href="#" id="open-folder">打开所在文件夹,手动添加</a></div>
+
+<script>
+const icon = document.getElementById('appicon');
+icon.addEventListener('mousedown', e => {
+  e.preventDefault();
+  if(window.desk) window.desk.startDragApp();
+});
+document.getElementById('relaunch').onclick = () => {
+  if(window.desk) window.desk.relaunchApp();
+};
+document.getElementById('open-folder').onclick = e => {
+  e.preventDefault();
+  if(window.desk) window.desk.openAppFolder();
+};
+</script>
+</body>
+</html>

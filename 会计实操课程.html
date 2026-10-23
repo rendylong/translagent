@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>会计实操课 · 记账与报税 · 交互课程（第二部）</title>
+<style>
+:root{--navy:#16324f;--navy-deep:#0f2439;--gold:#c9a227;--gold-soft:#f6efdb;--teal:#0f766e;--teal-soft:#e6f4f2;--red:#b4433a;--red-soft:#fbeeec;--ink:#243342;--ink-soft:#5b6b7c;--line:#e3e8ee;--bg:#f4f6f8;--card:#fff}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;background:var(--bg);color:var(--ink);line-height:1.8;font-size:15.5px}
+.app{display:flex;min-height:100vh}
+aside.sidebar{width:250px;flex:none;background:var(--navy-deep);color:#c8d4e0;position:sticky;top:0;height:100vh;overflow-y:auto;padding:22px 0 30px}
+aside .logo{padding:0 20px 16px;font-size:18px;font-weight:800;color:#fff;border-bottom:1px solid rgba(255,255,255,.12)}
+aside .logo span{color:var(--gold)}
+.prog-wrap{padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.12)}
+.prog-bar{height:8px;background:rgba(255,255,255,.15);border-radius:99px;overflow:hidden}
+.prog-bar div{height:100%;width:0;background:linear-gradient(90deg,var(--gold),#e6c55a);border-radius:99px;transition:width .5s}
+.prog-wrap small{display:block;margin-top:6px;font-size:12px;color:#8fa3b5}
+nav.chapternav a{display:flex;align-items:center;gap:10px;padding:9px 20px;color:#aebfcd;text-decoration:none;font-size:13.5px;border-left:3px solid transparent}
+nav.chapternav a:hover{color:#fff;background:rgba(255,255,255,.06)}
+nav.chapternav a.active{color:#fff;background:rgba(255,255,255,.1);border-left-color:var(--gold)}
+nav.chapternav .dot{width:9px;height:9px;flex:none;border-radius:50%;background:#3d5468}
+nav.chapternav a.done .dot{background:var(--gold)}
+.reset{margin:18px 20px 0;padding:7px 0;width:calc(100% - 40px);background:none;border:1px solid rgba(255,255,255,.25);color:#8fa3b5;border-radius:8px;font-size:12px;cursor:pointer}
+.reset:hover{color:#fff;border-color:#fff}
+main{flex:1;min-width:0;padding:38px 44px 90px;max-width:920px;margin:0 auto}
+@media(max-width:900px){
+  .app{flex-direction:column}
+  aside.sidebar{width:100%;height:auto;position:static;padding-bottom:10px}
+  nav.chapternav{display:flex;overflow-x:auto;padding:0 10px}
+  nav.chapternav a{flex:none;border-left:none;border-bottom:3px solid transparent;padding:8px 12px}
+  nav.chapternav a.active{border-bottom-color:var(--gold)}
+  aside .prog-wrap,aside .reset{display:none}
+  main{padding:26px 18px 70px}
+}
+section.chapter{display:none;animation:fadein .35s}
+section.chapter.active{display:block}
+@keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.chapter-tag{display:inline-block;font-size:12px;font-weight:700;color:var(--gold);background:var(--gold-soft);border-radius:6px;padding:2px 10px;margin-bottom:10px;letter-spacing:1px}
+h1{font-size:29px;color:var(--navy);line-height:1.4;margin-bottom:6px}
+h2{font-size:21px;color:var(--navy);margin:36px 0 12px}
+h2::before{content:"";display:inline-block;width:7px;height:18px;background:var(--gold);border-radius:3px;margin-right:10px;vertical-align:-1px}
+h3{font-size:16.5px;color:var(--navy);margin:22px 0 8px}
+p{margin-bottom:12px}
+.lead{color:var(--ink-soft);font-size:16px}
+ul.pl{padding-left:22px;margin-bottom:12px}
+ul.pl li{margin-bottom:7px}
+b{color:var(--ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin:16px 0;box-shadow:0 1px 3px rgba(22,50,79,.05)}
+.note{background:var(--gold-soft);border-left:4px solid var(--gold);border-radius:0 12px 12px 0;padding:13px 18px;margin:16px 0;font-size:14.5px}
+.note b{color:#7a5f0e}
+.ok-note{background:var(--teal-soft);border-left-color:var(--teal)}
+.ok-note b{color:var(--teal)}
+.warn-note{background:var(--red-soft);border-left-color:var(--red)}
+.warn-note b{color:var(--red)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.chip{display:inline-block;font-size:12px;border-radius:99px;padding:2px 11px;font-weight:700}
+.chip.good{background:var(--teal-soft);color:var(--teal)}
+.chip.warn{background:var(--gold-soft);color:#8a6d14}
+.chip.bad{background:var(--red-soft);color:var(--red)}
+table.t{width:100%;border-collapse:collapse;font-size:14px;background:#fff;border-radius:12px;overflow:hidden;margin:14px 0}
+table.t th{background:var(--navy);color:#fff;padding:9px 12px;text-align:left;font-weight:600}
+table.t td{padding:8px 12px;border-bottom:1px solid var(--line)}
+table.t tr:last-child td{border-bottom:none}
+table.t td.n,table.t th.n{text-align:right;font-variant-numeric:tabular-nums}
+table.t tr.sum td{font-weight:700;background:#f2f5f8}
+table.t tr.tot td{font-weight:700;background:var(--gold-soft)}
+details{border:1px solid var(--line);border-radius:10px;background:#fff;margin:8px 0;overflow:hidden}
+details summary{cursor:pointer;padding:11px 16px;font-weight:600;color:var(--navy);font-size:14.5px;list-style:none;display:flex;align-items:center;gap:8px}
+details summary::before{content:"▸";color:var(--gold);transition:transform .2s}
+details[open] summary::before{transform:rotate(90deg)}
+details .dbody{padding:0 16px 13px;font-size:14px;color:var(--ink-soft)}
+.btn{display:inline-block;padding:10px 22px;border-radius:10px;border:none;cursor:pointer;font-size:15px;font-weight:700;text-decoration:none}
+.btn-primary{background:var(--navy);color:#fff}
+.btn-primary:hover{background:var(--navy-deep)}
+.btn-ghost{background:#fff;color:var(--navy);border:1.5px solid var(--line)}
+.btn-ghost.active{border-color:var(--teal);background:var(--teal-soft);color:var(--teal)}
+.pill-btns{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0}
+.pill-btns .btn-ghost{border-radius:99px;padding:8px 16px;font-size:13.5px}
+.quiz{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:22px;margin:26px 0}
+.quiz-title{font-size:16px;font-weight:800;color:var(--navy);margin-bottom:14px}
+.q-item{border-top:1px dashed var(--line);padding:15px 0 6px}
+.q-item:first-of-type{border-top:none}
+.q-t{font-weight:600;margin-bottom:10px}
+.q-opts label{display:flex;gap:9px;align-items:flex-start;padding:8px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;cursor:pointer;font-size:14px}
+.q-opts label:hover{background:#f7f9fb}
+.q-item.right .q-opts label.picked{border-color:var(--teal);background:var(--teal-soft)}
+.q-item.wrong .q-opts label.picked{border-color:var(--red);background:var(--red-soft)}
+.q-item.wrong .q-opts label.answer{border-color:var(--teal)}
+.q-exp{display:none;font-size:13.5px;padding:9px 13px;border-radius:8px;margin:6px 0 10px}
+.q-item.right .q-exp{display:block;background:var(--teal-soft);color:var(--teal)}
+.q-item.wrong .q-exp{display:block;background:var(--red-soft);color:var(--red)}
+.q-result{margin-top:14px;font-weight:700;font-size:15px}
+.q-result.pass{color:var(--teal)} .q-result.fail{color:var(--red)}
+.infield{margin-bottom:12px}
+.infield label{display:block;font-size:13px;color:var(--ink-soft);margin-bottom:4px}
+input[type=number],select.input{padding:9px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px;font-variant-numeric:tabular-nums;width:100%;background:#fbfcfd}
+input[type=number]:focus,select.input:focus{outline:2px solid var(--teal);background:#fff}
+.bigval{font-size:32px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums;line-height:1.25}
+.kv{font-size:13.5px;color:var(--ink-soft);margin-top:6px}
+.ratio-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px 16px}
+.ratio-card h4{font-size:14.5px;color:var(--navy)}
+.ratio-card .v{font-size:23px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums}
+.ratio-card p{font-size:12.5px;color:var(--ink-soft);margin-top:6px;line-height:1.6;margin-bottom:0}
+.loop{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+.loop button{flex:1;min-width:130px;background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:14px 10px;cursor:pointer;font-size:13.5px;font-weight:700;color:var(--navy)}
+.loop button.active{border-color:var(--teal);background:var(--teal-soft)}
+.loop button small{display:block;font-weight:400;font-size:11.5px;color:var(--ink-soft);margin-top:2px}
+.drill{border:1.5px solid var(--line);border-radius:12px;padding:16px 18px;margin:12px 0;background:#fff}
+.drill .biz{font-weight:600;font-size:14.5px}
+.drill .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 8px}
+.drill select{width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fbfcfd}
+.drill .fb{display:none;font-size:13.5px;padding:9px 13px;border-radius:8px;margin-top:8px}
+.drill .fb.show{display:block}
+.drill .fb.ok{background:var(--teal-soft);color:var(--teal)}
+.drill .fb.no{background:var(--red-soft);color:var(--red)}
+.drill .fb.tip{background:#f2f5f8;color:var(--ink-soft)}
+.drill .check{padding:7px 18px;border-radius:9px;border:none;background:var(--navy);color:#fff;font-weight:700;cursor:pointer;font-size:13.5px}
+.mtx{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:14px 0}
+@media(max-width:700px){.mtx{grid-template-columns:repeat(3,1fr)}}
+.mtx button{padding:10px 4px;border-radius:10px;border:1.5px solid var(--line);background:#fff;cursor:pointer;font-size:13px;font-weight:700;color:var(--navy)}
+.mtx button.active{border-color:var(--teal);background:var(--teal-soft)}
+.cklist label{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;cursor:pointer;font-size:14px;background:#fff}
+.cklist label:hover{background:#f7f9fb}
+.cklist input{accent-color:var(--teal);margin-top:5px}
+.cklist label.checked{background:var(--teal-soft);border-color:var(--teal);text-decoration:line-through;color:var(--ink-soft)}
+.footnote{font-size:12.5px;color:#9aa7b4;margin-top:30px;border-top:1px solid var(--line);padding-top:14px}
+.badge-final{display:none;text-align:center;padding:36px 20px;border-radius:16px;background:linear-gradient(135deg,var(--navy-deep),var(--navy));color:#fff;margin:22px 0}
+.badge-final.show{display:block;animation:fadein .6s}
+.badge-final .medal{font-size:56px}
+.badge-final h3{color:var(--gold);margin:10px 0 6px}
+.badge-final p{color:#b9c9d8;font-size:14px}
+</style>
+</head>
+<body>
+<div class="app">
+
+<aside class="sidebar">
+  <div class="logo">会计<span>·</span>实操课 <small style="display:block;font-size:11px;font-weight:400;color:#8fa3b5">第二部 · 记账与报税</small></div>
+  <div class="prog-wrap">
+    <div class="prog-bar"><div id="progFill"></div></div>
+    <small id="progText">已完成 0 / 10</small>
+  </div>
+  <nav class="chapternav" id="chapterNav"></nav>
+  <button class="reset" id="resetBtn">重置学习进度</button>
+</aside>
+
+<main id="main">
+
+<!-- ========== 第0章 开篇 ========== -->
+<section class="chapter" id="ch0">
+  <span class="chapter-tag">开篇 · 第二部</span>
+  <h1>会计实操：从「看懂」到「会做」</h1>
+  <p class="lead">第一部《财务基础课》教你<b>读懂</b>财务语言；这一部教你<b>动手</b>：怎么记账、怎么算税、怎么报税——适合想自己管账的小企业主、准备入行的出纳/会计新人，以及想把知识落到实操的财务学习者。</p>
+  <div class="ok-note note"><b>📚 前置建议：</b>先完成第一部第 1–2 章（会计恒等式、借贷记账、权责发生制），本课程直接在其上展开。<a href="财务基础课程.html" style="color:var(--teal);font-weight:700">← 返回第一部</a></div>
+
+  <h2>课程地图</h2>
+  <table class="t">
+    <tr><th>模块</th><th>章节</th><th>你将学会</th></tr>
+    <tr><td rowspan="4"><b>记账</b></td><td>第1章 记账循环</td><td>从一张发票到一整套报表的完整流程</td></tr>
+    <tr><td>第2章 分录实战</td><td>10 笔常见业务的借贷分录（动手练习器）</td></tr>
+    <tr><td>第3章 增值税原理</td><td>价外税、销项与进项、专票普票</td></tr>
+    <tr><td>第4章 月末结账</td><td>计提、结转、银行对账、试算平衡</td></tr>
+    <tr><td rowspan="4"><b>报税</b></td><td>第5章 税负全景</td><td>一家中国企业到底要交哪些税</td></tr>
+    <tr><td>第6章 申报日历</td><td>全年申报节奏与电子税务局流程</td></tr>
+    <tr><td>第7章 企业所得税</td><td>季度预缴、汇算清缴、纳税调整</td></tr>
+    <tr><td>第8章 个税代扣</td><td>累计预扣法、专项附加扣除、算员工到手</td></tr>
+    <tr><td><b>实战</b></td><td>第9章 小微指南 + 结业</td><td>注册公司后每月必做清单 + 综合测验</td></tr>
+  </table>
+
+  <div class="warn-note note"><b>⚖️ 政策时效声明：</b>本课程税率与优惠政策按 <b>2026 年 10 月</b>口径编写：《增值税法》自 2026-01-01 施行（13%/9%/6% 三档税率、简易计税 3% 征收率）；小规模纳税人「3% 减按 1%、月销售额 10 万以下免征」延续至 2027-12-31；小型微利企业所得税实际税负 5% 延续至 2027-12-31。税收优惠随时可能调整，实际申报请以电子税务局和主管税务机关当期口径为准。</div>
+  <div style="text-align:center;margin-top:30px"><button class="btn btn-primary" style="padding:13px 40px;font-size:16px" data-goto="ch1">开始学习第 1 章 →</button></div>
+</section>
+
+<!-- ========== 第1章 记账循环 ========== -->
+<section class="chapter" id="ch1">
+  <span class="chapter-tag">第一章 · 记账</span>
+  <h1>记账循环：从一张发票到一整套报表</h1>
+  <p class="lead">会计不是玄学，而是一条固定的流水线。任何规模的公司，每个月都在重复同一个循环——点击每一步看详解：</p>
+  <div class="loop" id="loopBox"></div>
+  <div class="note" id="loopNote">👆 点击上方任意步骤</div>
+
+  <h2>1.1 凭证：一切记账的起点</h2>
+  <p>会计界有句铁律：<b>「无凭证，不记账」</b>。每一笔记账都必须能追溯到一张原始凭证：</p>
+  <ul class="pl">
+    <li><b>外来凭证：</b>采购发票、银行回单、火车票、水电费单；</li>
+    <li><b>自制凭证：</b>工资表、折旧计算表、成本分配表、入库单。</li>
+  </ul>
+  <p>会计拿到原始凭证后填制<b>记账凭证</b>——就是把你已在第一部学过的「借贷分录」正式写下来：日期、摘要、科目、金额、附件张数、制单人签字。记账凭证是登记账簿的直接依据。</p>
+
+  <h2>1.2 账簿体系：三本账各司其职</h2>
+  <div class="grid3">
+    <div class="card"><h3>📖 日记账</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">现金日记账、银行存款日记账——按<b>天</b>逐笔登记，出纳管理，日清月结。</p></div>
+    <div class="card"><h3>📗 明细账</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">按科目和往来对象逐笔登记：应收账款—A客户、应付账款—B供应商……回答「具体是谁」。</p></div>
+    <div class="card"><h3>📘 总账</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">按科目<b>汇总</b>登记，只回答「这个科目本期总共多少」，是报表的直接数据源。</p></div>
+  </div>
+  <p>小公司常用财务软件（金蝶、用友、柠檬云等）替代手工账——软件里录入记账凭证，账簿和报表自动生成，但底层逻辑一模一样。</p>
+
+  <div class="quiz" data-quiz="ch1" data-pass="0.67">
+    <div class="quiz-title">📝 第 1 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="「无凭证，不记账」：每笔记账都要以原始凭证为依据，这是审计与税务检查的根基。报表和账簿都由凭证层层汇总而来。">
+      <p class="q-t">1. 记账工作的直接起点是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch1q1"><span>编制财务报表</span></label>
+        <label><input type="radio" name="ch1q1"><span>审核原始凭证并填制记账凭证</span></label>
+        <label><input type="radio" name="ch1q1"><span>登记总账</span></label>
+        <label><input type="radio" name="ch1q1"><span>试算平衡</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="「应收账款—A公司」按具体往来对象逐笔记录，是典型的明细账；总账只记「应收账款」科目合计数。">
+      <p class="q-t">2. 「应收账款——A 公司」这种带具体往来对象的记录出现在？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch1q2"><span>明细账</span></label>
+        <label><input type="radio" name="ch1q2"><span>总账</span></label>
+        <label><input type="radio" name="ch1q2"><span>资产负债表</span></label>
+        <label><input type="radio" name="ch1q2"><span>记账凭证汇总表</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="循环顺序：原始凭证 → 记账凭证 → 账簿（日记/明细/总账）→ 试算平衡 → 报表。试算平衡是报表前的最后检查。">
+      <p class="q-t">3. 正确的记账循环顺序是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch1q3"><span>报表 → 凭证 → 账簿</span></label>
+        <label><input type="radio" name="ch1q3"><span>账簿 → 凭证 → 报表</span></label>
+        <label><input type="radio" name="ch1q3"><span>凭证 → 账簿 → 试算平衡 → 报表</span></label>
+        <label><input type="radio" name="ch1q3"><span>凭证 → 报表 → 账簿</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第2章 分录实战 ========== -->
+<section class="chapter" id="ch2">
+  <span class="chapter-tag">第二章 · 记账</span>
+  <h1>分录实战：10 笔业务亲手记账</h1>
+  <p class="lead">借贷规则先复习一行：<b>资产、费用</b>增加记借方；<b>负债、权益、收入</b>增加记贷方。下面每笔业务由你选科目——本章暂不考虑增值税（第 3 章专讲）。</p>
+
+  <h2>2.1 记账练习器</h2>
+  <div id="drillBox"></div>
+  <div class="note" id="drillScore">每答对一题亮绿灯；答错会给提示。10 笔全对，你就完成了小微公司一个完整月的记账骨架。</div>
+
+  <h2>2.2 三类最容易错的业务（点开看解析）</h2>
+  <details><summary>❓ 为什么「发放工资」不记费用？</summary><div class="dbody">权责发生制下，工资在<b>员工工作的当月</b>计提：借 管理费用等，贷 应付职工薪酬；下月实际发放时：借 应付职工薪酬，贷 银行存款。费用在计提时已确认，发放只是「还债」。练习第 10 笔正是这个逻辑的另一半。</div></details>
+  <details><summary>❓ 为什么「结转成本」要单独一笔？</summary><div class="dbody">销售发生时只确认收入（借 应收/银行，贷 收入）；已卖出商品的成本要<b>另起一笔</b>（借 主营业务成本，贷 库存商品）。收入与成本「两条腿走路」，毛利由此产生。漏掉这步会虚增利润。</div></details>
+  <details><summary>❓ 购入设备为什么不是「费用」？</summary><div class="dbody">设备能用好几年，受益期跨越多个会计期间，所以先记为<b>资产</b>（固定资产），再通过每月<b>计提折旧</b>慢慢变成费用——这就是第一部反复强调的「折旧是估计」的来处。</div></details>
+
+  <div class="quiz" data-quiz="ch2" data-pass="0.67">
+    <div class="quiz-title">📝 第 2 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="计提工资：费用增加记借方（管理费用），负债（应付职工薪酬）增加记贷方。">
+      <p class="q-t">1. 月末计提本月员工工资 8 万，正确的分录是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch2q1"><span>借：银行存款 8 万 / 贷：管理费用 8 万</span></label>
+        <label><input type="radio" name="ch2q1"><span>借：管理费用 8 万 / 贷：应付职工薪酬 8 万</span></label>
+        <label><input type="radio" name="ch2q1"><span>借：应付职工薪酬 8 万 / 贷：银行存款 8 万</span></label>
+        <label><input type="radio" name="ch2q1"><span>借：管理费用 8 万 / 贷：银行存款 8 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="收回应收账款是资产内部一换一：银行存款增加（借），应收账款减少（贷），利润不动——收入早在销售时确认过。">
+      <p class="q-t">2. 收到客户偿还的前欠货款 15 万，分录是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch2q2"><span>借：银行存款 / 贷：主营业务收入</span></label>
+        <label><input type="radio" name="ch2q2"><span>借：应收账款 / 贷：银行存款</span></label>
+        <label><input type="radio" name="ch2q2"><span>借：银行存款 / 贷：应收账款</span></label>
+        <label><input type="radio" name="ch2q2"><span>借：银行存款 / 贷：坏账准备</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="赊购原材料：资产（原材料）增加记借方，负债（应付账款）增加记贷方，未付款不影响费用与利润。">
+      <p class="q-t">3. 赊购原材料 10 万（款未付），分录是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch2q3"><span>借：原材料 / 贷：应付账款</span></label>
+        <label><input type="radio" name="ch2q3"><span>借：原材料 / 贷：银行存款</span></label>
+        <label><input type="radio" name="ch2q3"><span>借：营业成本 / 贷：应付账款</span></label>
+        <label><input type="radio" name="ch2q3"><span>借：原材料 / 贷：主营业务收入</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第3章 增值税 ========== -->
+<section class="chapter" id="ch3">
+  <span class="chapter-tag">第三章 · 记账</span>
+  <h1>增值税：中国记账绕不开的第一课</h1>
+  <p class="lead">在多数国家，收入就是收入；在中国开票，价里天然「夹」着一块税。不懂增值税，既读不懂中国企业的收入，也记不对账。</p>
+
+  <h2>3.1 价外税：113 万的发票里只有 100 万是收入</h2>
+  <div class="card" style="text-align:center">
+    <div style="font-size:20px;font-weight:800;color:var(--navy)">含税价 113 万 ＝ 不含税价 100 万 ＋ 销项税额 13 万</div>
+    <p class="kv" style="margin-top:8px">税是替国家向买家收的「过路费」，先挂在「应交税费」，月底交给税务局——它<b>不是卖家的收入</b></p>
+  </div>
+  <p><b>一般纳税人</b>（年应税销售额超 500 万须登记）用「购进扣税法」：<b>应纳增值税 = 当期销项税额 − 当期进项税额</b>。你向客户收的税（销项），减去你采购时付给供应商的税（进项），差额上交——整条产业链每个环节只为自己「增值」的部分交税，这就是「增值税」名字的由来。</p>
+  <p><b>小规模纳税人</b>用简易计税：销售额 × 征收率（法定 3%，2027 年底前减按 <b>1%</b>），进项不能抵扣，但核算极简。另有免税线：<b>月销售额 ≤10 万（季度 ≤30 万）免征</b>增值税（开具专票部分除外）。</p>
+
+  <h2>3.2 三档税率速查（2026 年《增值税法》口径）</h2>
+  <table class="t">
+    <tr><th>税率</th><th>适用范围</th><th>常见行业</th></tr>
+    <tr><td><b>13%</b></td><td>销售货物、加工修理修配、有形动产租赁、进口货物</td><td>制造、商贸、设备租赁</td></tr>
+    <tr><td><b>9%</b></td><td>交通运输、邮政、基础电信、建筑、不动产租赁与销售、农产品等</td><td>物流、建筑、房地产</td></tr>
+    <tr><td><b>6%</b></td><td>现代服务、增值电信、金融服务、生活服务、无形资产</td><td>软件、咨询、餐饮、金融</td></tr>
+    <tr><td><b>0%</b></td><td>出口货物及规定的跨境应税行为</td><td>外贸（配合退税）</td></tr>
+  </table>
+
+  <h2>3.3 两种身份算账对比器</h2>
+  <div class="card">
+    <div class="grid2" style="grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <div class="infield"><label>年含税销售额（万元）</label><input type="number" id="v_sale" value="400"></div>
+        <div class="infield"><label>适用税率</label>
+          <select class="input" id="v_rate"><option value="13">13%（货物/加工）</option><option value="9">9%（运输/建筑）</option><option value="6" selected>6%（现代服务）</option></select>
+        </div>
+        <div class="infield" style="margin-bottom:0"><label>年可抵扣进项税额（万元）</label><input type="number" id="v_in" value="8"></div>
+      </div>
+      <div>
+        <div class="infield"><label>一般纳税人应纳增值税（万元）</label><div class="bigval" id="v_gen" style="font-size:26px">14.5</div><div class="kv" id="v_gen_d"></div></div>
+        <div class="infield" style="margin-bottom:0"><label>小规模纳税人（若按 1%）</label><div class="bigval" id="v_small" style="font-size:26px">3.96</div><div class="kv" id="v_small_d"></div></div>
+      </div>
+    </div>
+    <p class="kv" id="v_verdict" style="margin-top:12px"></p>
+  </div>
+  <div class="note"><b>💡 身份选择的常识：</b>进项少的服务/软件企业选小规模往往更省（但客户要 13%/6% 专票抵扣时会流失大客户）；进项充足的商贸制造企业当一般纳税人更划算。年销售额超 500 万就必须登记为一般纳税人——这是强制性门槛。</div>
+
+  <h2>3.4 增值税的记账（一般纳税人版）</h2>
+  <table class="t">
+    <tr><th>场景</th><th>分录（示意）</th></tr>
+    <tr><td>销售 100 万 + 销项 13 万</td><td>借：应收账款 113 / 贷：主营业务收入 100、应交税费—应交增值税（销项税额）13</td></tr>
+    <tr><td>采购 50 万 + 进项 6.5 万</td><td>借：原材料 50、应交税费—应交增值税（进项税额）6.5 / 贷：银行存款 56.5</td></tr>
+    <tr><td>月末结转并缴纳</td><td>借：应交税费—应交增值税（转出未交增值税）/ 贷：应交税费—未交增值税；缴纳时 借：未交增值税 / 贷：银行存款</td></tr>
+  </table>
+  <p class="kv">专票 vs 普票：增值税<b>专用发票</b>的税额可供下游抵扣（进项），<b>普通发票</b>不能抵扣——所以采购时「要专票」是小企业省税的第一习惯。</p>
+
+  <div class="quiz" data-quiz="ch3" data-pass="0.67">
+    <div class="quiz-title">📝 第 3 章 · 过关小测</div>
+    <div class="q-item" data-a="2" data-exp="价税分离：不含税价 = 226 ÷ 1.13 = 200 万，销项税 = 200 × 13% = 26 万。收入只确认 200 万。">
+      <p class="q-t">1. 开出 13% 税率的含税发票 226 万，其中销项税额是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch3q1"><span>29.38 万</span></label>
+        <label><input type="radio" name="ch3q1"><span>22.6 万</span></label>
+        <label><input type="radio" name="ch3q1"><span>26 万</span></label>
+        <label><input type="radio" name="ch3q1"><span>13 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="应纳增值税 = 销项 − 进项 = 26 − 8 = 18 万。增值税只对「增值部分」征收，进项税额抵减销项税额。">
+      <p class="q-t">2. 当期销项税 26 万、进项税 8 万，应缴纳增值税？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch3q2"><span>18 万</span></label>
+        <label><input type="radio" name="ch3q2"><span>26 万</span></label>
+        <label><input type="radio" name="ch3q2"><span>34 万</span></label>
+        <label><input type="radio" name="ch3q2"><span>8 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="连续 12 个月（或 4 个季度）应税销售额超过 500 万元，必须登记为一般纳税人；这是法定强制门槛，与进项多少、是否自愿无关。">
+      <p class="q-t">3. 小规模纳税人何时必须登记为一般纳税人？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch3q3"><span>一有客户要求专票时</span></label>
+        <label><input type="radio" name="ch3q3"><span>开票金额累计到 100 万时</span></label>
+        <label><input type="radio" name="ch3q3"><span>聘了专职会计时</span></label>
+        <label><input type="radio" name="ch3q3"><span>连续 12 个月销售额超过 500 万时</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第4章 月末结账 ========== -->
+<section class="chapter" id="ch4">
+  <span class="chapter-tag">第四章 · 记账</span>
+  <h1>月末结账：账是怎么「关账」的</h1>
+  <p class="lead">一个月的凭证记完后，离出报表还差四步：计提摊销 → 对账 → 结转损益 → 试算平衡。走完这四步，这个月的账才「封箱」。</p>
+
+  <h2>4.1 结账四件事</h2>
+  <div class="grid2">
+    <div class="card"><h3>① 计提与摊销</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">工资、社保、折旧、待摊费用——凡「已经发生、尚未支付/结算」的，月末统一计提入账（权责发生制的落地动作）。</p></div>
+    <div class="card"><h3>② 对账</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">账实核对（现金盘点）、账账核对（总账 vs 明细账）、<b>账单核对</b>（银行日记账 vs 银行对账单）——见下方调节表。</p></div>
+    <div class="card"><h3>③ 结转损益</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">把全部收入、成本费用科目余额转入「本年利润」：收入类结转借方、费用类结转贷方。结完损益类科目归零，本年利润 = 净利润。</p></div>
+    <div class="card"><h3>④ 试算平衡</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">全部科目借方发生额合计 = 贷方发生额合计。平衡≠全对（科目用错方向对冲也能平），但不平衡一定有错。</p></div>
+  </div>
+
+  <h2>4.2 银行存款余额调节表（对账的灵魂）</h2>
+  <p>企业记的银行存款和银行对账单月末经常对不上——不是谁错了，而是「一方已记账、另一方还没记」的<b>未达账项</b>。勾选下面的未达账项，看两边如何调成一致：</p>
+  <div class="card">
+    <div style="overflow-x:auto">
+    <table class="t" style="margin:0">
+      <tr><th>未达账项</th><th>企业侧</th><th>银行侧</th><th>计入调节？</th></tr>
+      <tr><td>客户已转账 18,000，银行尚未入账</td><td>已记收款</td><td>未记</td><td style="text-align:center"><input type="checkbox" class="rec" data-co="0" data-bk="18000"></td></tr>
+      <tr><td>企业开出支票 8,000，银行尚未兑付</td><td>已记付款</td><td>未记</td><td style="text-align:center"><input type="checkbox" class="rec" data-co="0" data-bk="-8000"></td></tr>
+      <tr><td>客户电汇 26,000，企业尚未收到通知</td><td>未记</td><td>已记收款</td><td style="text-align:center"><input type="checkbox" class="rec" data-co="26000" data-bk="0"></td></tr>
+      <tr><td>银行代扣手续费 3,000，企业未记账</td><td>未记</td><td>已记付款</td><td style="text-align:center"><input type="checkbox" class="rec" data-co="-3000" data-bk="0"></td></tr>
+    </table>
+    </div>
+    <div class="grid2" style="margin-top:14px">
+      <div class="ratio-card"><h4>企业日记账余额</h4><div class="v" id="rec_co">92,000</div><p>92,000 ± 勾选的企业侧未达</p></div>
+      <div class="ratio-card"><h4>银行对账单余额</h4><div class="v" id="rec_bk">105,000</div><p>105,000 ± 勾选的银行侧未达</p></div>
+    </div>
+    <p class="kv" id="rec_verdict" style="margin-top:10px">👆 勾选全部四笔，看两边余额是否 converge</p>
+  </div>
+
+  <div class="quiz" data-quiz="ch4" data-pass="0.67">
+    <div class="quiz-title">📝 第 4 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="结转损益后，收入与费用类科目余额全部清零，净额进入「本年利润」——这就是利润表科目「一段期间」概念在账务上的实现。">
+      <p class="q-t">1. 月末结转损益后，收入和费用类科目的余额？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch4q1"><span>转入「未分配利润」</span></label>
+        <label><input type="radio" name="ch4q1"><span>全部结转至「本年利润」，自身清零</span></label>
+        <label><input type="radio" name="ch4q1"><span>保留至年底不动</span></label>
+        <label><input type="radio" name="ch4q1"><span>转入「实收资本」</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="「企业已收、银行未收」应加在银行对账单余额上（银行补记收款后才会增加）；企业账早已记了收款，不用再调。方向别记反：各自补记对方漏记的部分。">
+      <p class="q-t">2. 企业已收 18,000 而银行未入账，调节时应？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch4q2"><span>企业账余额 +18,000</span></label>
+        <label><input type="radio" name="ch4q2"><span>企业账余额 −18,000</span></label>
+        <label><input type="radio" name="ch4q2"><span>银行对账单余额 +18,000</span></label>
+        <label><input type="radio" name="ch4q2"><span>双方都 +18,000</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="试算平衡只验证「借贷金额相等」这一层；把本应记费用的金额错记到资产科目，借贷依然平衡——所以平衡是必要条件而非充分条件。">
+      <p class="q-t">3. 试算平衡表借方合计 = 贷方合计，能说明？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch4q3"><span>金额平衡，但科目用错仍可能存在</span></label>
+        <label><input type="radio" name="ch4q3"><span>全部记账绝对正确</span></label>
+        <label><input type="radio" name="ch4q3"><span>报表可以直接发布无需复核</span></label>
+        <label><input type="radio" name="ch4q3"><span>现金一定账实相符</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第5章 税负全景 ========== -->
+<section class="chapter" id="ch5">
+  <span class="chapter-tag">第五章 · 报税</span>
+  <h1>税负全景：一家中国企业要交哪些税</h1>
+  <p class="lead">开公司就像住进物业小区：有的是「月租」（流转税，有收入就交），有的是「分成」（所得税，有利润才交），有的零散如「水电」。</p>
+
+  <h2>5.1 主要税种地图</h2>
+  <table class="t">
+    <tr><th>税种</th><th>什么时候交</th><th>计算基准</th><th>关键点</th></tr>
+    <tr><td><b>增值税</b></td><td>有销售额就交（月/季申报）</td><td>不含税销售额</td><td>一般纳税人 13/9/6%；小规模 3% 减按 1%、月 10 万内免</td></tr>
+    <tr><td><b>城建税及附加</b></td><td>随增值税走</td><td>实缴增值税额</td><td>合计约 12%（市区），小微可减半</td></tr>
+    <tr><td><b>企业所得税</b></td><td>有利润才交（季度预缴+年度汇算）</td><td>应纳税所得额</td><td>法定 25%；小型微利实际 5%（2027 年底前）</td></tr>
+    <tr><td><b>个人所得税</b></td><td>发工资时代扣代缴</td><td>员工工资薪金</td><td>公司是「代扣」角色，税是员工的</td></tr>
+    <tr><td><b>印花税</b></td><td>签合同、记账资金时</td><td>合同金额</td><td>买卖合同约万分之三，金额通常不大</td></tr>
+    <tr><td>其他</td><td>视行业</td><td>—</td><td>消费税（烟酒油车）、房产税、土地增值税等</td></tr>
+  </table>
+
+  <h2>5.2 税单估算器（粗算版）</h2>
+  <div class="card">
+    <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">
+      <div class="infield"><label>企业类型</label>
+        <select class="input" id="t_type">
+          <option value="svc">小规模 · 咨询/服务</option>
+          <option value="trade">一般纳税人 · 商贸</option>
+          <option value="soft">一般纳税人 · 软件/技术</option>
+        </select>
+      </div>
+      <div class="infield"><label>年不含税收入（万元）</label><input type="number" id="t_rev" value="300"></div>
+      <div class="infield"><label>年利润总额（万元）</label><input type="number" id="t_profit" value="60"></div>
+    </div>
+    <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">
+      <div class="infield"><label>商贸适用：毛利率 %</label><input type="number" id="t_gm" value="25"></div>
+    </div>
+    <div id="taxBill" style="margin-top:8px"></div>
+    <p class="kv" style="margin-top:10px">口径：附加按增值税 12%（小微减半）；企业所得税按小微 5%（利润 ≤300 万且符合小微条件），否则 25%；不含印花税等小税种；仅为教学估算，实际以申报表为准。</p>
+  </div>
+
+  <div class="quiz" data-quiz="ch5" data-pass="0.67">
+    <div class="quiz-title">📝 第 5 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="城建税及附加以实缴增值税为计税基础，增值税免（如月 10 万内小规模）附加通常也免；增值税为零附加基本为零。">
+      <p class="q-t">1. 城建税及附加的计税依据是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch5q1"><span>营业收入</span></label>
+        <label><input type="radio" name="ch5q1"><span>实际缴纳的增值税额</span></label>
+        <label><input type="radio" name="ch5q1"><span>利润总额</span></label>
+        <label><input type="radio" name="ch5q1"><span>员工工资总额</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="企业所得税按应纳税所得额（≈利润总额±纳税调整）计算，亏损年度无需缴纳（可结转弥补）；增值税则只要有销售额就要交。">
+      <p class="q-t">2. 公司今年亏损 50 万，下列哪种税基本不用交？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch5q2"><span>增值税</span></label>
+        <label><input type="radio" name="ch5q2"><span>城建税及附加</span></label>
+        <label><input type="radio" name="ch5q2"><span>企业所得税</span></label>
+        <label><input type="radio" name="ch5q2"><span>印花税</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="工资个税由公司代扣代缴：发工资时扣下员工应纳税款，次月 15 日前申报上缴。税负落在员工身上，公司只是「代收管道」。">
+      <p class="q-t">3. 员工工资的个人所得税，公司的角色是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch5q3"><span>代扣代缴——从工资中扣下，替员工申报上缴</span></label>
+        <label><input type="radio" name="ch5q3"><span>公司自身的税费支出</span></label>
+        <label><input type="radio" name="ch5q3"><span>与公司无关，员工自行申报</span></label>
+        <label><input type="radio" name="ch5q3"><span>年底和所得税合并清算</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第6章 申报日历 ========== -->
+<section class="chapter" id="ch6">
+  <span class="chapter-tag">第六章 · 报税</span>
+  <h1>申报日历：全年节奏与流程</h1>
+  <p class="lead">报税最大的秘密是：<b>它是日历驱动的</b>。记住几个固定日期，你就超过了大多数新老板。点击月份看该月事项：</p>
+  <div class="mtx" id="calMtx"></div>
+  <div class="note" id="calNote">👆 点击任意月份</div>
+
+  <h2>6.1 五个必须刻进脑子的日期</h2>
+  <ul class="pl">
+    <li><b>每月 / 每季度结束后 15 日内：</b>申报增值税及附加（征期遇节假日顺延，以税务局公告为准）；</li>
+    <li><b>季度结束后 15 日内：</b>企业所得税季度预缴（1/4/7/10 月）；</li>
+    <li><b>次年 5 月 31 日前：</b>企业所得税年度汇算清缴；</li>
+    <li><b>次年 3 月 1 日 – 6 月 30 日：</b>员工个税年度汇算（综合所得多退少补）；</li>
+    <li><b>次年 6 月 30 日前：</b>工商年报（国家企业信用信息公示系统，不报会进经营异常名录）。</li>
+  </ul>
+
+  <h2>6.2 电子税务局申报流程（通用六步）</h2>
+  <div class="card">
+    <p style="margin-bottom:8px"><b>① 登录</b> 电子税务局（网页或 APP），进入「我要办税」；</p>
+    <p style="margin-bottom:8px"><b>② 查看待办</b> ——「按期应申报」会列出本期全部报表，一张都不会漏；</p>
+    <p style="margin-bottom:8px"><b>③ 填表</b> ——多数数字可从开票系统/财务软件取数，核对销项、进项、附加；</p>
+    <p style="margin-bottom:8px"><b>④ 申报</b> ——提交并确认；</p>
+    <p style="margin-bottom:8px"><b>⑤ 缴款</b> ——三方协议实时扣款（签好银行–税务三方协议后自动扣）；</p>
+    <p style="margin-bottom:0"><b>⑥ 留底</b> ——下载申报表回执，与记账凭证一起归档。</p>
+  </div>
+  <div class="warn-note note"><b>⚠️ 零申报 ≠ 不申报：</b>当期没有收入也要在期内完成零申报。连续长期零申报会触发税务预警；逾期申报会产生滞纳金（每日万分之五）和罚款，并拉低纳税信用等级（A 级能换来发票额度、贷款便利等实惠）。</div>
+
+  <div class="quiz" data-quiz="ch6" data-pass="0.67">
+    <div class="quiz-title">📝 第 6 章 · 过关小测</div>
+    <div class="q-item" data-a="2" data-exp="企业所得税年度汇算清缴截止日为次年 5 月 31 日；6 月 30 日是工商年报截止，3 月 1 日至 6 月 30 日是个税年度汇算窗口。">
+      <p class="q-t">1. 企业所得税年度汇算清缴的截止日是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch6q1"><span>次年 3 月 31 日</span></label>
+        <label><input type="radio" name="ch6q1"><span>次年 4 月 30 日</span></label>
+        <label><input type="radio" name="ch6q1"><span>次年 5 月 31 日</span></label>
+        <label><input type="radio" name="ch6q1"><span>次年 6 月 30 日</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="1" data-exp="电子税务局的「按期应申报」模块按税种认定自动列出本期应报的全部报表，是防漏报的第一工具。">
+      <p class="q-t">2. 怎样最稳地知道「这个月该报哪些税」？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch6q2"><span>凭记忆和经验</span></label>
+        <label><input type="radio" name="ch6q2"><span>看电子税务局「按期应申报」待办清单</span></label>
+        <label><input type="radio" name="ch6q2"><span>等税务局短信催报</span></label>
+        <label><input type="radio" name="ch6q2"><span>问同行老板</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="零申报是「按期申报、金额为零」，必须报；不申报即逾期，会产生罚款、滞纳金并影响纳税信用。">
+      <p class="q-t">3. 本季度没有任何收入，正确的做法是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch6q3"><span>按期进行零申报</span></label>
+        <label><input type="radio" name="ch6q3"><span>不用管，等有收入再报</span></label>
+        <label><input type="radio" name="ch6q3"><span>打电话给税务局说明即可</span></label>
+        <label><input type="radio" name="ch6q3"><span>把费用也一起清零不记账</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第7章 企业所得税 ========== -->
+<section class="chapter" id="ch7">
+  <span class="chapter-tag">第七章 · 报税</span>
+  <h1>企业所得税与汇算清缴</h1>
+  <p class="lead">所得税交的不是「会计利润」，而是「应纳税所得额 = 利润总额 + 纳税调增 − 纳税调减」。税法与会计准则的这些分歧，是会计岗位最具含金量的知识。</p>
+
+  <h2>7.1 常见纳税调整项</h2>
+  <table class="t">
+    <tr><th>项目</th><th>规则</th><th>方向</th></tr>
+    <tr><td>业务招待费</td><td>只能扣「发生额 × 60%」与「收入 × 5‰」的较小者</td><td>超标部分<b>调增</b></td></tr>
+    <tr><td>广告与业务宣传费</td><td>一般不超过收入 15%（超出部分可结转以后年度）</td><td>超标当期<b>调增</b></td></tr>
+    <tr><td>行政罚款、税收滞纳金</td><td>一律不得扣除</td><td>全额<b>调增</b></td></tr>
+    <tr><td>国债利息收入</td><td>免税</td><td><b>调减</b></td></tr>
+    <tr><td>研发费用加计扣除</td><td>科技型企业研发费用可按 100% 加计扣除</td><td><b>调减</b>（优惠）</td></tr>
+  </table>
+
+  <h2>7.2 汇算清缴练习器</h2>
+  <div class="card">
+    <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px">
+      <div class="infield"><label>年营业收入（万元）</label><input type="number" id="h_rev" value="500"></div>
+      <div class="infield"><label>利润总额（万元）</label><input type="number" id="h_profit" value="80"></div>
+      <div class="infield"><label>业务招待费发生额（万元）</label><input type="number" id="h_ent" value="10"></div>
+      <div class="infield"><label>行政罚款（万元）</label><input type="number" id="h_fine" value="2"></div>
+      <div class="infield" style="margin-bottom:0"><label>国债利息收入（万元）</label><input type="number" id="h_bond" value="1"></div>
+    </div>
+    <div id="settleOut" style="margin-top:10px"></div>
+  </div>
+  <div class="note"><b>小型微利企业三条件</b>（同时满足，2027 年底前实际税负 5%）：从事非限制行业；资产总额 ≤5000 万；从业人数 ≤300 人；且年应纳税所得额 ≤300 万。超过任一条件即按法定 25%（或适用其他优惠）。</div>
+
+  <div class="quiz" data-quiz="ch7" data-pass="0.67">
+    <div class="quiz-title">📝 第 7 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="招待费限额取较小者：10×60%=6 万 vs 500×5‰=2.5 万 → 只能扣 2.5 万，调增 7.5 万。「60% 与 5‰ 孰低」是硬规则。">
+      <p class="q-t">1. 收入 500 万，业务招待费发生 10 万，可税前扣除的金额是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch7q1"><span>10 万</span></label>
+        <label><input type="radio" name="ch7q1"><span>2.5 万</span></label>
+        <label><input type="radio" name="ch7q1"><span>6 万</span></label>
+        <label><input type="radio" name="ch7q1"><span>0 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="行政罚款是违法行为的经济制裁，税法一律不许扣除，全额调增；国债利息免税调减；招待费超标部分调增。">
+      <p class="q-t">2. 下列哪项是纳税<b>调减</b>项目？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch7q2"><span>国债利息收入</span></label>
+        <label><input type="radio" name="ch7q2"><span>工商部门的行政罚款</span></label>
+        <label><input type="radio" name="ch7q2"><span>超标的业务招待费</span></label>
+        <label><input type="radio" name="ch7q2"><span>税收滞纳金</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="小型微利优惠三条件：资产 ≤5000 万、人数 ≤300、应纳税所得额 ≤300 万（另有行业限制），全满足才能适用 5% 实际税负。">
+      <p class="q-t">3. 小型微利企业优惠需要同时满足的三个量化条件是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch7q3"><span>收入 ≤1000 万、利润 ≤100 万、员工 ≤50</span></label>
+        <label><input type="radio" name="ch7q3"><span>收入 ≤500 万、利润 ≤300 万、员工 ≤100</span></label>
+        <label><input type="radio" name="ch7q3"><span>资产 ≤3000 万、利润 ≤300 万、员工 ≤200</span></label>
+        <label><input type="radio" name="ch7q3"><span>资产 ≤5000 万、人数 ≤300、应纳税所得额 ≤300 万</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第8章 个税 ========== -->
+<section class="chapter" id="ch8">
+  <span class="chapter-tag">第八章 · 报税</span>
+  <h1>个税代扣代缴：算清员工（和自己）的到手工资</h1>
+  <p class="lead">工资个税用<b>累计预扣法</b>：年初税率低、年末跳档，每月扣税不相等——理解它，你就能准确回答「为什么 12 月工资突然少了一截」。</p>
+
+  <h2>8.1 累计预扣法公式</h2>
+  <div class="card" style="font-size:14.5px">
+    <p style="margin-bottom:6px"><b>累计应纳税所得额</b> = 累计收入 − 累计免税收入 − 累计减除费用（5000 元/月 × 月份数）− 累计专项扣除（五险一金个人部分）− 累计专项附加扣除</p>
+    <p style="margin-bottom:0"><b>本月应预扣税额</b> =（累计应纳税所得额 × 税率 − 速算扣除数）− 累计已预扣税额</p>
+  </div>
+  <table class="t">
+    <tr><th>累计应纳税所得额（全年）</th><th class="n">税率</th><th class="n">速算扣除数</th></tr>
+    <tr><td>≤ 36,000</td><td class="n">3%</td><td class="n">0</td></tr>
+    <tr><td>36,000 – 144,000</td><td class="n">10%</td><td class="n">2,520</td></tr>
+    <tr><td>144,000 – 300,000</td><td class="n">20%</td><td class="n">16,920</td></tr>
+    <tr><td>300,000 – 420,000</td><td class="n">25%</td><td class="n">31,920</td></tr>
+    <tr><td>420,000 – 660,000</td><td class="n">30%</td><td class="n">52,920</td></tr>
+    <tr><td>660,000 – 960,000</td><td class="n">35%</td><td class="n">85,920</td></tr>
+    <tr><td>&gt; 960,000</td><td class="n">45%</td><td class="n">181,920</td></tr>
+  </table>
+
+  <h2>8.2 专项附加扣除（2026 年标准）</h2>
+  <div class="grid3">
+    <div class="card"><h3>子女教育</h3><p style="font-size:13px;color:var(--ink-soft);margin:0">2,000 元/孩/月（父母分摊或一方全额）</p></div>
+    <div class="card"><h3>婴幼儿照护</h3><p style="font-size:13px;color:var(--ink-soft);margin:0">3 岁以下 2,000 元/孩/月</p></div>
+    <div class="card"><h3>赡养老人</h3><p style="font-size:13px;color:var(--ink-soft);margin:0">3,000 元/月（独生子女；非独生分摊，每人 ≤1,500）</p></div>
+    <div class="card"><h3>房贷利息</h3><p style="font-size:13px;color:var(--ink-soft);margin:0">首套 1,000 元/月（与房租二选一）</p></div>
+    <div class="card"><h3>住房租金</h3><p style="font-size:13px;color:var(--ink-soft);margin:0">1,500 / 1,100 / 800 元/月（按城市规模）</p></div>
+    <div class="card"><h3>继续教育 / 大病</h3><p style="font-size:13px;color:var(--ink-soft);margin:0">学历教育 400 元/月；大病医疗自付超 1.5 万部分限额 8 万/年</p></div>
+  </div>
+
+  <h2>8.3 工资计算器（按月预扣 + 全年汇总）</h2>
+  <div class="card">
+    <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">
+      <div class="infield"><label>税前月薪（元）</label><input type="number" id="p_sal" value="20000"></div>
+      <div class="infield"><label>五险一金个人部分（元/月）</label><input type="number" id="p_ins" value="3200"></div>
+      <div class="infield" style="margin-bottom:0"><label>专项附加扣除合计（元/月）</label><input type="number" id="p_ded" value="3000"></div>
+    </div>
+    <div style="overflow-x:auto;margin-top:8px"><table class="t" id="p_table" style="margin:8px 0 0"></table></div>
+    <p class="kv" id="p_summary" style="margin-top:10px"></p>
+  </div>
+  <div class="note"><b>💡 省税常识：</b>专项附加扣除在「个人所得税 APP」里填报即可自动生效，很多人因为没填报而多缴税——每年 3–6 月的年度汇算就是补填报、多退少补的窗口。年终奖可选择「单独计税」，高收入者常能省下一档税率。</div>
+
+  <div class="quiz" data-quiz="ch8" data-pass="0.67">
+    <div class="quiz-title">📝 第 8 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="累计预扣法下，前期累计所得低适用低税率，跨过 36,000 等档位后税率跳升，所以下半年同薪预扣更多、到手变少——年度总额不变。">
+      <p class="q-t">1. 为什么月薪不变，年末几个月到手反而变少？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch8q1"><span>公司年末克扣工资</span></label>
+        <label><input type="radio" name="ch8q1"><span>累计应纳税所得额跳档，适用更高预扣率</span></label>
+        <label><input type="radio" name="ch8q1"><span>社保基数年末上调</span></label>
+        <label><input type="radio" name="ch8q1"><span>速算扣除数逐月减少</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="减除费用 5000 元/月，3 个月累计 15,000；3,600 收入未超线，应纳税所得额为 0，不缴个税。">
+      <p class="q-t">2. 某员工 1–3 月月薪 3,600 元（无其他扣除），累计预扣法下已预缴个税？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch8q2"><span>108 元</span></label>
+        <label><input type="radio" name="ch8q2"><span>36 元</span></label>
+        <label><input type="radio" name="ch8q2"><span>0 元</span></label>
+        <label><input type="radio" name="ch8q2"><span>540 元</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="房贷利息与住房租金只能二选一；赡养老人与子女教育等可同时享受。">
+      <p class="q-t">3. 下列哪组专项附加扣除<b>不能同时</b>享受？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch8q3"><span>房贷利息 与 住房租金</span></label>
+        <label><input type="radio" name="ch8q3"><span>子女教育 与 赡养老人</span></label>
+        <label><input type="radio" name="ch8q3"><span>继续教育 与 房贷利息</span></label>
+        <label><input type="radio" name="ch8q3"><span>婴幼儿照护 与 子女教育</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第9章 实操指南与结业 ========== -->
+<section class="chapter" id="ch9">
+  <span class="chapter-tag">第九章 · 实战</span>
+  <h1>小微老板生存指南 + 结业测验</h1>
+  <p class="lead">注册公司的营业执照只是一张纸，真正的义务从税务登记那天开始。这一章把前面所有知识压缩成两张可执行的清单。</p>
+
+  <h2>9.1 新公司开业十件事</h2>
+  <ul class="pl">
+    <li>① 领取营业执照 → ② 公安备案刻章（公章、财务章、法人章、发票章）</li>
+    <li>③ 银行开<b>基本存款账户</b>（对公收款、扣税都靠它）</li>
+    <li>④ 电子税务局完成税务登记，确认<b>税种认定</b>（增值税、附加、所得税等）与申报期限（按月/按季）</li>
+    <li>⑤ 签<b>三方协议</b>（税务局—银行—公司，申报后自动扣款）</li>
+    <li>⑥ 申请<b>发票</b>（数电票时代在电子税务局直接授信，按需开具）</li>
+    <li>⑦ 决定记账方式：自记账软件 / 代理记账（小规模行情约每年两三千元起，行情随地区浮动）</li>
+    <li>⑧ 员工入职 → 社保、公积金开户增员</li>
+    <li>⑨ 建立原始凭证习惯：每笔收支都要发票/回单，公私账户<b>严格分开</b></li>
+    <li>⑩ 把第 6 章的申报日历设成手机提醒</li>
+  </ul>
+
+  <h2>9.2 每月固定动作清单（勾选自动保存）</h2>
+  <div class="cklist card" id="cklist">
+    <label><input type="checkbox" data-k="0"><span>① 收集整理本月全部发票、银行回单、工资表</span></label>
+    <label><input type="checkbox" data-k="1"><span>② 录入/审核记账凭证，登记账簿</span></label>
+    <label><input type="checkbox" data-k="2"><span>③ 月末计提工资、社保、折旧</span></label>
+    <label><input type="checkbox" data-k="3"><span>④ 银行对账，编制余额调节表</span></label>
+    <label><input type="checkbox" data-k="4"><span>⑤ 结转损益，试算平衡</span></label>
+    <label><input type="checkbox" data-k="5"><span>⑥ 核对销项/进项发票（数电票平台勾选确认）</span></label>
+    <label><input type="checkbox" data-k="6"><span>⑦ 申报期 15 日前完成增值税及附加申报缴款</span></label>
+    <label><input type="checkbox" data-k="7"><span>⑧ 代扣代缴员工个税申报</span></label>
+    <label><input type="checkbox" data-k="8"><span>⑨ 季度月：预缴企业所得税；核对利润与预提税款</span></label>
+    <label><input type="checkbox" data-k="9"><span>⑩ 凭证装订归档，申报回执留存</span></label>
+  </div>
+  <p class="kv" id="ckSummary">这是「记账 + 报税」两条线的合并视图——上半月做完 ①–⑥，申报期内完成 ⑦–⑩。</p>
+
+  <h2>9.3 四个最常见的翻车点</h2>
+  <div class="grid2">
+    <div class="card warn-note" style="margin:0"><b>不记账只报税：</b>长期零申报、账实不符，一旦被检查既拿不出账也无法自证——罚款、补税、信用降级三连。</div>
+    <div class="card warn-note" style="margin:0"><b>公私账户混用：</b>老板个人卡收公司款，触发大数据预警；也导致利润、往来一团乱麻，公司有限责任的屏障可能被击穿。</div>
+    <div class="card warn-note" style="margin:0"><b>买入发票冲成本：</b>虚开发票是刑事红线，没有侥幸。进项抵扣要配真实的交易与物流。</div>
+    <div class="card warn-note" style="margin:0"><b>忘记工商年报：</b>6 月 30 日前未年报进入经营异常名录，贷款、投标、变更全部受阻。</div>
+  </div>
+
+  <div class="quiz" data-quiz="ch9" data-pass="0.63">
+    <div class="quiz-title">🎓 结业综合测验（8 题）</div>
+    <div class="q-item" data-a="1" data-exp="计提时：借 费用 / 贷 应付职工薪酬；发放时：借 应付职工薪酬 / 贷 银行存款。两步分开是权责发生制的标准动作。">
+      <p class="q-t">1. 「计提 8 月工资」与「9 月发放工资」两笔分录的贷方分别是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q1"><span>应付职工薪酬 / 管理费用</span></label>
+        <label><input type="radio" name="ch9q1"><span>应付职工薪酬 / 银行存款</span></label>
+        <label><input type="radio" name="ch9q1"><span>银行存款 / 应付职工薪酬</span></label>
+        <label><input type="radio" name="ch9q1"><span>管理费用 / 应付职工薪酬</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="316 ÷ 1.13 = 280 万（不含税销售额），销项税 = 280 × 13% = 36.4 万。价税分离永远先除（1+税率）。">
+      <p class="q-t">2. 含税销售 316 万（13%），销项税额为？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q2"><span>41.08 万</span></label>
+        <label><input type="radio" name="ch9q2"><span>31.6 万</span></label>
+        <label><input type="radio" name="ch9q2"><span>36.4 万</span></label>
+        <label><input type="radio" name="ch9q2"><span>43.6 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="小规模纳税人季度销售额 ≤30 万免征增值税（2027 年底前），附加随增值税免。季度 28 万未超线，增值税为 0。">
+      <p class="q-t">3. 小规模纳税人某季度销售额 28 万（未开专票），该季度增值税约？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q3"><span>0（免征）</span></label>
+        <label><input type="radio" name="ch9q3"><span>0.28 万</span></label>
+        <label><input type="radio" name="ch9q3"><span>0.84 万</span></label>
+        <label><input type="radio" name="ch9q3"><span>3.64 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="试算平衡只能发现「借贷金额不平」类错误；漏记整笔业务两边同时少记，依然平衡。">
+      <p class="q-t">4. 试算平衡表平衡，能排除的错误是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q4"><span>整笔业务漏记</span></label>
+        <label><input type="radio" name="ch9q4"><span>科目用错但金额正确</span></label>
+        <label><input type="radio" name="ch9q4"><span>借贷方向同时颠倒</span></label>
+        <label><input type="radio" name="ch9q4"><span>单边金额抄错导致借贷不平</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="1" data-exp="应纳税所得额 = 80 + 7.5 + 2 − 1 = 88.5 万 ≤300 万，小微按 5%：约 4.4 万。">
+      <p class="q-t">5. 利润总额 80 万，招待费调增 7.5 万、罚款调增 2 万、国债利息调减 1 万，小微企业所得税约？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q5"><span>22.1 万（25%）</span></label>
+        <label><input type="radio" name="ch9q5"><span>4.4 万（5%）</span></label>
+        <label><input type="radio" name="ch9q5"><span>8.0 万</span></label>
+        <label><input type="radio" name="ch9q5"><span>2.0 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="增值税月销售额 10 万以下免征（季度 30 万），而「连续 12 个月超 500 万」是强制登记一般纳税人的门槛。">
+      <p class="q-t">6. 小规模纳税人两个关键数字是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q6"><span>免征线月 3 万；登记线 300 万</span></label>
+        <label><input type="radio" name="ch9q6"><span>免征线月 15 万；登记线 1000 万</span></label>
+        <label><input type="radio" name="ch9q6"><span>免征线月 10 万（季 30 万）；登记线 500 万</span></label>
+        <label><input type="radio" name="ch9q6"><span>免征线月 30 万；登记线 5000 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="每月减除费用 5,000 元是固定值，与工资高低、城市无关；五险一金与专项附加扣除在它之后依次扣减。">
+      <p class="q-t">7. 工资个税的「减除费用」是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q7"><span>每月 5,000 元固定额</span></label>
+        <label><input type="radio" name="ch9q7"><span>按城市最低工资</span></label>
+        <label><input type="radio" name="ch9q7"><span>工资的 20%</span></label>
+        <label><input type="radio" name="ch9q7"><span>每年 36,000 元</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="「无凭证不记账」：银行回单、发票等原始凭证是每笔记账的依据，也是后续报税与检查的支撑。">
+      <p class="q-t">8. 会计核算最根本的依据是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q8"><span>老板的口头指示</span></label>
+        <label><input type="radio" name="ch9q8"><span>上期报表</span></label>
+        <label><input type="radio" name="ch9q8"><span>同行业惯例</span></label>
+        <label><input type="radio" name="ch9q8"><span>真实合法的原始凭证</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交结业答卷</button>
+    <div class="q-result"></div>
+  </div>
+
+  <div class="badge-final" id="finalBadge">
+    <div class="medal">🏅</div>
+    <h3>实操课结业！</h3>
+    <p>你已经掌握「记账 + 报税」的完整闭环：凭证 → 分录 → 账簿 → 报表，增值税 → 所得税 → 个税。<br>下一步：拿一套真实账套练手，或考一个初级会计职称把知识变成证书。</p>
+  </div>
+
+  <h2>进阶路线</h2>
+  <div class="card">
+    <p><b>考证：</b>初级会计职称（《初级会计实务》+《经济法基础》，每年 5 月考试）是会计上岗的敲门砖；下一步中级会计职称、注册会计师（CPA）。</p>
+    <p><b>练手：</b>免费/低价财务软件（柠檬云等）建一个练习账套，把第 2 章 10 笔业务完整走一遍循环；或在电子税务局体验版操作申报流程。</p>
+    <p style="margin-bottom:0"><b>回到第一部：</b><a href="财务基础课程.html" style="color:var(--teal);font-weight:700">《财务基础课》</a>的报表分析与估值内容与本课互补——「会做账」+「会读报表」才是完整功力。继续进阶可学 <a href="财务软件实战.html" style="color:var(--teal);font-weight:700">《财务软件实战》</a>（第三部）：浏览器内嵌迷你财务软件，亲手走完建账到出报表全流程。</p>
+  </div>
+  <p class="footnote">本课程为原创整理的通用会计与税务知识，税率及优惠政策按 2026 年 10 月口径编写，实际申报请以主管税务机关当期规定为准。本课程不构成税务或法律建议。</p>
+</section>
+
+</main>
+</div>
+
+<script>
+/* ============ 章节与进度 ============ */
+var CHAPTERS=[
+ {id:'ch0',name:'开篇 · 实操课地图'},
+ {id:'ch1',name:'第1章 记账循环'},
+ {id:'ch2',name:'第2章 分录实战'},
+ {id:'ch3',name:'第3章 增值税'},
+ {id:'ch4',name:'第4章 月末结账'},
+ {id:'ch5',name:'第5章 税负全景'},
+ {id:'ch6',name:'第6章 申报日历'},
+ {id:'ch7',name:'第7章 企业所得税'},
+ {id:'ch8',name:'第8章 个税代扣'},
+ {id:'ch9',name:'第9章 指南与结业'}
+];
+var PKEY='acc-course-v1';
+var prog=loadProg();
+function loadProg(){try{var p=JSON.parse(localStorage.getItem(PKEY)||'{}');p.done=p.done||{};p.ck=p.ck||{};return p}catch(e){return{done:{},ck:{}}}}
+function saveProg(){try{localStorage.setItem(PKEY,JSON.stringify(prog))}catch(e){}}
+function markDone(id){prog.done[id]=true;saveProg();updateNav();updateProgress()}
+function updateNav(){document.querySelectorAll('nav.chapternav a').forEach(function(a){a.classList.toggle('done',!!prog.done[a.getAttribute('data-ch')])})}
+function updateProgress(){
+  var n=CHAPTERS.filter(function(c){return prog.done[c.id]}).length;
+  document.getElementById('progFill').style.width=(n/CHAPTERS.length*100)+'%';
+  document.getElementById('progText').textContent='已完成 '+n+' / '+CHAPTERS.length;
+}
+function switchChapter(id,scroll){
+  document.querySelectorAll('section.chapter').forEach(function(s){s.classList.remove('active')});
+  var sec=document.getElementById(id);if(!sec)return;
+  sec.classList.add('active');
+  document.querySelectorAll('nav.chapternav a').forEach(function(a){a.classList.toggle('active',a.getAttribute('data-ch')===id)});
+  if(scroll!==false)window.scrollTo({top:0,behavior:'smooth'});
+  if(history.replaceState)history.replaceState(null,'','#'+id);
+}
+(function(){
+  var nav=document.getElementById('chapterNav');
+  CHAPTERS.forEach(function(c){
+    var a=document.createElement('a');
+    a.href='#'+c.id;a.setAttribute('data-ch',c.id);
+    a.innerHTML='<span class="dot"></span>'+c.name;
+    a.addEventListener('click',function(e){e.preventDefault();switchChapter(c.id)});
+    nav.appendChild(a);
+  });
+  var hash=(location.hash||'#ch0').slice(1);
+  switchChapter(document.getElementById(hash)?hash:'ch0',false);
+  updateNav();updateProgress();
+})();
+document.getElementById('resetBtn').addEventListener('click',function(){
+  if(confirm('确定清空全部学习进度吗？此操作不可恢复。')){
+    prog={done:{},ck:{}};saveProg();updateNav();updateProgress();
+    document.querySelectorAll('.cklist input').forEach(function(i){i.checked=false});
+    document.querySelectorAll('.cklist label').forEach(function(l){l.classList.remove('checked')});
+    alert('进度已重置。');
+  }
+});
+document.querySelectorAll('[data-goto]').forEach(function(b){
+  b.addEventListener('click',function(){markDone(b.getAttribute('data-goto'));switchChapter(b.getAttribute('data-goto'))});
+});
+
+/* ============ Quiz ============ */
+document.querySelectorAll('.quiz').forEach(function(quiz){
+  var submit=quiz.querySelector('.q-submit'),result=quiz.querySelector('.q-result');
+  var passRate=parseFloat(quiz.getAttribute('data-pass')||'0.67');
+  var chId=quiz.getAttribute('data-quiz'),locked=false;
+  submit.addEventListener('click',function(){
+    if(locked)return;
+    var items=quiz.querySelectorAll('.q-item'),right=0,total=items.length;
+    items.forEach(function(it){
+      var a=parseInt(it.getAttribute('data-a'),10),picked=-1;
+      var labels=it.querySelectorAll('.q-opts label');
+      labels.forEach(function(l,i){if(l.querySelector('input').checked)picked=i;l.classList.remove('picked','answer')});
+      if(picked>=0)labels[picked].classList.add('picked');
+      it.classList.remove('right','wrong');
+      if(picked===a){it.classList.add('right');right++}
+      else{it.classList.add('wrong');if(labels[a])labels[a].classList.add('answer')}
+    });
+    var rate=right/total;
+    if(rate>=passRate){
+      result.textContent='✅ '+right+' / '+total+' 题正确 —— 本章通过！';
+      result.className='q-result pass';
+      markDone(chId);
+      if(chId==='ch9')document.getElementById('finalBadge').classList.add('show');
+      locked=true;
+    }else{
+      result.textContent='❌ '+right+' / '+total+' 题正确 —— 未达标（需 ≥'+Math.ceil(passRate*total)+' 题），看看解析再试一次。';
+      result.className='q-result fail';
+    }
+  });
+});
+
+/* ============ ch1 记账循环 ============ */
+var loopSteps=[
+ {t:'① 取得原始凭证',s:'发票/回单/工资表',d:'业务发生 → 取得合法原始凭证。这是整条流水线的原料：没有发票，后续一切记账和税前扣除都无从谈起。'},
+ {t:'② 填制记账凭证',s:'写借贷分录',d:'会计审核原始凭证，编写借贷分录（第二部的核心技能，第 2 章专练）。凭证要写清日期、摘要、科目、金额、附件张数。'},
+ {t:'③ 登记账簿',s:'日记账/明细账/总账',d:'按凭证逐笔（或汇总）登记三本账。财务软件里这步自动完成——录入凭证即登账。'},
+ {t:'④ 月末调整与对账',s:'计提/结转/对账',d:'计提工资折旧、结转成本损益、现金盘点、银行对账（第 4 章专讲）。这是权责发生制落地的环节。'},
+ {t:'⑤ 试算平衡',s:'借贷合计校验',d:'全部科目借方合计 = 贷方合计。不平衡必有错；平衡了才允许出报表。'},
+ {t:'⑥ 编制报表',s:'三表出炉',d:'从调整后的总账取数，生成资产负债表、利润表、现金流量表——也就是第一部课程教你看的那三张表。'}
+];
+(function(){
+  var box=document.getElementById('loopBox');if(!box)return;
+  loopSteps.forEach(function(st,i){
+    var b=document.createElement('button');
+    b.innerHTML=st.t+'<small>'+st.s+'</small>';
+    b.addEventListener('click',function(){
+      box.querySelectorAll('button').forEach(function(x){x.classList.remove('active')});b.classList.add('active');
+      document.getElementById('loopNote').innerHTML='<b>'+st.t+'：</b>'+st.d;
+    });
+    box.appendChild(b);
+  });
+})();
+
+/* ============ ch2 分录练习器 ============ */
+(function(){
+  var box=document.getElementById('drillBox');if(!box)return;
+  var ACCTS=['库存现金','银行存款','应收账款','原材料','库存商品','固定资产','累计折旧','短期借款','应付账款','应付职工薪酬','应交税费','实收资本','主营业务收入','主营业务成本','管理费用','销售费用'];
+  var drills=[
+   {biz:'收到股东投资 50 万元，已存入银行',dr:'银行存款',cr:'实收资本',tip:'股东投入使权益增加（贷方），资产增加（借方）。'},
+   {biz:'赊购生产用原材料 10 万元，货款未付',dr:'原材料',cr:'应付账款',tip:'材料入库（资产借增），欠供应商的钱（负债贷增）。'},
+   {biz:'用银行存款支付本月办公室房租 2 万元',dr:'管理费用',cr:'银行存款',tip:'房租是当期管理费用，银行存款减少。'},
+   {biz:'赊销商品一批，不含税售价 30 万元',dr:'应收账款',cr:'主营业务收入',tip:'货发了钱没到：应收增加，收入实现。'},
+   {biz:'结转上述已售商品的库存成本 18 万元',dr:'主营业务成本',cr:'库存商品',tip:'卖掉的货从资产（库存商品）转为费用（主营业务成本）——与收入配比。'},
+   {biz:'收到客户偿还的前欠货款 15 万元',dr:'银行存款',cr:'应收账款',tip:'钱到了、债收了：资产内部一换一，利润不动。'},
+   {biz:'用银行存款支付广告费 3 万元',dr:'销售费用',cr:'银行存款',tip:'广告费属于销售费用。'},
+   {biz:'购入办公电脑一批 1.2 万元，银行转账支付',dr:'固定资产',cr:'银行存款',tip:'电脑使用期超一年，是资产不是费用。'},
+   {biz:'从银行取得六个月期流动资金贷款 20 万元',dr:'银行存款',cr:'短期借款',tip:'钱进账（借），借款负债成立（贷）。'},
+   {biz:'月末计提本月办公设备折旧 1,000 元',dr:'管理费用',cr:'累计折旧',tip:'折旧进费用（借），固定资产价值通过「累计折旧」贷方减少——这就是利润被「估计」影响的地方。'}
+  ];
+  var rightCount=0;
+  drills.forEach(function(d,i){
+    var div=document.createElement('div');div.className='drill';
+    var opts='<option value="">— 请选择科目 —</option>'+ACCTS.map(function(a){return '<option>'+a+'</option>'}).join('');
+    div.innerHTML='<div class="biz">'+(i+1)+'. '+d.biz+'</div>'+
+      '<div class="pair">'+
+        '<div><div class="kv" style="margin:0 0 4px">借方（资产/费用↑）</div><select class="d-dr">'+opts+'</select></div>'+
+        '<div><div class="kv" style="margin:0 0 4px">贷方（负债/权益/收入↑）</div><select class="d-cr">'+opts+'</select></div>'+
+      '</div>'+
+      '<button class="check">判定</button><div class="fb"></div>';
+    box.appendChild(div);
+    div.querySelector('.check').addEventListener('click',function(){
+      var drSel=div.querySelector('.d-dr'),crSel=div.querySelector('.d-cr');
+      var dr=drSel.value,cr=crSel.value,fb=div.querySelector('.fb');
+      fb.className='fb show';
+      if(!dr||!cr){fb.classList.add('tip');fb.textContent='先把借贷两方科目都选好再判定。';return}
+      if(dr===d.dr&&cr===d.cr){
+        fb.classList.add('ok');fb.textContent='✓ 正确！'+d.tip;
+        if(!div.dataset.ok){div.dataset.ok='1';rightCount++}
+      }else if(dr===d.cr&&cr===d.dr){
+        fb.classList.add('no');fb.textContent='✗ 两个科目选对了，但方向放反了——'+d.tip;
+      }else{
+        fb.classList.add('no');fb.textContent='✗ 再想想：'+d.biz+' 让什么增加了（借方）、什么来源增加了（贷方）？'+d.tip;
+      }
+      document.getElementById('drillScore').innerHTML='<b>进度：'+rightCount+' / '+drills.length+' 全对</b>'+(rightCount===drills.length?' —— 完整走完一个月的记账骨架，进入下一章！':'。');
+    });
+  });
+})();
+
+/* ============ ch3 增值税对比 ============ */
+(function(){
+  function upd(){
+    var sale=parseFloat(document.getElementById('v_sale').value)||0;
+    var rate=parseFloat(document.getElementById('v_rate').value)/100;
+    var input=parseFloat(document.getElementById('v_in').value)||0;
+    var net=sale/(1+rate);
+    var output=net*rate;
+    var genPay=Math.max(0,output-input);
+    document.getElementById('v_gen').textContent=genPay.toFixed(2);
+    document.getElementById('v_gen_d').textContent='不含税 '+net.toFixed(1)+' 万 × '+Math.round(rate*100)+'% = 销项 '+output.toFixed(2)+' 万 − 进项 '+input.toFixed(2)+' 万';
+    var q=sale/4;
+    var sNet=sale/1.01;
+    if(q<=30){
+      document.getElementById('v_small').textContent='0（免征）';
+      document.getElementById('v_small_d').textContent='季度销售额 '+q.toFixed(1)+' 万 ≤ 30 万，免征增值税';
+    }else{
+      document.getElementById('v_small').textContent=(sNet*0.01).toFixed(2);
+      document.getElementById('v_small_d').textContent='不含税 '+sNet.toFixed(1)+' 万 × 1%（3% 减按 1%）';
+    }
+    var v=document.getElementById('v_verdict');
+    if(sale>500){v.innerHTML='⚠️ 年销售额已超 <b>500 万</b>：按规必须登记为一般纳税人，「小规模算法」仅供对比参考。'}
+    else{v.innerHTML='当前规模两种身份都可选：进项可抵扣越多，一般纳税人越划算；若主要客户是小规模/终端个人，小规模税负通常更低。';}
+  }
+  ['v_sale','v_rate','v_in'].forEach(function(id){
+    var el=document.getElementById(id);el.addEventListener(el.tagName==='SELECT'?'change':'input',upd);
+  });
+  upd();
+})();
+
+/* ============ ch4 余额调节表 ============ */
+(function(){
+  var boxes=document.querySelectorAll('.rec');if(!boxes.length)return;
+  var co0=92000,bk0=105000;
+  function upd(){
+    var co=co0,bk=bk0;
+    boxes.forEach(function(c){
+      if(c.checked){co+=parseFloat(c.getAttribute('data-co')||0);bk+=parseFloat(c.getAttribute('data-bk')||0)}
+    });
+    document.getElementById('rec_co').textContent=co.toLocaleString();
+    document.getElementById('rec_bk').textContent=bk.toLocaleString();
+    var v=document.getElementById('rec_verdict');
+    if(co===bk&&document.querySelectorAll('.rec:checked').length===4){v.innerHTML='✅ 调节后双方余额都是 <b>'+co.toLocaleString()+'</b> ——「银行已收付、企业未记」调企业侧，「企业已收付、银行未记」调银行侧，各自补上对方已知的部分。'}
+    else{v.textContent='继续勾选，观察两侧余额如何靠拢（勾选全部四笔即收敛）。'}
+  }
+  boxes.forEach(function(c){c.addEventListener('change',upd)});upd();
+})();
+
+/* ============ ch5 税单估算器 ============ */
+(function(){
+  function upd(){
+    var type=document.getElementById('t_type').value;
+    var rev=parseFloat(document.getElementById('t_rev').value)||0;
+    var profit=parseFloat(document.getElementById('t_profit').value)||0;
+    var gm=parseFloat(document.getElementById('t_gm').value)/100||0.25;
+    var vat,rows;
+    if(type==='svc'){
+      var q=rev/4;
+      vat=q<=30?0:rev*0.01;
+      rows=[['增值税（1% 或免征）',vat,'小规模按 1%；季度 ≤30 万免征']];
+    }else if(type==='trade'){
+      vat=Math.max(0,rev*gm*0.13);
+      rows=[['增值税（≈增值额×13%）',vat,'按毛利估算增值部分，未考虑期末留抵']];
+    }else{
+      vat=Math.max(0,rev*0.06*0.7);
+      rows=[['增值税（≈6%×70%）',vat,'软件业进项少，按七成销项估算']];
+    }
+    var isSmall=profit<=300&&profit>=0;
+    var surtax=vat*0.12*(isSmall?0.5:1);
+    var cit=profit<=0?0:(isSmall?profit*0.05:profit*0.25);
+    rows.push(['城建税及附加（12%'+(isSmall?' 减半':'')+'）',surtax,'随增值税缴纳']);
+    rows.push(['企业所得税（'+(isSmall?'小微 5%':'法定 25%')+'）',cit,profit<=0?'亏损年度无需缴纳（可结转弥补）':(isSmall?'应纳税所得额 ≤300 万适用':'超小微条件按法定税率')]);
+    var total=vat+surtax+cit;
+    var html='<table class="t" style="margin:0"><tr><th>税种</th><th class="n">估算（万元/年）</th><th>说明</th></tr>';
+    rows.forEach(function(r){html+='<tr><td>'+r[0]+'</td><td class="n">'+r[1].toFixed(2)+'</td><td style="font-size:13px;color:var(--ink-soft)">'+r[2]+'</td></tr>'});
+    html+='<tr class="tot"><td>合计</td><td class="n">'+total.toFixed(2)+'</td><td>综合税负率 ≈ '+(rev>0?(total/rev*100).toFixed(1):0)+'%（对收入）</td></tr></table>';
+    document.getElementById('taxBill').innerHTML=html;
+  }
+  ['t_type','t_rev','t_profit','t_gm'].forEach(function(id){
+    var el=document.getElementById(id);el.addEventListener(el.tagName==='SELECT'?'change':'input',upd);
+  });
+  upd();
+})();
+
+/* ============ ch6 申报日历 ============ */
+var calData={
+ 1:['申报 12 月增值税及附加（15 日前）','企业所得税四季度预缴（15 日前）','代扣代缴 12 月个税'],
+ 2:['申报 1 月增值税及附加','代扣代缴 1 月个税','年度账务收尾、准备汇算'],
+ 3:['申报 2 月增值税及附加','代扣代缴个税','3 月 1 日起：上年度个税经营所得汇算开始','着手企业所得税汇算清缴'],
+ 4:['申报 3 月增值税及附加 + 一季度预缴企业所得税（15 日前）','个税综合所得年度汇算进行中（3.1–6.30）'],
+ 5:['申报 4 月增值税及附加','⚠️ 5 月 31 日前完成企业所得税年度汇算清缴'],
+ 6:['申报 5 月增值税及附加','⚠️ 6 月 30 日前完成工商年报','个税年度汇算 6 月 30 日截止'],
+ 7:['申报 6 月增值税及附加 + 二季度预缴企业所得税','半年账务盘点：利润 vs 预提税款'],
+ 8:['申报 7 月增值税及附加','年中检查：进项发票是否都已勾选认证'],
+ 9:['申报 8 月增值税及附加','筹划下年度小微企业身份与优惠条件'],
+ 10:['申报 9 月增值税及附加 + 三季度预缴企业所得税'],
+ 11:['申报 10 月增值税及附加','年末冲票窗口：催收成本发票'],
+ 12:['申报 11 月增值税及附加','年度关账前调整：计提、盘点、坏账','预约年度审计（如需要）']
+};
+(function(){
+  var box=document.getElementById('calMtx');if(!box)return;
+  for(var m=1;m<=12;m++){
+    (function(m){
+      var b=document.createElement('button');b.textContent=m+' 月';
+      b.addEventListener('click',function(){
+        box.querySelectorAll('button').forEach(function(x){x.classList.remove('active')});b.classList.add('active');
+        document.getElementById('calNote').innerHTML='<b>'+m+' 月要做的事：</b><br>'+calData[m].map(function(x){return '· '+x}).join('<br>');
+      });
+      box.appendChild(b);
+    })(m);
+  }
+})();
+
+/* ============ ch7 汇算练习器 ============ */
+(function(){
+  function upd(){
+    var rev=parseFloat(document.getElementById('h_rev').value)||0;
+    var profit=parseFloat(document.getElementById('h_profit').value)||0;
+    var ent=parseFloat(document.getElementById('h_ent').value)||0;
+    var fine=parseFloat(document.getElementById('h_fine').value)||0;
+    var bond=parseFloat(document.getElementById('h_bond').value)||0;
+    var limit=Math.min(ent*0.6,rev*0.005);
+    var adjEnt=Math.max(0,ent-limit);
+    var tni=profit+adjEnt+fine-bond;
+    var isSmall=tni<=300;
+    var cit=Math.max(0,tni)*(isSmall?0.05:0.25);
+    document.getElementById('settleOut').innerHTML=
+     '<table class="t" style="margin:0">'+
+     '<tr><th>步骤</th><th class="n">金额（万元）</th></tr>'+
+     '<tr><td>利润总额</td><td class="n">'+profit.toFixed(2)+'</td></tr>'+
+     '<tr><td>＋ 招待费调增（发生 '+ent.toFixed(2)+'，限额 min(60%='+ (ent*0.6).toFixed(2)+', 5‰='+ (rev*0.005).toFixed(2)+') = '+limit.toFixed(2)+'）</td><td class="n">+'+adjEnt.toFixed(2)+'</td></tr>'+
+     '<tr><td>＋ 行政罚款调增</td><td class="n">+'+fine.toFixed(2)+'</td></tr>'+
+     '<tr><td>－ 国债利息调减</td><td class="n">−'+bond.toFixed(2)+'</td></tr>'+
+     '<tr class="sum"><td>＝ 应纳税所得额</td><td class="n">'+tni.toFixed(2)+'</td></tr>'+
+     '<tr class="tot"><td>应纳企业所得税（'+(tni<=300?'小微 5%':'法定 25%')+'）</td><td class="n">'+cit.toFixed(2)+'</td></tr>'+
+     '</table>';
+  }
+  ['h_rev','h_profit','h_ent','h_fine','h_bond'].forEach(function(id){document.getElementById(id).addEventListener('input',upd)});
+  upd();
+})();
+
+/* ============ ch8 个税计算器 ============ */
+(function(){
+  var BRACKETS=[[36000,0.03,0],[144000,0.1,2520],[300000,0.2,16920],[420000,0.25,31920],[660000,0.3,52920],[960000,0.35,85920],[Infinity,0.45,181920]];
+  function taxOf(tni){
+    for(var i=0;i<BRACKETS.length;i++){if(tni<=BRACKETS[i][0])return tni*BRACKETS[i][1]-BRACKETS[i][2]}
+    return 0;
+  }
+  function fmt(n){return n.toLocaleString('zh-CN',{maximumFractionDigits:0})}
+  function upd(){
+    var sal=parseFloat(document.getElementById('p_sal').value)||0;
+    var ins=parseFloat(document.getElementById('p_ins').value)||0;
+    var ded=parseFloat(document.getElementById('p_ded').value)||0;
+    var monthly=Math.max(0,sal-5000-ins-ded);
+    var html='<tr><th>月份</th><th class="n">累计应纳税所得额</th><th class="n">当月预扣个税</th><th class="n">当月到手</th></tr>';
+    var paid=0,rows=[];
+    for(var m=1;m<=12;m++){
+      var cum=monthly*m;
+      var due=Math.max(0,taxOf(cum));
+      var cur=due-paid;paid=due;
+      rows.push([m,cum,cur,sal-ins-cur]);
+    }
+    rows.forEach(function(r){
+      html+='<tr><td>'+r[0]+' 月</td><td class="n">'+fmt(r[1])+'</td><td class="n">'+fmt(Math.max(0,r[2]))+'</td><td class="n">'+fmt(r[3])+'</td></tr>';
+    });
+    var totalTax=paid;
+    var annualNet=(sal-ins)*12-totalTax;
+    html+='<tr class="tot"><td>全年</td><td class="n">—</td><td class="n">'+fmt(totalTax)+'</td><td class="n">'+fmt(annualNet)+'</td></tr>';
+    document.getElementById('p_table').innerHTML=html;
+    var eff=totalTax/((sal-ins)*12)*100;
+    document.getElementById('p_summary').innerHTML='全年预扣个税 <b>'+fmt(totalTax)+' 元</b>；税后到手 <b>'+fmt(annualNet)+' 元</b>；平均实际税率约 <b>'+(isFinite(eff)?eff.toFixed(1):0)+'%</b>。注意看表格：累计所得跨过 36,000 / 144,000 等档位的月份，预扣额会「跳档」。';
+  }
+  ['p_sal','p_ins','p_ded'].forEach(function(id){document.getElementById(id).addEventListener('input',upd)});
+  upd();
+})();
+
+/* ============ ch9 清单 ============ */
+(function(){
+  var list=document.getElementById('cklist');if(!list)return;
+  var inputs=list.querySelectorAll('input');
+  inputs.forEach(function(inp){
+    inp.checked=!!prog.ck[inp.getAttribute('data-k')];
+    if(inp.checked)inp.closest('label').classList.add('checked');
+    inp.addEventListener('change',function(){
+      prog.ck[inp.getAttribute('data-k')]=inp.checked;saveProg();
+      inp.closest('label').classList.toggle('checked',inp.checked);
+      var n=list.querySelectorAll('input:checked').length;
+      document.getElementById('ckSummary').textContent=n>=10?'🎉 十项全部完成——这个月的账务闭环收工！':'已完成 '+n+' / 10 项。';
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>从 0 到 1 掌握财务基础 · 交互课程</title>
+<style>
+:root{--navy:#16324f;--navy-deep:#0f2439;--gold:#c9a227;--gold-soft:#f6efdb;--teal:#0f766e;--teal-soft:#e6f4f2;--red:#b4433a;--red-soft:#fbeeec;--ink:#243342;--ink-soft:#5b6b7c;--line:#e3e8ee;--bg:#f4f6f8;--card:#fff}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;background:var(--bg);color:var(--ink);line-height:1.8;font-size:15.5px}
+/* ---------- 布局 ---------- */
+.app{display:flex;min-height:100vh}
+aside.sidebar{width:250px;flex:none;background:var(--navy-deep);color:#c8d4e0;position:sticky;top:0;height:100vh;overflow-y:auto;padding:22px 0 30px}
+aside .logo{padding:0 20px 16px;font-size:18px;font-weight:800;color:#fff;border-bottom:1px solid rgba(255,255,255,.12)}
+aside .logo span{color:var(--gold)}
+.prog-wrap{padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.12)}
+.prog-bar{height:8px;background:rgba(255,255,255,.15);border-radius:99px;overflow:hidden}
+.prog-bar div{height:100%;width:0;background:linear-gradient(90deg,var(--gold),#e6c55a);border-radius:99px;transition:width .5s}
+.prog-wrap small{display:block;margin-top:6px;font-size:12px;color:#8fa3b5}
+nav.chapternav a{display:flex;align-items:center;gap:10px;padding:9px 20px;color:#aebfcd;text-decoration:none;font-size:13.5px;border-left:3px solid transparent}
+nav.chapternav a:hover{color:#fff;background:rgba(255,255,255,.06)}
+nav.chapternav a.active{color:#fff;background:rgba(255,255,255,.1);border-left-color:var(--gold)}
+nav.chapternav .dot{width:9px;height:9px;flex:none;border-radius:50%;background:#3d5468}
+nav.chapternav a.done .dot{background:var(--gold)}
+.reset{margin:18px 20px 0;padding:7px 0;width:calc(100% - 40px);background:none;border:1px solid rgba(255,255,255,.25);color:#8fa3b5;border-radius:8px;font-size:12px;cursor:pointer}
+.reset:hover{color:#fff;border-color:#fff}
+main{flex:1;min-width:0;padding:38px 44px 90px;max-width:920px;margin:0 auto}
+@media(max-width:900px){
+  .app{flex-direction:column}
+  aside.sidebar{width:100%;height:auto;position:static;padding-bottom:10px}
+  nav.chapternav{display:flex;overflow-x:auto;padding:0 10px}
+  nav.chapternav a{flex:none;border-left:none;border-bottom:3px solid transparent;padding:8px 12px}
+  nav.chapternav a.active{border-bottom-color:var(--gold)}
+  aside .prog-wrap,aside .reset{display:none}
+  main{padding:26px 18px 70px}
+}
+/* ---------- 章节通用 ---------- */
+section.chapter{display:none;animation:fadein .35s}
+section.chapter.active{display:block}
+@keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.chapter-tag{display:inline-block;font-size:12px;font-weight:700;color:var(--gold);background:var(--gold-soft);border-radius:6px;padding:2px 10px;margin-bottom:10px;letter-spacing:1px}
+h1{font-size:29px;color:var(--navy);line-height:1.4;margin-bottom:6px}
+h2{font-size:21px;color:var(--navy);margin:36px 0 12px}
+h2::before{content:"";display:inline-block;width:7px;height:18px;background:var(--gold);border-radius:3px;margin-right:10px;vertical-align:-1px}
+h3{font-size:16.5px;color:var(--navy);margin:22px 0 8px}
+p{margin-bottom:12px}
+.lead{color:var(--ink-soft);font-size:16px}
+ul.pl{padding-left:22px;margin-bottom:12px}
+ul.pl li{margin-bottom:7px}
+b{color:var(--ink)}
+.hl{background:linear-gradient(transparent 62%,#f7e8a8 62%)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin:16px 0;box-shadow:0 1px 3px rgba(22,50,79,.05)}
+.note{background:var(--gold-soft);border-left:4px solid var(--gold);border-radius:0 12px 12px 0;padding:13px 18px;margin:16px 0;font-size:14.5px}
+.note b{color:#7a5f0e}
+.ok-note{background:var(--teal-soft);border-left-color:var(--teal)}
+.ok-note b{color:var(--teal)}
+.warn-note{background:var(--red-soft);border-left-color:var(--red)}
+.warn-note b{color:var(--red)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.chip{display:inline-block;font-size:12px;border-radius:99px;padding:2px 11px;font-weight:700}
+.chip.good{background:var(--teal-soft);color:var(--teal)}
+.chip.warn{background:var(--gold-soft);color:#8a6d14}
+.chip.bad{background:var(--red-soft);color:var(--red)}
+table.t{width:100%;border-collapse:collapse;font-size:14px;background:#fff;border-radius:12px;overflow:hidden;margin:14px 0}
+table.t th{background:var(--navy);color:#fff;padding:9px 12px;text-align:left;font-weight:600}
+table.t td{padding:8px 12px;border-bottom:1px solid var(--line)}
+table.t tr:last-child td{border-bottom:none}
+table.t td.n,table.t th.n{text-align:right;font-variant-numeric:tabular-nums}
+table.t tr.sum td{font-weight:700;background:#f2f5f8}
+table.t tr.tot td{font-weight:700;background:var(--gold-soft)}
+details{border:1px solid var(--line);border-radius:10px;background:#fff;margin:8px 0;overflow:hidden}
+details summary{cursor:pointer;padding:11px 16px;font-weight:600;color:var(--navy);font-size:14.5px;list-style:none;display:flex;align-items:center;gap:8px}
+details summary::before{content:"▸";color:var(--gold);transition:transform .2s}
+details[open] summary::before{transform:rotate(90deg)}
+details .dbody{padding:0 16px 13px;font-size:14px;color:var(--ink-soft)}
+.btn{display:inline-block;padding:10px 22px;border-radius:10px;border:none;cursor:pointer;font-size:15px;font-weight:700;text-decoration:none}
+.btn-primary{background:var(--navy);color:#fff}
+.btn-primary:hover{background:var(--navy-deep)}
+.btn-ghost{background:#fff;color:var(--navy);border:1.5px solid var(--line)}
+.btn-ghost.active{border-color:var(--teal);background:var(--teal-soft);color:var(--teal)}
+.pill-btns{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0}
+.pill-btns .btn-ghost{border-radius:99px;padding:8px 16px;font-size:13.5px}
+.chnav{display:flex;justify-content:space-between;gap:12px;margin-top:44px}
+.chnav .btn{font-size:14px}
+/* ---------- 测验 ---------- */
+.quiz{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:22px;margin:26px 0}
+.quiz-title{font-size:16px;font-weight:800;color:var(--navy);margin-bottom:14px}
+.q-item{border-top:1px dashed var(--line);padding:15px 0 6px}
+.q-item:first-of-type{border-top:none}
+.q-t{font-weight:600;margin-bottom:10px}
+.q-opts label{display:flex;gap:9px;align-items:flex-start;padding:8px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;cursor:pointer;font-size:14px}
+.q-opts label:hover{background:#f7f9fb}
+.q-item.right .q-opts label.picked{border-color:var(--teal);background:var(--teal-soft)}
+.q-item.wrong .q-opts label.picked{border-color:var(--red);background:var(--red-soft)}
+.q-item.wrong .q-opts label.answer{border-color:var(--teal)}
+.q-exp{display:none;font-size:13.5px;padding:9px 13px;border-radius:8px;margin:6px 0 10px}
+.q-item.right .q-exp{display:block;background:var(--teal-soft);color:var(--teal)}
+.q-item.wrong .q-exp{display:block;background:var(--red-soft);color:var(--red)}
+.q-result{margin-top:14px;font-weight:700;font-size:15px}
+.q-result.pass{color:var(--teal)} .q-result.fail{color:var(--red)}
+/* ---------- 交互组件 ---------- */
+.taccount{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:12px 0;max-width:560px}
+.taccount div{padding:10px 16px;font-size:14px}
+.taccount .th{background:var(--navy);color:#fff;font-weight:700;text-align:center}
+.taccount .l{border-right:1px solid var(--line)}
+.taccount .amt{color:var(--teal);font-weight:700}
+.eqbar{display:flex;gap:14px;flex-wrap:wrap;margin:14px 0}
+.eqbox{flex:1;min-width:140px;background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:13px 16px;text-align:center}
+.eqbox b{display:block;font-size:22px;color:var(--navy);font-variant-numeric:tabular-nums}
+.eqbox span{font-size:13px;color:var(--ink-soft)}
+.eqbox.flash{border-color:var(--gold);background:var(--gold-soft)}
+.wf{display:flex;align-items:flex-end;gap:6px;height:230px;padding:14px 6px 0;border-bottom:2px solid var(--navy);overflow-x:auto}
+.wf .col{flex:1;min-width:52px;display:flex;flex-direction:column;justify-content:flex-end;height:100%;position:relative;text-align:center}
+.wf .bar{width:100%;border-radius:5px 5px 0 0;position:relative}
+.wf .bar.b-pos{background:linear-gradient(180deg,#2a7f8f,#1d6472)}
+.wf .bar.b-neg{background:#d9857c}
+.wf .bar.b-tot{background:linear-gradient(180deg,var(--gold),#b18f1e)}
+.wf .v{font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:3px;white-space:nowrap}
+.wf .n{font-size:11px;color:var(--ink-soft);position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:5px;white-space:nowrap}
+.slider-row{display:grid;grid-template-columns:130px 1fr 84px;gap:12px;align-items:center;margin:12px 0}
+.slider-row label{font-size:14px;color:var(--ink-soft)}
+.slider-row output{font-weight:800;color:var(--navy);text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--teal)}
+input[type=number],input[type=text]{padding:9px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px;font-variant-numeric:tabular-nums;width:100%;background:#fbfcfd}
+input[type=number]:focus{outline:2px solid var(--teal);background:#fff}
+.infield{margin-bottom:12px}
+.infield label{display:block;font-size:13px;color:var(--ink-soft);margin-bottom:4px}
+.bigval{font-size:34px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums;line-height:1.2}
+.kv{font-size:13.5px;color:var(--ink-soft);margin-top:6px}
+.ratio-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px 16px}
+.ratio-card h4{font-size:14.5px;color:var(--navy)}
+.ratio-card .f{font-size:12px;color:#8b98a6;margin:1px 0 7px}
+.ratio-card .v{font-size:24px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums}
+.ratio-card p{font-size:12.5px;color:var(--ink-soft);margin-top:7px;line-height:1.6;margin-bottom:0}
+.mtx{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+@media(max-width:700px){.mtx{grid-template-columns:repeat(2,1fr)}}
+.mtx button{padding:12px 6px;border-radius:10px;border:1.5px solid var(--line);background:#fff;cursor:pointer;font-size:13px;font-weight:700;color:var(--navy)}
+.mtx button.active{border-color:var(--teal);background:var(--teal-soft)}
+.mtx .sg{display:block;font-size:15px;font-weight:800;margin-bottom:3px}
+.pos{color:var(--teal)} .neg{color:var(--red)}
+.mini{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+.mini .mh{background:#eef2f6;padding:9px 14px;font-weight:700;color:var(--navy);font-size:14px}
+.mini ul{list-style:none;padding:10px 14px}
+.mini li{font-size:13.5px;padding:6px 0;border-bottom:1px dashed var(--line);display:flex;justify-content:space-between;gap:10px}
+.mini li:last-child{border-bottom:none}
+.delta{font-weight:700;white-space:nowrap}
+.delta.up{color:var(--teal)} .delta.down{color:var(--red)} .delta.zero{color:var(--ink-soft)}
+.fraud-case .choice{display:flex;gap:10px;margin-top:10px}
+.fraud-case .choice button{flex:1;padding:8px;border-radius:9px;border:1.5px solid var(--line);background:#fff;cursor:pointer;font-weight:700;font-size:14px}
+.fraud-case .choice button.right{border-color:var(--teal);background:var(--teal-soft);color:var(--teal)}
+.fraud-case .choice button.wrong{border-color:var(--red);background:var(--red-soft);color:var(--red)}
+.fraud-case .fb{display:none;margin-top:10px;font-size:13.5px;padding:10px 13px;border-radius:9px;background:#f2f5f8;color:var(--ink-soft)}
+.fraud-case .fb.show{display:block}
+.cklist label{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;cursor:pointer;font-size:14px;background:#fff}
+.cklist label:hover{background:#f7f9fb}
+.cklist input{accent-color:var(--teal);margin-top:5px}
+.cklist label.checked{background:var(--teal-soft);border-color:var(--teal);text-decoration:line-through;color:var(--ink-soft)}
+.footnote{font-size:12.5px;color:#9aa7b4;margin-top:30px;border-top:1px solid var(--line);padding-top:14px}
+.badge-final{display:none;text-align:center;padding:36px 20px;border-radius:16px;background:linear-gradient(135deg,var(--navy-deep),var(--navy));color:#fff;margin:22px 0}
+.badge-final.show{display:block;animation:fadein .6s}
+.badge-final .medal{font-size:56px}
+.badge-final h3{color:var(--gold);margin:10px 0 6px}
+.badge-final p{color:#b9c9d8;font-size:14px}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ================= 侧栏 ================= -->
+<aside class="sidebar">
+  <div class="logo">财务<span>·</span>基础课 <small style="display:block;font-size:11px;font-weight:400;color:#8fa3b5">从 0 到 1 · 交互学习</small></div>
+  <div class="prog-wrap">
+    <div class="prog-bar"><div id="progFill"></div></div>
+    <small id="progText">已完成 0 / 13</small>
+  </div>
+  <nav class="chapternav" id="chapterNav"></nav>
+  <button class="reset" id="resetBtn">重置学习进度</button>
+</aside>
+
+<!-- ================= 正文 ================= -->
+<main id="main">
+
+<!-- ========== 第0章 开篇 ========== -->
+<section class="chapter" id="ch0">
+  <span class="chapter-tag">开篇</span>
+  <h1>欢迎来到财务基础课</h1>
+  <p class="lead">这门课带你从「完全零基础」走到「能独立翻开一份上市公司年报并做出自己的判断」。全程只需初中数学，靠的是理解，不是背诵。</p>
+
+  <h2>课程地图</h2>
+  <table class="t">
+    <tr><th>模块</th><th>章节</th><th>你将学会</th></tr>
+    <tr><td rowspan="2"><b>语言层</b></td><td>第1章 财务的语言</td><td>六大要素、会计恒等式、借贷记账</td></tr>
+    <tr><td>第2章 利润与现金</td><td>权责发生制，为什么利润 ≠ 现金</td></tr>
+    <tr><td rowspan="4"><b>报表层</b></td><td>第3章 利润表</td><td>读懂公司的「成绩单」</td></tr>
+    <tr><td>第4章 资产负债表</td><td>看懂公司的「家底照片」</td></tr>
+    <tr><td>第5章 现金流量表</td><td>追踪公司的「血液循环」</td></tr>
+    <tr><td>第6章 三表联动</td><td>一笔业务如何在三张表同时留痕</td></tr>
+    <tr><td rowspan="3"><b>分析层</b></td><td>第7章 比率与杜邦分析</td><td>四大类比率体检 + ROE 三分解</td></tr>
+    <tr><td>第8章 货币时间价值</td><td>复利、现值、NPV、投资决策</td></tr>
+    <tr><td>第9章 估值入门</td><td>PE / PB / 股息率与安全边际</td></tr>
+    <tr><td rowspan="3"><b>实战层</b></td><td>第10章 读懂一份年报</td><td>去哪找、先看什么、10 分钟速读法</td></tr>
+    <tr><td>第11章 识别财务舞弊</td><td>五个经典危险信号</td></tr>
+    <tr><td>第12章 结业综合测验</td><td>检验学习成果，领取进阶路线</td></tr>
+  </table>
+
+  <h2>怎么学最有效</h2>
+  <div class="grid3">
+    <div class="card"><h3>🧪 先动手再记忆</h3><p style="margin:0;font-size:14px;color:var(--ink-soft)">每章都有交互演示，先玩一遍再读文字——财务是「练」出来的，不是「背」出来的。</p></div>
+    <div class="card"><h3>✅ 过测验解锁下一章</h3><p style="margin:0;font-size:14px;color:var(--ink-soft)">每章末有 3 题小测，答对 2 题以上即算通过。答错会显示解析，可以反复做。</p></div>
+    <div class="card"><h3>💾 进度自动保存</h3><p style="margin:0;font-size:14px;color:var(--ink-soft)">学习进度存在浏览器本地，关掉页面再打开，从上次的位置继续。</p></div>
+  </div>
+
+  <div class="note"><b>贯穿案例：</b>全课程使用同一家虚构公司「示例科技有限公司」（一家软件与硬件结合的科技企业）2025 年报表数据，所有数字前后勾稽一致。学完后你将完整复盘它的生意。</div>
+  <div style="text-align:center;margin-top:30px"><button class="btn btn-primary" style="padding:13px 40px;font-size:16px" data-goto="ch1">开始学习第 1 章 →</button></div>
+</section>
+
+<!-- ========== 第1章 财务的语言 ========== -->
+<section class="chapter" id="ch1">
+  <span class="chapter-tag">第一章 · 语言层</span>
+  <h1>财务的语言：要素、恒等式与借贷记账</h1>
+  <p class="lead">财务是一套描述商业世界的语言。任何公司——楼下咖啡店或万亿巨头——都能用同样的词汇描述：<b>它有什么、欠什么、赚什么</b>。</p>
+
+  <h2>1.1 六大会计要素</h2>
+  <p>全部会计语言只围绕六个词。前三个描述<b>某个时点</b>的状态（像照片），后三个描述<b>某段期间</b>的流动（像录像）：</p>
+  <table class="t">
+    <tr><th>要素</th><th>一句话理解</th><th>性质</th></tr>
+    <tr><td><b>资产</b></td><td>公司拥有的、能带来未来利益的东西：现金、设备、存货、客户欠的账</td><td rowspan="3">存量 · 照片<br>（资产负债表）</td></tr>
+    <tr><td><b>负债</b></td><td>公司欠别人的：银行借款、供应商的账款、没发的工资</td></tr>
+    <tr><td><b>所有者权益</b></td><td>扣掉负债后真正属于股东的部分，即「净资产」</td></tr>
+    <tr><td><b>收入</b></td><td>卖产品/服务换来的经济利益流入</td><td rowspan="3">流量 · 录像<br>（利润表）</td></tr>
+    <tr><td><b>费用</b></td><td>为赚取收入而付出的代价：成本、工资、房租、利息</td></tr>
+    <tr><td><b>利润</b></td><td>收入 − 费用，一段时间赚到的净额</td></tr>
+  </table>
+
+  <h2>1.2 会计恒等式：整个财务世界的地基</h2>
+  <div class="card" style="text-align:center">
+    <div style="font-size:26px;font-weight:800;color:var(--navy)">资 产 ＝ 负 债 ＋ 所有者权益</div>
+    <p class="kv">左边：钱变成了什么 &nbsp;·&nbsp; 右边：钱从哪里来（借来的 / 股东的）</p>
+  </div>
+  <p>这个等式<b>永远成立</b>，不是巧合，而是因为记账规则（复式记账）强制它成立。点下面几笔业务，看一家新公司如何从零开始：</p>
+  <div class="pill-btns" id="scaleBtns"></div>
+  <div class="eqbar" id="eqbar">
+    <div class="eqbox" id="eqA"><b>0</b><span>资产（万元）</span></div>
+    <div class="eqbox" id="eqL"><b>0</b><span>负债（万元）</span></div>
+    <div class="eqbox" id="eqE"><b>0</b><span>所有者权益（万元）</span></div>
+  </div>
+  <div class="note" id="scaleNote">点击上方按钮，从第一笔业务开始。</div>
+
+  <h2>1.3 借贷记账法：「借」和「贷」只是左右</h2>
+  <p>中文里「借」「贷」二字容易误导——它们<b>不是</b>借钱贷款的意思，只是账户的<b>左边和右边</b>两个方位名。规则只有两条：</p>
+  <div class="grid2">
+    <div class="card"><h3>📌 有借必有贷</h3><p style="margin:0;font-size:14.5px;color:var(--ink-soft)">每笔业务至少同时记入两个账户——一方记「借」（左），一方记「贷」（右）。</p></div>
+    <div class="card"><h3>📌 借贷必相等</h3><p style="margin:0;font-size:14.5px;color:var(--ink-soft)">借方总金额 = 贷方总金额。这就是恒等式永远成立的机械保证。</p></div>
+  </div>
+  <p>方向规则：<b>资产、费用</b>增加记借方，减少记贷方；<b>负债、权益、收入</b>相反。选一笔业务试试：</p>
+  <div class="infield" style="max-width:420px">
+    <select id="ledgerSel" class="btn-ghost" style="width:100%;padding:11px;border-radius:10px;font-size:14.5px">
+      <option value="0">① 股东投入现金 100 万</option>
+      <option value="1">② 向银行借款 50 万</option>
+      <option value="2">③ 赊销产品 60 万（成本 36 万）</option>
+      <option value="3">④ 用现金发工资 10 万</option>
+    </select>
+  </div>
+  <div class="taccount" id="taccount"></div>
+  <p class="kv" id="ledgerNote" style="min-height:44px"></p>
+
+  <div class="quiz" data-quiz="ch1" data-pass="0.67">
+    <div class="quiz-title">📝 第 1 章 · 过关小测</div>
+    <div class="q-item" data-a="2" data-exp="权益 = 资产 − 负债 = 800 − 300 = 500 万。恒等式的三个数永远知二求一。">
+      <p class="q-t">1. 某公司资产 800 万，负债 300 万，所有者权益是多少？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch1q1"><span>1100 万</span></label>
+        <label><input type="radio" name="ch1q1"><span>300 万</span></label>
+        <label><input type="radio" name="ch1q1"><span>500 万</span></label>
+        <label><input type="radio" name="ch1q1"><span>无法计算</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="「借」「贷」只是账户左方与右方的名称，是记账方位符号，与日常语义中的借钱、贷款无关。">
+      <p class="q-t">2. 借贷记账法中的「借」和「贷」本质上是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch1q2"><span>账户的左方和右方（方位符号）</span></label>
+        <label><input type="radio" name="ch1q2"><span>借钱和贷款</span></label>
+        <label><input type="radio" name="ch1q2"><span>债务和债权</span></label>
+        <label><input type="radio" name="ch1q2"><span>收入和支出</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="1" data-exp="收入、费用、利润是「一段期间」的流量概念，属于利润表；资产负债表只呈现资产、负债、权益三个时点存量。">
+      <p class="q-t">3. 下列哪一项<b>不会</b>出现在资产负债表上？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch1q3"><span>应收账款</span></label>
+        <label><input type="radio" name="ch1q3"><span>净利润</span></label>
+        <label><input type="radio" name="ch1q3"><span>未分配利润</span></label>
+        <label><input type="radio" name="ch1q3"><span>短期借款</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第2章 权责发生制 ========== -->
+<section class="chapter" id="ch2">
+  <span class="chapter-tag">第二章 · 语言层</span>
+  <h1>利润与现金：财务中最重要的一个区别</h1>
+  <p class="lead">如果这门课只能记住一件事，就记住这句：<b>利润是观点，现金是事实。</b>而造成两者差别的机制，叫权责发生制。</p>
+
+  <h2>2.1 两种记账哲学</h2>
+  <div class="grid2">
+    <div class="card"><h3>收付实现制（流水账）</h3><p style="font-size:14.5px;color:var(--ink-soft);margin:0">收到钱才算收入，付出钱才算费用。直观，像记个人账。个体户、行政机关常用。</p></div>
+    <div class="card"><h3>权责发生制（企业会计）</h3><p style="font-size:14.5px;color:var(--ink-soft);margin:0">收入在<b>赚到时</b>（交付商品/服务）确认，费用在<b>发生时</b>确认——无论钱是否到账。所有企业会计报表都基于它。</p></div>
+  </div>
+
+  <h2>2.2 一个合同，两种结果</h2>
+  <p>示例科技 1 月签下一份 12 万的年度软件合同：<b>1 月</b>收预付款 6 万，<b>3 月</b>交付上线，<b>6 月</b>客户验收后收尾款 6 万。切换记账方式，看各月「账面利润」的区别：</p>
+  <div class="pill-btns">
+    <button class="btn btn-ghost active" id="accrualBtn">权责发生制</button>
+    <button class="btn btn-ghost" id="cashBtn">收付实现制</button>
+  </div>
+  <table class="t" id="basisTable">
+    <tr><th>月份</th><th>发生的事</th><th class="n">本月确认收入</th><th class="n">利润的感觉</th></tr>
+    <tr><td>1 月</td><td>签约，收预付款 6 万</td><td class="n" id="b1">0</td><td id="f1">钱到手了，但活还没干——不能算赚</td></tr>
+    <tr><td>3 月</td><td>产品交付上线</td><td class="n" id="b2">12 万</td><td id="f2">活干完了，收入全部在此确认</td></tr>
+    <tr><td>6 月</td><td>验收通过，收尾款 6 万</td><td class="n" id="b3">0</td><td id="f3">钱到账，但利润早已在 3 月记过</td></tr>
+    <tr class="sum"><td>全年</td><td>—</td><td class="n">12 万</td><td>两种方式全年合计相同，只是节奏不同</td></tr>
+  </table>
+  <p class="kv" id="basisNote">当前：权责发生制——收入跟着「义务的履行」走，而不是跟着钱走。</p>
+
+  <h2>2.3 权责发生制派生的五个关键科目</h2>
+  <p>这些科目就是「利润」与「现金」之间的时差调节器，也是后面所有三表联动故事的伏笔：</p>
+  <div class="grid3">
+    <div class="card"><h3>应收账款</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">货交了、钱没收到 → 利润有了，现金没有。<b>危险信号高发区。</b></p></div>
+    <div class="card"><h3>预收/合同负债</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">钱收了、活没干 → 现金有了，利润没有。反而是<b>好信号</b>（如茅台的经销商打款）。</p></div>
+    <div class="card"><h3>应付账款</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">货收了、钱没付 → 占用供应商资金，无息融资，规模反映产业链地位。</p></div>
+    <div class="card"><h3>预付款项</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">钱付了、货没到 → 现金先出。大额预付给关联方需警惕。</p></div>
+    <div class="card"><h3>折旧与摊销</h3><p style="font-size:13.5px;color:var(--ink-soft);margin:0">设备的成本分摊到使用各年 → 每年利润被扣减，但<b>一分现金都没流出</b>。</p></div>
+    <div class="card" style="background:var(--gold-soft);border-color:var(--gold)"><h3>⭐ 一句话总结</h3><p style="font-size:13.5px;color:#6b5510;margin:0">应计科目 = 时间差。利润表记录「应该的」，现金流量表记录「实际的」。</p></div>
+  </div>
+
+  <div class="quiz" data-quiz="ch2" data-pass="0.67">
+    <div class="quiz-title">📝 第 2 章 · 过关小测</div>
+    <div class="q-item" data-a="2" data-exp="权责发生制下，收入在交付商品或服务（义务履行）时确认，1 月只是收到预付款，还不能确认收入。">
+      <p class="q-t">1. 12 月签合同、次年 3 月才交货的订单，收入应在何时确认（权责发生制）？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch2q1"><span>12 月签约时</span></label>
+        <label><input type="radio" name="ch2q1"><span>收到货款时</span></label>
+        <label><input type="radio" name="ch2q1"><span>次年 3 月交货时</span></label>
+        <label><input type="radio" name="ch2q1"><span>客户付款的各时点分摊</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="折旧是过去买设备成本的分摊，当期没有现金流出，所以净利润 100 万、折旧 20 万时经营现金流的起点是 120 万——这正是现金流量表间接法的逻辑。">
+      <p class="q-t">2. 某年净利润 100 万，其中含折旧 20 万（当年无其他应计项目），经营现金流大约是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch2q2"><span>120 万</span></label>
+        <label><input type="radio" name="ch2q2"><span>100 万</span></label>
+        <label><input type="radio" name="ch2q2"><span>80 万</span></label>
+        <label><input type="radio" name="ch2q2"><span>20 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="预收款意味着下游愿意先打款，是需求旺盛、产业链地位强的表现；应收激增才是危险信号；折旧和利息是正常费用项目。">
+      <p class="q-t">3. 以下哪种情况通常是<b>好</b>信号？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch2q3"><span>应收账款增速远超收入增速</span></label>
+        <label><input type="radio" name="ch2q3"><span>向关联方大额预付款</span></label>
+        <label><input type="radio" name="ch2q3"><span>折旧费用大幅增加</span></label>
+        <label><input type="radio" name="ch2q3"><span>预收款项（合同负债）持续增长</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第3章 利润表 ========== -->
+<section class="chapter" id="ch3">
+  <span class="chapter-tag">第三章 · 报表层</span>
+  <h1>利润表：公司这段时间的成绩单</h1>
+  <p class="lead">利润表回答一个问题：<b>这段时间（通常一年）赚了多少、怎么赚的</b>。它像瀑布一样从收入层层向下，每层过滤掉一类成本。</p>
+
+  <h2>3.1 示例科技 2025 年利润表</h2>
+  <div style="overflow-x:auto">
+  <table class="t">
+    <tr><th>利润表（2025 年度）</th><th class="n">万元</th></tr>
+    <tr><td>营业收入</td><td class="n">12,000</td></tr>
+    <tr><td>减：营业成本</td><td class="n">7,200</td></tr>
+    <tr class="sum"><td>毛利（毛利率 40%）</td><td class="n">4,800</td></tr>
+    <tr><td>减：销售费用</td><td class="n">1,200</td></tr>
+    <tr><td>减：管理费用</td><td class="n">900</td></tr>
+    <tr><td>减：研发费用</td><td class="n">600</td></tr>
+    <tr><td>减：财务费用（利息等）</td><td class="n">150</td></tr>
+    <tr><td>其他收益 / 营业外收支净额</td><td class="n">−50</td></tr>
+    <tr class="sum"><td>利润总额</td><td class="n">1,900</td></tr>
+    <tr><td>减：所得税费用（25%）</td><td class="n">475</td></tr>
+    <tr class="tot"><td>净利润</td><td class="n">1,425</td></tr>
+  </table>
+  </div>
+
+  <h2>3.2 瀑布图：钱在哪一层被吃掉</h2>
+  <p>柱子越高金额越大，金色为「利润里程碑」，红色是扣减项。把鼠标悬停在柱子上看金额：</p>
+  <div class="card"><div class="wf" id="waterfall"></div></div>
+
+  <h2>3.3 逐层精读</h2>
+  <details><summary>营业收入 —— 一切的起点，但要看「含金量」</summary><div class="dbody">收入是最容易被操纵的数字。看收入时必问三个问题：① 增速与行业相比如何？② 与应收账款增速是否匹配（收入涨 30%、应收涨 90% 就危险）？③ 收入结构是否依赖关联方或补贴。</div></details>
+  <details><summary>营业成本与毛利率 —— 生意的「底色」</summary><div class="dbody">毛利率 = 毛利 ÷ 收入，衡量产品本身的盈利能力。软件公司毛利率常达 70–90%，普通制造业 15–25%，超市可能只有 5–15%。毛利率高低没有绝对好坏，但<b>远超同行且持续攀升</b>却缺乏品牌/技术解释时，要警惕。</div></details>
+  <details><summary>三费（销售 / 管理 / 研发）—— 公司的「性格」</summary><div class="dbody">费用结构暴露经营策略：销售费用高 = 靠渠道和营销驱动（如医药、白酒经销商体系）；研发费用高 = 靠技术驱动（如芯片、创新药）；管理费用占比持续攀升则往往是大企业病。用「费用率 = 费用 ÷ 收入」跨公司比较。</div></details>
+  <details><summary>财务费用 —— 债务的代价</summary><div class="dbody">主要是利息支出。利息保障倍数 =（利润总额 + 利息）÷ 利息，低于 2 倍说明赚钱勉强够付利息，是重资产高杠杆行业的关键红线。</div></details>
+  <details><summary>营业外收支与非经常项目 —— 「一次性」的诱惑</summary><div class="dbody">卖楼、政府补助、罚款收支都算。它们计入当期利润但不代表经营能力。判断持续盈利能力时，用「扣非净利润」（扣除非经常损益后的净利润）更真实——A股年报都强制披露这个口径。</div></details>
+  <details><summary>所得税 —— 税率也是信息</summary><div class="dbody">高新技术企业享受 15% 优惠税率（标准 25%）。示例科技按 25% 计。若实际税率常年远低于名义税率，说明公司享受大量优惠——这些优惠到期可能消失。</div></details>
+
+  <div class="warn-note"><b>⚠️ 陷阱：</b>「净利润增长 50%！」——先看三个口径：去年同期是否很低（基数效应）？是否靠卖资产/补助（非经常损益）？扣非净利润和经营现金流是否同步增长？三问之后才是真增长。</div>
+
+  <div class="quiz" data-quiz="ch3" data-pass="0.67">
+    <div class="quiz-title">📝 第 3 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="毛利率 =（12,000 − 7,200）÷ 12,000 = 40%。毛利是收入减去直接成本后的余额，是三层利润里程碑的第一层。">
+      <p class="q-t">1. 示例科技收入 12,000 万、成本 7,200 万，毛利率是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch3q1"><span>60%</span></label>
+        <label><input type="radio" name="ch3q1"><span>40%</span></label>
+        <label><input type="radio" name="ch3q1"><span>16.7%</span></label>
+        <label><input type="radio" name="ch3q1"><span>32%</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="判断盈利质量应看「扣非净利润」——剔除卖资产、政府补助等一次性收益后的净利润，它才反映持续经营能力。">
+      <p class="q-t">2. 公司净利润大增，但主要来自出售一栋办公楼。想判断其持续盈利能力，应看？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch3q2"><span>营业外收入</span></label>
+        <label><input type="radio" name="ch3q2"><span>毛利率</span></label>
+        <label><input type="radio" name="ch3q2"><span>扣非净利润</span></label>
+        <label><input type="radio" name="ch3q2"><span>销售费用</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="研发费用占比高（600/12,000=5%）指向技术驱动型生意；这类公司的利润当期看可能平淡，但投入可能在将来转化为产品壁垒。">
+      <p class="q-t">3. 一家公司研发费用率 15%、销售费用率 5%，另一家相反。两家分别更像？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch3q3"><span>前者技术驱动（如创新药），后者渠道驱动（如快消品）</span></label>
+        <label><input type="radio" name="ch3q3"><span>前者渠道驱动，后者技术驱动</span></label>
+        <label><input type="radio" name="ch3q3"><span>都属技术驱动</span></label>
+        <label><input type="radio" name="ch3q3"><span>无法判断</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第4章 资产负债表 ========== -->
+<section class="chapter" id="ch4">
+  <span class="chapter-tag">第四章 · 报表层</span>
+  <h1>资产负债表：此刻的家底照片</h1>
+  <p class="lead">利润表是录像，资产负债表是<b>照片</b>——定格在年末（或季末）那一天：公司有什么、欠什么、股东真正拥有什么。</p>
+
+  <h2>4.1 示例科技 2025 年末资产负债表</h2>
+  <div style="overflow-x:auto">
+  <table class="t">
+    <tr><th>资产（钱的去处）</th><th class="n">万元</th><th>负债与权益（钱的来源）</th><th class="n">万元</th></tr>
+    <tr><td>货币资金</td><td class="n">4,800</td><td>应付账款</td><td class="n">2,000</td></tr>
+    <tr><td>应收账款</td><td class="n">2,400</td><td>短期借款</td><td class="n">1,500</td></tr>
+    <tr><td>存货</td><td class="n">1,600</td><td>流动负债合计</td><td class="n">3,500</td></tr>
+    <tr><td>流动资产合计</td><td class="n">8,800</td><td>长期借款</td><td class="n">1,200</td></tr>
+    <tr><td>固定资产（净值）</td><td class="n">2,100</td><td>负债合计</td><td class="n">4,700</td></tr>
+    <tr><td>无形资产</td><td class="n">300</td><td>实收资本</td><td class="n">3,000</td></tr>
+    <tr><td>非流动资产合计</td><td class="n">2,400</td><td>未分配利润</td><td class="n">3,500</td></tr>
+    <tr class="tot"><td>资产总计</td><td class="n">11,200</td><td>负债和权益总计</td><td class="n">11,200</td></tr>
+  </table>
+  </div>
+  <p class="kv">注意左右两边总计永远相等——这就是第 1 章恒等式在报表上的样子。</p>
+
+  <h2>4.2 科目词典（点击展开）</h2>
+  <details><summary>💰 货币资金 —— 现金、银行存款等</summary><div class="dbody">看似最安全，但要问两个问题：① 是否受限（质押、保证金不能动用）？② 与有息负债是否「存贷双高」（第 11 章详述）。货币资金要与现金流量表期末数核对。</div></details>
+  <details><summary>📨 应收账款 —— 客户欠的钱</summary><div class="dbody">要点：周转天数 = 365 ÷（收入 ÷ 应收），示例科技约 73 天。应收增速应与收入匹配。报表上看到的是净额——已扣除「坏账准备」（管理层估计收不回来的部分，这正是「财务的艺术」）。</div></details>
+  <details><summary>📦 存货 —— 原材料、半成品、成品</summary><div class="dbody">制造业的重要科目。周转越快资金效率越高；积压的存货可能贬值（服装过季、电子过时），跌价准备同样依赖估计。存货异常暴增是舞弊案的经典信号。</div></details>
+  <details><summary>🏭 固定资产 —— 设备、厂房</summary><div class="dbody">按「原值 − 累计折旧」列示净值。折旧年限是重要估计：同样设备，按 5 年还是 10 年折旧，每年利润差一倍的重资产行业里这一项选择足以扭转盈亏。</div></details>
+  <details><summary>📜 无形资产与商誉</summary><div class="dbody">无形资产：专利、软件、土地使用权。商誉最特殊：只在<b>并购</b>时产生（买价高于对方可辨认净资产的差额），本质是「为未来潜力多付的钱」。商誉占净资产比例过高（如 >30%）是爆雷预警——每年需做减值测试，一朝计提利润巨亏。</div></details>
+  <details><summary>💳 应付账款与借款</summary><div class="dbody">应付账款是无息的「供应商融资」，规模体现产业链地位；短期借款一年内要还，需与货币资金对照看流动性；长期借款成本高但期限稳定。区分「经营性负债」（应付等，无息）与「金融性负债」（借款、债券，有息）是分析的关键功架。</div></details>
+  <details><summary>🏛 实收资本 / 资本公积 / 未分配利润</summary><div class="dbody">实收资本 = 股东实际投入的注册资本；资本公积主要来自溢价发行；未分配利润 = 历年利润留存滚存——它连接利润表（本年净利润流入）与分红（流出）。权益不是「现金」，多数已变成设备、存货等资产形态。</div></details>
+
+  <h2>4.3 怎么快速把一张资产负债表读出味道</h2>
+  <ul class="pl">
+    <li><b>先看结构：</b>流动资产 8,800 / 总资产 11,200 ≈ 79%，轻资产公司；若反过来，则是重资产（钢铁、电力）。</li>
+    <li><b>再试流动性：</b>流动资产 8,800 vs 流动负债 3,500，覆盖 2.5 倍，短期无忧。</li>
+    <li><b>再看杠杆：</b>资产负债率 42%，适中；其中无息的应付 2,000 万占了大头，真实偿债压力比表面更小。</li>
+    <li><b>最后看变化：</b>和年初比，什么科目变动最大？变动背后对应什么经营动作？</li>
+  </ul>
+
+  <div class="quiz" data-quiz="ch4" data-pass="0.67">
+    <div class="quiz-title">📝 第 4 章 · 过关小测</div>
+    <div class="q-item" data-a="2" data-exp="商誉只在企业并购中产生（买价超过可辨认净资产公允价值的部分），自创品牌、自研技术不确认商誉。">
+      <p class="q-t">1. 商誉在什么情况下出现在资产负债表上？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch4q1"><span>公司品牌价值很高时</span></label>
+        <label><input type="radio" name="ch4q1"><span>公司自主研发出专利时</span></label>
+        <label><input type="radio" name="ch4q1"><span>公司收购其他企业、支付了溢价时</span></label>
+        <label><input type="radio" name="ch4q1"><span>公司利润连年增长时</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="1" data-exp="未分配利润是历年利润的留存累计，来自利润表的净利润结转；它不是现金，多数已再投资于设备、存货等资产。">
+      <p class="q-t">2. 「未分配利润 3,500 万」意味着？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch4q2"><span>账上有 3,500 万现金没动</span></label>
+        <label><input type="radio" name="ch4q2"><span>历年赚的利润留存滚存 3,500 万，已投入各类资产</span></label>
+        <label><input type="radio" name="ch4q2"><span>股东还可以撤资拿回 3,500 万</span></label>
+        <label><input type="radio" name="ch4q2"><span>今年净利润是 3,500 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="应付账款是经营性无息负债，占用供应商资金，规模大常说明公司地位强势；有息负债才会带来利息压力。">
+      <p class="q-t">3. 两家规模相近的公司，A 应付账款很多、几乎无借款；B 借款很多、应付很少。更可能的情况是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch4q3"><span>A 对供应商议价能力强，无偿占用产业链资金</span></label>
+        <label><input type="radio" name="ch4q3"><span>A 资金链紧张还不上供应商</span></label>
+        <label><input type="radio" name="ch4q3"><span>B 经营更稳健</span></label>
+        <label><input type="radio" name="ch4q3"><span>两者没有区别</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第5章 现金流量表 ========== -->
+<section class="chapter" id="ch5">
+  <span class="chapter-tag">第五章 · 报表层</span>
+  <h1>现金流量表：公司的血液循环</h1>
+  <p class="lead">利润可以通过估计粉饰，现金很难造假。这张表按钱的<b>实际进出</b>记录，分成三个「泵」：经营、投资、筹资。</p>
+
+  <h2>5.1 示例科技 2025 年现金流量表（间接法）</h2>
+  <div style="overflow-x:auto">
+  <table class="t">
+    <tr><th>项目</th><th class="n">万元</th></tr>
+    <tr><td>净利润（起点）</td><td class="n">1,425</td></tr>
+    <tr><td>加：折旧（非付现费用）</td><td class="n">+300</td></tr>
+    <tr><td>减：应收账款增加</td><td class="n">−600</td></tr>
+    <tr><td>减：存货增加</td><td class="n">−400</td></tr>
+    <tr><td>加：应付账款增加</td><td class="n">+500</td></tr>
+    <tr class="sum"><td>经营活动现金净流量</td><td class="n">1,225</td></tr>
+    <tr><td>购建固定资产</td><td class="n">−800</td></tr>
+    <tr class="sum"><td>投资活动现金净流量</td><td class="n">−800</td></tr>
+    <tr><td>借款净增加</td><td class="n">+200</td></tr>
+    <tr><td>分配股利</td><td class="n">−300</td></tr>
+    <tr class="sum"><td>筹资活动现金净流量</td><td class="n">−100</td></tr>
+    <tr><td>现金净增加额</td><td class="n">325</td></tr>
+    <tr class="tot"><td>期末现金（= 资产负债表货币资金 4,800）</td><td class="n">4,800</td></tr>
+  </table>
+  </div>
+  <div class="note ok-note"><b>读表第一步：</b>经营 1,225 − 投资 800 − 筹资净额 100 = 净增 325，与期末期初差额吻合——内部自洽，再看结构好坏。</div>
+
+  <h2>5.2 利润如何「翻译」成现金（间接法）</h2>
+  <p>从净利润出发做三类调整，就得到经营现金流——这是理解「利润与现金时差」的最佳练习：</p>
+  <ul class="pl">
+    <li><b>加回非付现费用：</b>折旧摊销扣了利润但没扣现金（+300）；</li>
+    <li><b>减去营运资金占用：</b>应收、存货增加占用了现金（−600、−400），应付增加相当于占用别人现金（+500）；</li>
+    <li>结果：净利 1,425 → 经营现金 1,225。<b>净现比 = 1,225 ÷ 1,425 ≈ 0.86</b>，健康（经验值 &gt; 0.8 为佳）。</li>
+  </ul>
+
+  <h2>5.3 八卦图：经营 ± 投资 ± 筹资 ± 的组合诊断</h2>
+  <p>三个正负号组合出 8 种公司状态。点任意一格看诊断（顺序：经营 / 投资 / 筹资）：</p>
+  <div class="mtx" id="cashMtx"></div>
+  <div class="note" id="cashMtxNote">👆 点击上方任意组合</div>
+
+  <div class="quiz" data-quiz="ch5" data-pass="0.67">
+    <div class="quiz-title">📝 第 5 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="经营现金流为正、投资为负（持续投入）、筹资为负（还债分红），即「+++」中的「+−−」组合，是最典型的成熟健康型企业。">
+      <p class="q-t">1. 「自我造血」型成熟公司最典型的现金流组合是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch5q1"><span>经营−、投资−、筹资+（烧钱扩张）</span></label>
+        <label><input type="radio" name="ch5q1"><span>经营+、投资−、筹资−（造血 + 投入 + 回馈）</span></label>
+        <label><input type="radio" name="ch5q1"><span>经营−、投资+、筹资+（变卖资产度日）</span></label>
+        <label><input type="radio" name="ch5q1"><span>经营+、投资+、筹资+（三路进钱）</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="折旧摊销在利润表中作为费用扣减了利润，但没有现金流出，间接法下要从净利润加回，所以是 +300 而非 −300。">
+      <p class="q-t">2. 净利润 1,000 万，当年折旧 300 万，应收存货未变。经营现金流约是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch5q2"><span>700 万</span></label>
+        <label><input type="radio" name="ch5q2"><span>1,000 万</span></label>
+        <label><input type="radio" name="ch5q2"><span>1,300 万</span></label>
+        <label><input type="radio" name="ch5q2"><span>300 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="「利润漂亮 + 经营现金流常年为负」是经典舞弊预警：账面赚钱实际失血，利润可能大量滞留在应收和存货里。">
+      <p class="q-t">3. 最值得警惕的信号是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch5q3"><span>经营现金流连续三年为正</span></label>
+        <label><input type="radio" name="ch5q3"><span>投资活动大额流出（扩建厂房）</span></label>
+        <label><input type="radio" name="ch5q3"><span>筹资活动净流出（还债 + 分红）</span></label>
+        <label><input type="radio" name="ch5q3"><span>净利润高增长但经营现金流持续为负</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第6章 三表联动 ========== -->
+<section class="chapter" id="ch6">
+  <span class="chapter-tag">第六章 · 报表层</span>
+  <h1>三表联动：一笔业务，三处留痕</h1>
+  <p class="lead">三张表是同一个故事的三种讲法。任何一笔业务至少在两张表留下痕迹——能用三表同时解释一笔业务，才算真正入了门。</p>
+
+  <h2>6.1 三条永久勾稽关系</h2>
+  <div class="card">
+    <p><b>① 净利润 → 未分配利润：</b>本年净利润年末结转进资产负债表的未分配利润（分红后差额留存）。利润表一年一页，资产负债表年年累积。</p>
+    <p><b>② 折旧 → 加回：</b>利润表扣折旧、资产负债表固定资产净值减少、现金流量表把它加回——一笔业务三表同时动，现金却分文未走。</p>
+    <p style="margin-bottom:0"><b>③ 期末现金 = 货币资金：</b>现金流量表的终点必须等于资产负债表的货币资金。对不上就是硬伤，审计第一课。</p>
+  </div>
+
+  <h2>6.2 业务模拟器</h2>
+  <p>点任意一笔业务，看它如何同时改变三张表：</p>
+  <div class="pill-btns" id="evBtns"></div>
+  <div class="grid3">
+    <div class="mini"><div class="mh">📈 利润表</div><ul id="evIncome"></ul></div>
+    <div class="mini"><div class="mh">🏛 资产负债表</div><ul id="evBalance"></ul></div>
+    <div class="mini"><div class="mh">💧 现金流量表</div><ul id="evCash"></ul></div>
+  </div>
+  <div class="note" id="evNote"></div>
+
+  <h2>6.3 用三表讲同一家公司的故事</h2>
+  <p>把示例科技三张表连起来读：2025 年<b>赚了</b> 1,425 万（利润表），其中约 1,000 万变成了应收和存货（资产负债表），实际<b>收回来</b>的经营现金 1,225 万（现金流量表）；这些钱加上家底里的现金，支持了 800 万扩产投资和 300 万分红。三张表合起来，就是这家公司一年经营决策的完整电影。</p>
+
+  <div class="quiz" data-quiz="ch6" data-pass="0.67">
+    <div class="quiz-title">📝 第 6 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="赊销使应收增加、净利润增加（利润表与资产负债表同时动），但当期没有现金流入——经营现金流不动，这正是利润≠现金的经典场景。">
+      <p class="q-t">1. 一笔赊销业务发生时，哪个表述是对的？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch6q1"><span>三张表同时变动</span></label>
+        <label><input type="radio" name="ch6q1"><span>利润表和资产负债表变动，经营现金流不变</span></label>
+        <label><input type="radio" name="ch6q1"><span>只有利润表变动</span></label>
+        <label><input type="radio" name="ch6q1"><span>只有现金流量表变动</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="净利润是流量（一段期间的成果），年末扣除分红后结转进未分配利润这个存量科目，「流量汇入存量」。">
+      <p class="q-t">2. 本年净利润与未分配利润的关系是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch6q2"><span>净利润扣除分红后累加进未分配利润</span></label>
+        <label><input type="radio" name="ch6q2"><span>两者始终相等</span></label>
+        <label><input type="radio" name="ch6q2"><span>未分配利润只是今年新赚的部分</span></label>
+        <label><input type="radio" name="ch6q2"><span>两者没有勾稽关系</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="现金流量表期末现金必须与资产负债表货币资金一致，这是三表勾稽中最刚性的检查点，也是财务造假的常见突破口。">
+      <p class="q-t">3. 审计中最刚性的三表勾稽检查点是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch6q3"><span>毛利率与同业一致</span></label>
+        <label><input type="radio" name="ch6q3"><span>费用率逐年下降</span></label>
+        <label><input type="radio" name="ch6q3"><span>现金流量表期末现金 = 资产负债表货币资金</span></label>
+        <label><input type="radio" name="ch6q3"><span>净利润每年增长</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第7章 比率与杜邦 ========== -->
+<section class="chapter" id="ch7">
+  <span class="chapter-tag">第七章 · 分析层</span>
+  <h1>财务比率：给公司做全面体检</h1>
+  <p class="lead">单个数字没有意义，「12,000 万收入」无从判断好坏——数字只有<b>相除变成比率</b>、放进对比（同行、历史、预期）才有意义。</p>
+
+  <h2>7.1 四大类比率总览</h2>
+  <table class="t">
+    <tr><th>类别</th><th>回答的问题</th><th>代表指标</th></tr>
+    <tr><td><b>盈利能力</b></td><td>赚得多么？</td><td>毛利率、净利率、ROE、ROA</td></tr>
+    <tr><td><b>偿债能力</b></td><td>还得上么？</td><td>流动比率、速动比率、资产负债率、利息保障倍数</td></tr>
+    <tr><td><b>营运能力</b></td><td>转得快么？</td><td>存货周转率、应收周转率、总资产周转率</td></tr>
+    <tr><td><b>成长能力</b></td><td>长得快么？</td><td>收入增速、净利润增速、留存收益率</td></tr>
+  </table>
+
+  <h2>7.2 比率体检器（可改数字）</h2>
+  <p class="kv">预填示例科技数据（万元），换成任何公司的数字即可复用：</p>
+  <div class="grid2" style="grid-template-columns:340px 1fr;align-items:start" id="ratioCalcWrap">
+    <div class="card" style="margin:0">
+      <div class="infield"><label>营业收入</label><input type="number" id="r_rev" value="12000"></div>
+      <div class="infield"><label>营业成本</label><input type="number" id="r_cogs" value="7200"></div>
+      <div class="infield"><label>净利润</label><input type="number" id="r_np" value="1425"></div>
+      <div class="infield"><label>总资产</label><input type="number" id="r_ta" value="11200"></div>
+      <div class="infield"><label>净资产（权益）</label><input type="number" id="r_eq" value="6500"></div>
+      <div class="infield"><label>流动资产</label><input type="number" id="r_ca" value="8800"></div>
+      <div class="infield"><label>存货</label><input type="number" id="r_inv" value="1600"></div>
+      <div class="infield"><label>应收账款</label><input type="number" id="r_ar" value="2400"></div>
+      <div class="infield" style="margin-bottom:0"><label>流动负债</label><input type="number" id="r_cl" value="3500"></div>
+    </div>
+    <div class="grid2" id="ratioGrid" style="margin:0"></div>
+  </div>
+
+  <h2>7.3 杜邦分析：ROE 的三原色</h2>
+  <p>ROE（净资产收益率）= 净利润 ÷ 净资产，是衡量「股东的钱赚钱效率」的终极指标。杜邦分析法把它拆成三个因子的乘积，每种生意形态都是三种因子的不同组合：</p>
+  <div class="card" style="text-align:center;font-size:16.5px">
+    <b>ROE ＝ 净利率 × 总资产周转率 × 权益乘数</b>
+    <div class="kv">赚钱的「利润厚度」 × 资产的「翻台速度」 × 杠杆的「放大倍数」</div>
+  </div>
+  <p>拖动滑块，看三种因子如何组合出不同风格的生意：</p>
+  <div class="card">
+    <div class="slider-row"><label>净利率</label><input type="range" id="d_margin" min="2" max="30" step="0.5" value="12"><output id="d_margin_o">12%</output></div>
+    <div class="slider-row"><label>总资产周转率</label><input type="range" id="d_turn" min="0.3" max="3" step="0.1" value="1.2"><output id="d_turn_o">1.2 次</output></div>
+    <div class="slider-row"><label>权益乘数</label><input type="range" id="d_em" min="1" max="4" step="0.1" value="1.7"><output id="d_em_o">1.7 倍</output></div>
+    <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-top:10px">
+      <div class="bigval" id="d_roe">24.5%</div><span class="chip good" id="d_chip">优秀</span>
+    </div>
+    <p class="kv" id="d_desc"></p>
+  </div>
+  <div class="note"><b>杜邦的用处：</b>两家公司 ROE 同为 20%，A 靠高净利率（茅台型），B 靠高杠杆（银行型）——赚钱的「质量」完全不同。杜邦分解让你一眼看出利润的来源结构。</div>
+
+  <div class="quiz" data-quiz="ch7" data-pass="0.67">
+    <div class="quiz-title">📝 第 7 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="超市（如沃尔玛）净利率约 2–3%，靠极高的资产周转速度赚钱；软件公司相反，靠高净利率低周转；高杠杆典型是银行地产。">
+      <p class="q-t">1. 「高周转 × 低净利率」是哪类生意的典型画像？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch7q1"><span>奢侈品</span></label>
+        <label><input type="radio" name="ch7q1"><span>超市零售</span></label>
+        <label><input type="radio" name="ch7q1"><span>软件 SaaS</span></label>
+        <label><input type="radio" name="ch7q1"><span>创新药研发</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="权益乘数 = 总资产 ÷ 净资产，是杠杆因子；乘数越高说明负债占比越大。1.7 倍意味着资产中约四成来自负债。">
+      <p class="q-t">2. 权益乘数 1.7 倍的含义是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch7q2"><span>总资产是净资产的 1.7 倍，其余靠负债撑起</span></label>
+        <label><input type="radio" name="ch7q2"><span>公司赚了 1.7 倍的利润</span></label>
+        <label><input type="radio" name="ch7q2"><span>股价是净资产的 1.7 倍</span></label>
+        <label><input type="radio" name="ch7q2"><span>公司资产一年周转 1.7 次</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="ROE 高要继续看驱动因子：若主要靠权益乘数（高杠杆）推高，风险高于靠净利率和周转率驱动的同等 ROE——这正是杜邦分析的价值。">
+      <p class="q-t">3. 两家公司 ROE 都是 20%，最需要进一步追问的是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch7q3"><span>谁的收入更高</span></label>
+        <label><input type="radio" name="ch7q3"><span>谁的成立时间更长</span></label>
+        <label><input type="radio" name="ch7q3"><span>谁的员工更多</span></label>
+        <label><input type="radio" name="ch7q3"><span>谁的 ROE 更依赖杠杆（权益乘数）</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第8章 货币时间价值 ========== -->
+<section class="chapter" id="ch8">
+  <span class="chapter-tag">第八章 · 分析层</span>
+  <h1>时间就是金钱：复利、现值与投资决策</h1>
+  <p class="lead">今天的一块钱比明年的一块钱值钱——因为它可以先「工作」一年。这个朴素的直觉，是所有投资分析的引擎。</p>
+
+  <h2>8.1 复利：世界的第八大奇迹</h2>
+  <p>爱因斯坦（据传）说过复利是世界第八大奇迹。拖动滑块，感受单利与复利随时间的分道扬镳：</p>
+  <div class="card">
+    <div class="slider-row"><label>本金（万元）</label><input type="range" id="c_pv" min="1" max="100" step="1" value="10"><output id="c_pv_o">10</output></div>
+    <div class="slider-row"><label>年化收益率</label><input type="range" id="c_r" min="1" max="20" step="0.5" value="8"><output id="c_r_o">8%</output></div>
+    <div class="slider-row"><label>年数</label><input type="range" id="c_t" min="1" max="40" step="1" value="30"><output id="c_t_o">30 年</output></div>
+    <svg id="c_svg" viewBox="0 0 640 280" style="width:100%;height:auto;margin-top:8px"></svg>
+    <p class="kv" id="c_summary"></p>
+  </div>
+  <div class="note"><b>72 法则（心算利器）：</b>资金翻倍所需年数 ≈ 72 ÷ 年利率。8% 收益 → 约 9 年翻一倍；3% 存款 → 24 年才翻倍。反过来，物价 3% 通胀 → 24 年后购买力减半。</div>
+
+  <h2>8.2 现值：把未来的钱折算到今天</h2>
+  <p>既然今天的钱更值钱，未来的钱就要<b>打折</b>再看——这个折扣率叫「折现率」（可理解为要求的回报率或机会成本）。例子：折现率 10% 时，明年到手的 100 万今天只值约 90.9 万（100 ÷ 1.1）。<b>折现率越高、时间越长，未来现金的现值越低。</b></p>
+
+  <h2>8.3 NPV：投资决策的总开关</h2>
+  <p>把一项投资未来所有现金流的<b>现值</b>加总，减去初始投入，就是<b>净现值（NPV）</b>。NPV &gt; 0 意味着投资赚的超过了要求回报；&lt; 0 则不值。试试：</p>
+  <div class="card">
+    <div class="grid2" style="grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <div class="infield"><label>初始投资（万元）</label><input type="number" id="n_c0" value="1000"></div>
+        <div class="infield"><label>每年现金流入（万元）</label><input type="number" id="n_cf" value="300"></div>
+        <div class="infield"><label>折现率（%/年）</label><input type="number" id="n_r" value="10"></div>
+        <div class="infield" style="margin-bottom:0"><label>持续年数</label><input type="number" id="n_t" value="5"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;justify-content:center;border-left:1px dashed var(--line);padding-left:16px">
+        <div class="kv">净现值 NPV</div>
+        <div class="bigval" id="n_npv">+137 万</div>
+        <p class="kv" id="n_verdict"></p>
+      </div>
+    </div>
+  </div>
+  <p>配套的还有两个常用指标：<b>回收期</b>（几年回本，越短越稳妥，但忽略回本后的收益）；<b>IRR 内部收益率</b>（让 NPV 恰好等于 0 的折现率，即项目本身的年化回报率，高于要求回报率则可行）。《财务智慧》一书强调：理解 ROI 的本质，就是把未来回报折现后与投入相比。</p>
+
+  <div class="quiz" data-quiz="ch8" data-pass="0.67">
+    <div class="quiz-title">📝 第 8 章 · 过关小测</div>
+    <div class="q-item" data-a="2" data-exp="72 ÷ 6 = 12 年翻倍，24 年变四倍。72 法则用近似心算代替精确的对数计算，误差很小。">
+      <p class="q-t">1. 年化收益 6%，按 72 法则资金翻倍约需？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch8q1"><span>6 年</span></label>
+        <label><input type="radio" name="ch8q1"><span>8 年</span></label>
+        <label><input type="radio" name="ch8q1"><span>12 年</span></label>
+        <label><input type="radio" name="ch8q1"><span>24 年</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="NPV > 0 表示项目回报超过折现率所代表的要求回报，值得投资；NPV = 0 是恰好达标；NPV < 0 则毁损价值。">
+      <p class="q-t">2. NPV &gt; 0 意味着？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch8q2"><span>项目回报率超过要求的折现率，创造价值</span></label>
+        <label><input type="radio" name="ch8q2"><span>项目一定没有风险</span></label>
+        <label><input type="radio" name="ch8q2"><span>项目现金流入大于流出（不考虑时间价值）</span></label>
+        <label><input type="radio" name="ch8q2"><span>项目当年就能回本</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="折现率越高，未来现金被砍掉的折扣越狠，远期现金占比大的项目（研发型、长周期基建）NPV 越容易变负。">
+      <p class="q-t">3. 折现率从 8% 提高到 15%，受打击最大的是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch8q3"><span>一年内回本的小买卖</span></label>
+        <label><input type="radio" name="ch8q3"><span>立刻派息的高股息股票</span></label>
+        <label><input type="radio" name="ch8q3"><span>全部资产是现金的公司</span></label>
+        <label><input type="radio" name="ch8q3"><span>现金流集中在第 10 年的创新药项目</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第9章 估值入门 ========== -->
+<section class="chapter" id="ch9">
+  <span class="chapter-tag">第九章 · 分析层</span>
+  <h1>估值入门：一股/一家公司值多少钱</h1>
+  <p class="lead">财报读得再熟，最终都要回答那个问题：<b>它值多少钱？</b>估值没有精确答案，只有「贵不贵」的框架。</p>
+
+  <h2>9.1 相对估值：和同行比价</h2>
+  <div class="grid2">
+    <div class="card"><h3>市盈率 PE = 股价 ÷ 每股收益</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">最常用。相当于「按现在的盈利，几年回本」。适合盈利稳定的公司；亏损股、强周期股（利润大起大落）不适用。</p></div>
+    <div class="card"><h3>市净率 PB = 股价 ÷ 每股净资产</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">适合重资产、资产负债表「实」的行业：银行、地产、水电。轻资产公司（品牌、人才为主）净资产小，PB 天生很高不适用。</p></div>
+    <div class="card"><h3>市销率 PS = 市值 ÷ 营业收入</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">还没盈利的高成长公司（如早期 SaaS、创新药）用收入定价，绕开利润为负的死结。</p></div>
+    <div class="card"><h3>股息率 = 每年分红 ÷ 股价</h3><p style="font-size:14px;color:var(--ink-soft);margin:0">收租视角：持有每年「租金回报率」多少。高股息策略偏爱分红稳定的公用事业、成熟消费股。</p></div>
+  </div>
+
+  <h2>9.2 PE 实操小工具</h2>
+  <div class="card">
+    <div class="grid2" style="grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <div class="infield"><label>股价（元）</label><input type="number" id="p_price" value="20" step="0.1"></div>
+        <div class="infield" style="margin-bottom:0"><label>每股收益 EPS（元）</label><input type="number" id="p_eps" value="1.3" step="0.1"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;justify-content:center;border-left:1px dashed var(--line);padding-left:16px">
+        <div class="kv">市盈率 PE</div>
+        <div class="bigval" id="p_pe">15.4 倍</div>
+        <p class="kv" id="p_verdict"></p>
+      </div>
+    </div>
+  </div>
+  <div class="note"><b>PE 的正确用法：</b>不是「低于 10 就便宜」，而是<b>和三个基准比</b>：① 公司自己历史区间；② 同行业可比公司；③ 盈利增速（PEG = PE ÷ 增速%，约 ≤1 常被视为增长与估值匹配）。PE 30 倍对银行是灾难，对年增 40% 的软件公司可能很便宜。</div>
+
+  <h2>9.3 绝对估值与安全边际</h2>
+  <p><b>DCF（现金流折现）</b>：把公司未来所有自由现金流折现加总 = 内在价值——思想最正确，但「未来现金流」和「折现率」都是假设，输入稍变结果大变。实践态度：<b>估值是区间不是点位</b>。巴菲特的老师格雷厄姆提出<b>安全边际</b>：只在价格显著低于保守估计的内在价值（如七折）时买入，为判断错误留出缓冲。这也是「便宜好公司」优于「伟大但太贵的公司」的底层逻辑。</p>
+
+  <div class="quiz" data-quiz="ch9" data-pass="0.67">
+    <div class="quiz-title">📝 第 9 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="银行利润随经济周期波动、且资产以账面价值计量较实，PB 是银行业最常用的估值标尺；PE 适合盈利稳定公司；PS 用于未盈利成长股。">
+      <p class="q-t">1. 银行股最常用的估值指标是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q1"><span>PS</span></label>
+        <label><input type="radio" name="ch9q1"><span>PB</span></label>
+        <label><input type="radio" name="ch9q1"><span>股息率</span></label>
+        <label><input type="radio" name="ch9q1"><span>EV/EBITDA</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="PE = 50 ÷ 2 = 25 倍，可理解为按当前盈利水平约 25 年「回本」，也隐含市场对其增长有较高期待。">
+      <p class="q-t">2. 股价 50 元、每股收益 2 元，PE 是多少？含义是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q2"><span>25 倍，约 25 年回本，隐含较高增长预期</span></label>
+        <label><input type="radio" name="ch9q2"><span>25 倍，说明被严重高估</span></label>
+        <label><input type="radio" name="ch9q2"><span>0.04 倍，非常便宜</span></label>
+        <label><input type="radio" name="ch9q2"><span>无法计算</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="安全边际 = 用显著低于保守内在价值的价格买入，为估计错误留缓冲。它不消除风险，也不预测市场情绪，只改变「出价」。">
+      <p class="q-t">3. 「安全边际」的含义是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch9q3"><span>买最稳定的大公司</span></label>
+        <label><input type="radio" name="ch9q3"><span>分散持有 20 只股票</span></label>
+        <label><input type="radio" name="ch9q3"><span>只在价格显著低于保守估算的内在价值时买入</span></label>
+        <label><input type="radio" name="ch9q3"><span>设置 10% 止损线</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第10章 年报实战 ========== -->
+<section class="chapter" id="ch10">
+  <span class="chapter-tag">第十章 · 实战层</span>
+  <h1>实战：10 分钟拆解一份真实年报</h1>
+  <p class="lead">年报动辄三四百页，但 90% 的信息含量集中在少数几处。这一章给你一张「寻宝图」。</p>
+
+  <h2>10.1 去哪找年报（全免费）</h2>
+  <table class="t">
+    <tr><th>市场</th><th>网站</th><th>搜索方式</th></tr>
+    <tr><td>A 股 / 港股 / 债券公告</td><td><b>巨潮资讯网</b>（cninfo.com.cn）</td><td>搜公司名或代码 → 公告分类选「年报」</td></tr>
+    <tr><td>港股（含 A+H）</td><td><b>披露易</b>（hkexnews.hk）</td><td>搜代码 → 「年报及账目」</td></tr>
+    <tr><td>美股 / 中概股</td><td><b>SEC EDGAR</b>（sec.gov/cgi-bin/browse-edgar）</td><td>搜公司名 → 10-K（年报）/ 10-Q（季报）</td></tr>
+  </table>
+  <p class="kv">练习建议：找一家你熟悉其产品的消费类公司（如牛奶、家电、白酒），熟悉感会让第一份年报好读得多。</p>
+
+  <h2>10.2 年报结构寻宝图（A股年报约 10 余节）</h2>
+  <table class="t">
+    <tr><th>部分</th><th>含金量</th><th>看什么</th></tr>
+    <tr><td>重要提示 / 审计报告</td><td>⭐⭐⭐⭐⭐</td><td><b>先翻审计意见</b>：只接受「标准无保留意见」，其余任何措辞（保留、无法表示意见、带强调事项段）直接拉黑或深查</td></tr>
+    <tr><td>主要会计数据和财务指标</td><td>⭐⭐⭐⭐⭐</td><td>近三年收入/净利/现金流/ROE 一览，10 秒把握趋势</td></tr>
+    <tr><td>经营情况讨论与分析（MD&A）</td><td>⭐⭐⭐⭐</td><td>管理层亲笔解释业绩变化原因——听故事，但要与报表数字互相印证</td></tr>
+    <tr><td>财务报告（三表 + 附注）</td><td>⭐⭐⭐⭐⭐</td><td>核心阵地。附注是「注释版明细」，收入的确认政策、应收账龄、坏账计提、关联交易全在这</td></tr>
+    <tr><td>股东情况 / 大股东质押</td><td>⭐⭐⭐</td><td>大股东高比例质押 = 缺钱 + 平仓风险传导</td></tr>
+    <tr><td>公司治理 / 募集资金使用等</td><td>⭐⭐</td><td>时间富余再看</td></tr>
+  </table>
+
+  <h2>10.3 十步速读清单（可勾选，自动保存）</h2>
+  <div class="cklist card" id="cklist">
+    <label><input type="checkbox" data-k="0"><span>① 审计意见是「标准无保留」</span></label>
+    <label><input type="checkbox" data-k="1"><span>② 近三年收入、净利润趋势方向一致</span></label>
+    <label><input type="checkbox" data-k="2"><span>③ 经营现金流 / 净利润 ≥ 0.8</span></label>
+    <label><input type="checkbox" data-k="3"><span>④ 应收账款增速 ≤ 收入增速</span></label>
+    <label><input type="checkbox" data-k="4"><span>⑤ 毛利率与同行业可比（无明显异常）</span></label>
+    <label><input type="checkbox" data-k="5"><span>⑥ 现金流量表期末现金 = 资产负债表货币资金</span></label>
+    <label><input type="checkbox" data-k="6"><span>⑦ 资产负债率合理，短期借款 &lt; 货币资金</span></label>
+    <label><input type="checkbox" data-k="7"><span>⑧ 商誉 / 净资产 &lt; 30%</span></label>
+    <label><input type="checkbox" data-k="8"><span>⑨ 附注中关联交易金额占比不大</span></label>
+    <label><input type="checkbox" data-k="9"><span>⑩ 大股东质押比例不高（&lt; 50%）</span></label>
+  </div>
+  <p class="kv" id="ckSummary">勾掉一项少一分担忧——十项全绿只是「排雷」，好公司还需要第 7 章的比率体检和第 9 章的估值判断。</p>
+
+  <div class="quiz" data-quiz="ch10" data-pass="0.67">
+    <div class="quiz-title">📝 第 10 章 · 过关小测</div>
+    <div class="q-item" data-a="2" data-exp="只有「标准无保留意见」可以接受；保留意见、无法表示意见、否定意见都说明审计师发现了不能背书的问题，应直接警惕。">
+      <p class="q-t">1. 打开年报第一个动作是看审计意见，唯一可以放行的类型是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch10q1"><span>带强调事项段的无保留意见</span></label>
+        <label><input type="radio" name="ch10q1"><span>保留意见（金额不重要）</span></label>
+        <label><input type="radio" name="ch10q1"><span>标准无保留意见</span></label>
+        <label><input type="radio" name="ch10q1"><span>无法表示意见</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="1" data-exp="「经营情况讨论与分析」（MD&A）是管理层对业绩变化的亲笔解释；读它再与三表数字互相印证，是最快的理解路径——但要保持「听其言、查其数」。">
+      <p class="q-t">2. 想快速了解业绩变动的原因，最该细读年报哪部分？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch10q2"><span>公司治理章节</span></label>
+        <label><input type="radio" name="ch10q2"><span>经营情况讨论与分析（MD&A）</span></label>
+        <label><input type="radio" name="ch10q2"><span>监事会工作报告</span></label>
+        <label><input type="radio" name="ch10q2"><span>股份变动及股东情况</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="附注披露明细与会计政策：收入确认方法、应收账龄、坏账计提比例、关联交易等。查具体科目时，附注是唯一的「词典」。">
+      <p class="q-t">3. 想知道公司的收入确认政策和应收账款账龄，去哪查？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch10q3"><span>财务报告的附注部分</span></label>
+        <label><input type="radio" name="ch10q3"><span>封面和目录</span></label>
+        <label><input type="radio" name="ch10q3"><span>董事长致辞</span></label>
+        <label><input type="radio" name="ch10q3"><span>公司债券章节</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第11章 舞弊识别 ========== -->
+<section class="chapter" id="ch11">
+  <span class="chapter-tag">第十一章 · 实战层</span>
+  <h1>识别财务舞弊：五个经典危险信号</h1>
+  <p class="lead">舞弊离不开三要素：<b>动机</b>（保壳、再融资、大股东缺钱）＋<b>机会</b>（内控失效）＋<b>借口</b>。我们无法读心，但可以识别报表上的痕迹。</p>
+
+  <h2>11.1 案例排查练习</h2>
+  <p class="kv">判断每个情景是「危险」还是「正常」，立即揭晓答案：</p>
+  <div class="card fraud-case">
+    <p style="font-weight:600">案例 A：收入增长 30%，应收账款增长 90%，经营现金流为负。</p>
+    <div class="choice"><button data-f="0" data-ans="bad">🔴 危险</button><button data-f="0" data-ans="good">🟢 正常</button></div>
+    <div class="fb" data-f="0">危险。利润滞留在应收里、收不回现金——虚增收入的头号特征（历年经典造假案几乎都有此形态：确认了收入但钱永远在路上）。</div>
+  </div>
+  <div class="card fraud-case">
+    <p style="font-weight:600">案例 B：账面货币资金 200 亿，但同时有 150 亿有息借款；货币资金利息率远低于活期存款。</p>
+    <div class="choice"><button data-f="1" data-ans="bad">🔴 危险</button><button data-f="1" data-ans="good">🟢 正常</button></div>
+    <div class="fb" data-f="1">危险。这就是著名的「存贷双高」：一边重金借债付息、一边趴着巨额「存款」却收益奇低——大概率钱根本不存在或已被冻结占用（A股多起千亿级造假案的核心手法）。</div>
+  </div>
+  <div class="card fraud-case">
+    <p style="font-weight:600">案例 C：毛利率 46%，同行业均值 20%，且逐年攀升，公司无知名品牌或独家技术。</p>
+    <div class="choice"><button data-f="2" data-ans="bad">🔴 危险</button><button data-f="2" data-ans="good">🟢 正常</button></div>
+    <div class="fb" data-f="2">危险。毛利率远超同业且无法用品牌/技术/成本优势解释，可能少计成本或虚增收入。茅台毛利率 90% 有品牌支撑，普通制造业 46% 就非常可疑。</div>
+  </div>
+  <div class="card fraud-case">
+    <p style="font-weight:600">案例 D：净利润连续三年微利，但每年研发投入巨大，经营现金流持续为正、与净利润匹配。</p>
+    <div class="choice"><button data-f="3" data-ans="bad">🔴 危险</button><button data-f="3" data-ans="good">🟢 正常</button></div>
+    <div class="fb" data-f="3">正常。微利是真投入所致（利润表可查），且经营现金流健康、与利润匹配——这是「转型投入期公司」的正常画像，与造假恰好相反。</div>
+  </div>
+  <div class="card fraud-case">
+    <p style="font-weight:600">案例 E：存货周转天数从 90 天悄然升至 210 天，管理层解释「备货备销」。</p>
+    <div class="choice"><button data-f="4" data-ans="bad">🔴 危险</button><button data-f="4" data-ans="good">🟢 正常</button></div>
+    <div class="fb" data-f="4">危险。存货是虚增资产的黑洞之一：通过虚增采购把抽走的资金藏进「存货」，或滞销不敢计提跌价。若下一家事务所审计时盘点盘不出来，一爆就是巨雷。</div>
+  </div>
+
+  <h2>11.2 一图记五个信号</h2>
+  <ul class="pl">
+    <li><b>收入与应收赛跑</b>：应收增速远超收入；</li>
+    <li><b>存贷双高</b>：巨额存款 + 巨额借款并存；</li>
+    <li><b>毛利率飞天</b>：远超同业且无解释；</li>
+    <li><b>现金流背驰</b>：利润连年增长、经营现金连年为负；</li>
+    <li><b>存货黑洞</b>：周转天数无理由持续拉长。</li>
+  </ul>
+  <div class="warn-note"><b>⚠️ 提醒：</b>任何单一信号都不等于造假（可能确有原因），但多个信号同时亮红灯时，正确动作只有一个：<b>远离</b>。投资中「错过」没有成本，「踩雷」有。</div>
+
+  <div class="quiz" data-quiz="ch11" data-pass="0.67">
+    <div class="quiz-title">📝 第 11 章 · 过关小测</div>
+    <div class="q-item" data-a="1" data-exp="「存贷双高」指账面巨额货币资金与巨额有息负债并存，且存款利息率异常低——暗示资金可能不存在或受限，是多个著名造假案的共同特征。">
+      <p class="q-t">1. 「存贷双高」指的是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch11q1"><span>存款利率和贷款利率都很高</span></label>
+        <label><input type="radio" name="ch11q1"><span>巨额货币资金与巨额有息借款并存，存款收益却异常低</span></label>
+        <label><input type="radio" name="ch11q1"><span>存货和贷款同时增加</span></label>
+        <label><input type="radio" name="ch11q1"><span>存款准备金率与贷款基准率双升</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="案例 D 中微利的原因（研发投入）在报表中透明可查，且经营现金流与利润匹配——正常。其余三项分别是应收背驰、存货黑洞、毛利率异常，都是危险信号。">
+      <p class="q-t">2. 四个情景：①应收激增 ②存货周转恶化无解释 ③微利但现金流健康 ④毛利率远超同业。属于正常的是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch11q2"><span>①</span></label>
+        <label><input type="radio" name="ch11q2"><span>②</span></label>
+        <label><input type="radio" name="ch11q2"><span>③</span></label>
+        <label><input type="radio" name="ch11q2"><span>④</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="面对多重危险信号，最理性的动作是排除：好公司很多，没必要在疑点重重的标的上验证勇气。「错过」无成本，「踩雷」有。">
+      <p class="q-t">3. 发现一家公司同时出现三个危险信号，最理性的做法是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch11q3"><span>直接排除这家公司，看下一家</span></label>
+        <label><input type="radio" name="ch11q3"><span>相信管理层的解释继续买入</span></label>
+        <label><input type="radio" name="ch11q3"><span>全仓买入等待反转</span></label>
+        <label><input type="radio" name="ch11q3"><span>等审计报告出来再说其他都无所谓</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交答案</button>
+    <div class="q-result"></div>
+  </div>
+</section>
+
+<!-- ========== 第12章 结业 ========== -->
+<section class="chapter" id="ch12">
+  <span class="chapter-tag">第十二章 · 实战层</span>
+  <h1>结业：综合测验与进阶路线</h1>
+  <p class="lead">八道题覆盖全部十二章。答对 5 题（62.5%）即结业——错题解析是最好的复习提纲。</p>
+
+  <div class="quiz" data-quiz="ch12" data-pass="0.63">
+    <div class="quiz-title">🎓 结业综合测验（8 题）</div>
+    <div class="q-item" data-a="1" data-exp="恒等式：资产 = 负债 + 权益。权益 = 2,000 − 1,200 = 800 万。">
+      <p class="q-t">1. 资产 2,000 万、负债 1,200 万，权益为？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch12q1"><span>3,200 万</span></label>
+        <label><input type="radio" name="ch12q1"><span>800 万</span></label>
+        <label><input type="radio" name="ch12q1"><span>1,200 万</span></label>
+        <label><input type="radio" name="ch12q1"><span>2,000 万</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="权责发生制：交付即确认收入；预收款项对应的收入要等交付时才确认，此前是负债（合同负债）。">
+      <p class="q-t">2. 收到客户预付款时，正确的处理是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch12q2"><span>立即确认收入</span></label>
+        <label><input type="radio" name="ch12q2"><span>立即确认净利润</span></label>
+        <label><input type="radio" name="ch12q2"><span>记为合同负债，交付后才确认收入</span></label>
+        <label><input type="radio" name="ch12q2"><span>直接计入未分配利润</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="折旧、应收增加、存货增加都会使经营现金流低于净利润；只有应付账款增加（多占供应商资金）让现金流好于利润。">
+      <p class="q-t">3. 下列哪项使经营现金流<b>高于</b>净利润？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch12q3"><span>应付账款大幅增加</span></label>
+        <label><input type="radio" name="ch12q3"><span>应收账款大幅增加</span></label>
+        <label><input type="radio" name="ch12q3"><span>存货大幅增加</span></label>
+        <label><input type="radio" name="ch12q3"><span>计提大额折旧（收现不变时）</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="ROE = 净利率 × 周转率 × 权益乘数 = 10% × 1.5 × 2 = 30%。杜邦三因子连乘即得。">
+      <p class="q-t">4. 净利率 10%、总资产周转率 1.5 次、权益乘数 2 倍，ROE 是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch12q4"><span>15%</span></label>
+        <label><input type="radio" name="ch12q4"><span>20%</span></label>
+        <label><input type="radio" name="ch12q4"><span>25%</span></label>
+        <label><input type="radio" name="ch12q4"><span>30%</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="1" data-exp="PB = 市值 ÷ 净资产 = 100 ÷ 50 = 2 倍。">
+      <p class="q-t">5. 市值 100 亿、净利润 10 亿、净资产 50 亿。PB 是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch12q5"><span>10 倍</span></label>
+        <label><input type="radio" name="ch12q5"><span>2 倍</span></label>
+        <label><input type="radio" name="ch12q5"><span>5 倍</span></label>
+        <label><input type="radio" name="ch12q5"><span>0.5 倍</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="2" data-exp="经营+、投资−、筹资−（+−−）：自己造血、自我扩张、还回报股东——成熟期最健康的画像。">
+      <p class="q-t">6. 「奶牛型」成熟公司的现金流组合是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch12q6"><span>−−+</span></label>
+        <label><input type="radio" name="ch12q6"><span>−++</span></label>
+        <label><input type="radio" name="ch12q6"><span>+−−</span></label>
+        <label><input type="radio" name="ch12q6"><span>++−</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="0" data-exp="72 法则：72 ÷ 9 ≈ 8 年翻倍。">
+      <p class="q-t">7. 年化 9%，资金翻倍约需？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch12q7"><span>8 年</span></label>
+        <label><input type="radio" name="ch12q7"><span>9 年</span></label>
+        <label><input type="radio" name="ch12q7"><span>12 年</span></label>
+        <label><input type="radio" name="ch12q7"><span>18 年</span></label>
+      </div>
+    </div>
+    <div class="q-item" data-a="3" data-exp="非标准审计意见是最高优先级的一票否决信号——连审计师都不肯背书，其他分析都失去意义。">
+      <p class="q-t">8. 下列信号中，应最优先「一票否决」的是？</p>
+      <div class="q-opts">
+        <label><input type="radio" name="ch12q8"><span>毛利率略高于同业</span></label>
+        <label><input type="radio" name="ch12q8"><span>大股东少量质押</span></label>
+        <label><input type="radio" name="ch12q8"><span>研发费用率高</span></label>
+        <label><input type="radio" name="ch12q8"><span>审计报告为保留意见</span></label>
+      </div>
+    </div>
+    <button class="btn btn-primary q-submit">提交结业答卷</button>
+    <div class="q-result"></div>
+  </div>
+
+  <div class="badge-final" id="finalBadge">
+    <div class="medal">🏆</div>
+    <h3>结业快乐！</h3>
+    <p>你已经从「零基础」走到「能独立读年报、做比率体检、识别危险信号」。<br>真正的毕业考试在市场上——用第 10 章的方法去拆一份真实年报吧。</p>
+  </div>
+
+  <h2>进阶路线图</h2>
+  <div class="note ok-note"><b>✍️ 直接衔接：</b>想从「看懂报表」进阶到「动手做账」？进入第二部 <a href="会计实操课程.html" style="color:var(--teal);font-weight:700">《会计实操：记账与报税》</a>——记账循环、分录实战、增值税、汇算清缴、个税代扣的完整实操课。</div>
+  <div class="card">
+    <p><b>第 1 步 · 深化财报：</b>《一本书读懂财报》（科目级细节）→《财务智慧》（估计与判断的"艺术"、ROI 与营运资金管理）→《手把手教你读财报》（唐朝，A股实例丰富）。</p>
+    <p><b>第 2 步 · 公司金融：</b>系统学习资本预算、资本结构、股利政策（《公司理财》罗斯是经典教材，偏学术但完整）。</p>
+    <p><b>第 3 步 · 行业与估值：</b>挑 2–3 个行业做纵深对比（如同行的毛利率、周转、杠杆结构差异），再学 DCF 建模。</p>
+    <p style="margin-bottom:0"><b>长期 · 实践循环：</b>每季度跟读 3–5 家公司的真实财报（巨潮资讯网免费），把本课程的比率体检器、十步清单用起来——分析能力是练出来的。</p>
+  </div>
+  <p class="footnote">本课程为原创整理的通用财务知识，用于学习参考。判定区间均为一般经验值，不同行业差异显著；数据案例均为虚构。投资决策请独立判断，本课程不构成投资建议。支持正版，从正规渠道购书。</p>
+</section>
+
+</main>
+</div>
+
+<script>
+/* ============ 章节配置与进度 ============ */
+var CHAPTERS=[
+ {id:'ch0',name:'开篇 · 课程地图'},
+ {id:'ch1',name:'第1章 财务的语言'},
+ {id:'ch2',name:'第2章 利润与现金'},
+ {id:'ch3',name:'第3章 利润表'},
+ {id:'ch4',name:'第4章 资产负债表'},
+ {id:'ch5',name:'第5章 现金流量表'},
+ {id:'ch6',name:'第6章 三表联动'},
+ {id:'ch7',name:'第7章 比率与杜邦'},
+ {id:'ch8',name:'第8章 货币时间价值'},
+ {id:'ch9',name:'第9章 估值入门'},
+ {id:'ch10',name:'第10章 读懂年报'},
+ {id:'ch11',name:'第11章 识别舞弊'},
+ {id:'ch12',name:'第12章 结业测验'}
+];
+var PKEY='fin-course-v1';
+var prog=loadProg();
+function loadProg(){try{var p=JSON.parse(localStorage.getItem(PKEY)||'{}');p.done=p.done||{};p.ck=p.ck||{};return p}catch(e){return{done:{},ck:{}}}}
+function saveProg(){try{localStorage.setItem(PKEY,JSON.stringify(prog))}catch(e){}}
+function markDone(id){prog.done[id]=true;saveProg();updateNav();updateProgress()}
+function updateNav(){
+  document.querySelectorAll('nav.chapternav a').forEach(function(a){
+    a.classList.toggle('done',!!prog.done[a.getAttribute('data-ch')]);
+  });
+}
+function updateProgress(){
+  var n=CHAPTERS.filter(function(c){return prog.done[c.id]}).length;
+  document.getElementById('progFill').style.width=(n/CHAPTERS.length*100)+'%';
+  document.getElementById('progText').textContent='已完成 '+n+' / '+CHAPTERS.length;
+}
+function switchChapter(id,scroll){
+  document.querySelectorAll('section.chapter').forEach(function(s){s.classList.remove('active')});
+  var sec=document.getElementById(id);if(!sec)return;
+  sec.classList.add('active');
+  document.querySelectorAll('nav.chapternav a').forEach(function(a){a.classList.toggle('active',a.getAttribute('data-ch')===id)});
+  if(scroll!==false)window.scrollTo({top:0,behavior:'smooth'});
+  if(history.replaceState)history.replaceState(null,'','#'+id);
+}
+function initNav(){
+  var nav=document.getElementById('chapterNav');
+  CHAPTERS.forEach(function(c){
+    var a=document.createElement('a');
+    a.href='#'+c.id;a.setAttribute('data-ch',c.id);
+    a.innerHTML='<span class="dot"></span>'+c.name;
+    a.addEventListener('click',function(e){e.preventDefault();switchChapter(c.id)});
+    nav.appendChild(a);
+  });
+  var hash=(location.hash||'#ch0').slice(1);
+  switchChapter(document.getElementById(hash)?hash:'ch0',false);
+  updateNav();updateProgress();
+}
+document.getElementById('resetBtn').addEventListener('click',function(){
+  if(confirm('确定清空全部学习进度吗？此操作不可恢复。')){
+    prog={done:{},ck:{}};saveProg();updateNav();updateProgress();
+    document.querySelectorAll('.cklist input').forEach(function(i){i.checked=false});
+    document.querySelectorAll('.cklist label').forEach(function(l){l.classList.remove('checked')});
+    alert('进度已重置。');
+  }
+});
+/* ch0 的开始按钮也计入进度 */
+document.querySelectorAll('[data-goto]').forEach(function(b){
+  b.addEventListener('click',function(){markDone(b.getAttribute('data-goto'));switchChapter(b.getAttribute('data-goto'))});
+});
+
+/* ============ Quiz 通用 ============ */
+document.querySelectorAll('.quiz').forEach(function(quiz){
+  var submit=quiz.querySelector('.q-submit');
+  var result=quiz.querySelector('.q-result');
+  var passRate=parseFloat(quiz.getAttribute('data-pass')||'0.67');
+  var chId=quiz.getAttribute('data-quiz');
+  var locked=false;
+  submit.addEventListener('click',function(){
+    if(locked)return;
+    var items=quiz.querySelectorAll('.q-item');
+    var right=0,total=items.length;
+    items.forEach(function(it){
+      var a=parseInt(it.getAttribute('data-a'),10);
+      var picked=-1;
+      var labels=it.querySelectorAll('.q-opts label');
+      labels.forEach(function(l,i){if(l.querySelector('input').checked)picked=i;l.classList.remove('picked','answer')});
+      if(picked>=0)labels[picked].classList.add('picked');
+      it.classList.remove('right','wrong');
+      if(picked===a){it.classList.add('right');right++}
+      else{it.classList.add('wrong');if(labels[a])labels[a].classList.add('answer')}
+    });
+    var rate=right/total;
+    if(rate>=passRate){
+      result.textContent='✅ '+right+' / '+total+' 题正确 —— 本章通过！';
+      result.className='q-result pass';
+      markDone(chId);
+      if(chId==='ch12')document.getElementById('finalBadge').classList.add('show');
+      locked=true;
+    }else{
+      result.textContent='❌ '+right+' / '+total+' 题正确 —— 未达标（需 ≥'+Math.ceil(passRate*total)+' 题），看看解析再试一次。';
+      result.className='q-result fail';
+    }
+  });
+});
+
+/* ============ ch1 恒等式天平 ============ */
+var scaleSteps=[
+ {label:'① 股东投入现金 100 万',a:100,l:0,e:100,note:'公司还没做生意，但已有家底：现金 100 万全部属于股东。'},
+ {label:'② 向银行借款 50 万',a:150,l:50,e:100,note:'资产与负债同时增加 50 万，权益不动——恒等式依然成立：150 = 50 + 100。'},
+ {label:'③ 花 40 万现金买设备',a:150,l:50,e:100,note:'现金变设备，资产内部一换一，总额不变。等式纹丝不动——这就是"复式"的威力。'},
+ {label:'④ 经营一年赚到现金 20 万',a:170,l:50,e:120,note:'利润增加权益：资产 170 = 负债 50 + 权益 120。赚的钱从来不是"多出来"的，而是换了一种形态存在于等式里。'}
+];
+(function(){
+  var box=document.getElementById('scaleBtns');if(!box)return;
+  scaleSteps.forEach(function(s,i){
+    var b=document.createElement('button');b.className='btn btn-ghost';b.textContent=s.label;
+    b.addEventListener('click',function(){
+      box.querySelectorAll('button').forEach(function(x){x.classList.remove('active')});b.classList.add('active');
+      ['eqA','eqL','eqE'].forEach(function(id,ix){
+        var el=document.getElementById(id);
+        el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');
+        el.querySelector('b').textContent=[s.a,s.l,s.e][ix];
+      });
+      document.getElementById('scaleNote').innerHTML='<b>状态：</b>'+s.note;
+    });
+    box.appendChild(b);
+  });
+})();
+
+/* ============ ch1 借贷分录 ============ */
+var ledgerData=[
+ {note:'资产（货币资金）增加记借方；权益（实收资本）增加记贷方。一借一贷，金额相等。',
+  l:['货币资金 <span class="amt">100</span>',''],r:['','实收资本 <span class="amt">100</span>']},
+ {note:'资产增加记借方；负债（短期借款）增加记贷方。',
+  l:['货币资金 <span class="amt">50</span>',''],r:['','短期借款 <span class="amt">50</span>']},
+ {note:'复式记账的精髓：收入确认与成本结转两笔分录同时发生，净效果 = 赚 24 万（收入60 − 成本36）。',
+  l:['应收账款 <span class="amt">60</span>','营业成本 <span class="amt">36</span>'],r:['营业收入 <span class="amt">60</span>','存货 <span class="amt">36</span>']},
+ {note:'费用增加记借方；资产（货币资金）减少记贷方。这 10 万会直接压低当月利润。',
+  l:['管理费用 <span class="amt">10</span>',''],r:['货币资金 <span class="amt">10</span>']}
+];
+(function(){
+  var sel=document.getElementById('ledgerSel');if(!sel)return;
+  function render(){
+    var d=ledgerData[parseInt(sel.value,10)];
+    document.getElementById('taccount').innerHTML=
+      '<div class="th l">借方（左）</div><div class="th r">贷方（右）</div>'+
+      '<div class="l">'+d.l[0]+'</div><div>'+d.r[0]+'</div>'+
+      '<div class="l">'+d.l[1]+'</div><div>'+d.r[1]+'</div>';
+    document.getElementById('ledgerNote').innerHTML=d.note;
+  }
+  sel.addEventListener('change',render);render();
+})();
+
+/* ============ ch2 记账基础切换 ============ */
+(function(){
+  var ab=document.getElementById('accrualBtn'),cb=document.getElementById('cashBtn');
+  if(!ab)return;
+  ab.addEventListener('click',function(){setMode(true)});
+  cb.addEventListener('click',function(){setMode(false)});
+  function setMode(accrual){
+    ab.classList.toggle('active',accrual);cb.classList.toggle('active',!accrual);
+    document.getElementById('b1').textContent=accrual?'0':'6 万';
+    document.getElementById('b2').textContent=accrual?'12 万':'0';
+    document.getElementById('b3').textContent=accrual?'0':'6 万';
+    document.getElementById('f1').textContent=accrual?'钱到手了，但活还没干——不能算赚':'收钱即收入，最直观';
+    document.getElementById('f2').textContent=accrual?'活干完了，收入全部在此确认':'没收到钱，利润为 0';
+    document.getElementById('f3').textContent=accrual?'钱到账，但利润早已在 3 月记过':'收钱即收入';
+    document.getElementById('basisNote').textContent=accrual?'当前：权责发生制——收入跟着"义务的履行"走，而不是跟着钱走。':'当前：收付实现制——收入跟着钱的进出走，直观但容易误判经营节奏。';
+  }
+})();
+
+/* ============ ch3 瀑布图 ============ */
+(function(){
+  var wf=document.getElementById('waterfall');if(!wf)return;
+  var items=[
+    {n:'营业收入',v:12000,type:'pos'},{n:'营业成本',v:-7200,type:'neg'},{n:'毛利',v:4800,type:'tot'},
+    {n:'三费+研发',v:-2700,type:'neg'},{n:'财务费用',v:-150,type:'neg'},{n:'其他/税等',v:-425,type:'neg'},{n:'净利润',v:1425,type:'tot'}
+  ];
+  var max=12000;
+  items.forEach(function(it){
+    var col=document.createElement('div');col.className='col';
+    var h=Math.max(Math.abs(it.v)/max*185,6);
+    var bar=document.createElement('div');bar.className='bar b-'+it.type;
+    bar.style.height=h+'px';bar.title=it.n+'：'+it.v.toLocaleString()+' 万元';
+    var v=document.createElement('div');v.className='v';v.textContent=(it.v>0?'':'')+it.v.toLocaleString();
+    var n=document.createElement('div');n.className='n';n.textContent=it.n;
+    col.appendChild(v);col.appendChild(bar);col.appendChild(n);
+    wf.appendChild(col);
+  });
+})();
+
+/* ============ ch5 现金流八卦 ============ */
+var cashMtx=[
+ {s:'+++',n:'成熟但奇怪',d:'经营赚钱 + 变卖资产 + 继续融资？造血良好却不投资还在筹钱——可能在酝酿大动作，也可能资金另有隐情。少见，需细查。'},
+ {s:'++−',n:'收缩转型',d:'经营赚钱 + 变卖资产 + 还债分红。不再扩张、收缩战线回馈股东。转型期或行业见顶公司的典型形态。'},
+ {s:'+−+',n:'成长扩张',d:'经营赚钱 + 大手笔投资 + 融资加码。最典型的成长期画像：主业已能造血，同时借钱抢赛道。关键看投资未来能否兑现。'},
+ {s:'+−−',n:'健康奶牛',d:'经营赚钱 + 自我投资 + 还债分红。不靠外力即可扩张并回馈股东——成熟期最健康的形态，现金奶牛。'},
+ {s:'−++',n:'失血输血',d:'经营亏损 + 变卖资产 + 依赖融资。主业失血，靠卖家当和借钱续命。高危区：融资一断，游戏结束。'},
+ {s:'−+−',n:'衰退清算',d:'经营亏损 + 变卖资产 + 还债。全面收缩求生，典型的衰退期形态，离清算风险最近。'},
+ {s:'−−+',n:'初创豪赌',d:'经营亏损 + 大额投入 + 靠融资烧钱。对初创企业正常（先烧钱换市场）；对成熟公司是危险信号。'},
+ {s:'−−−',n:'全面失血',d:'三项全负：经营亏、投资缩、还还债。除非即将拿到救命钱，否则濒临绝境。'}
+];
+(function(){
+  var box=document.getElementById('cashMtx');if(!box)return;
+  cashMtx.forEach(function(m){
+    var b=document.createElement('button');
+    b.innerHTML='<span class="sg">'+m.s.split('').map(function(x){return '<span class="'+(x==='+'?'pos':'neg')+'">'+x+'</span>'}).join(' ')+'</span>'+m.n;
+    b.addEventListener('click',function(){
+      box.querySelectorAll('button').forEach(function(x){x.classList.remove('active')});b.classList.add('active');
+      document.getElementById('cashMtxNote').innerHTML='<b>'+m.n+'（经营 '+m.s[0]+' / 投资 '+m.s[1]+' / 筹资 '+m.s[2]+'）：</b>'+m.d;
+    });
+    box.appendChild(b);
+  });
+})();
+
+/* ============ ch6 业务模拟器 ============ */
+var evData=[
+ {label:'① 赊销 100 万',income:[['营业收入','+100'],['净利润','约+75']],balance:[['应收账款','+100'],['未分配利润','+75'],['货币资金','不变']],cash:[['经营现金流','0'],['一分钱没进账','']],note:'<b>利润 ≠ 现金</b>的现场：利润表立刻变漂亮，现金纹丝不动。大量赊销冲业绩的公司，利润再好也要验现金流成色。'},
+ {label:'② 现金采购 100 万',income:[['当期利润','0'],['（先入存货）','']],balance:[['存货','+100'],['货币资金','−100']],cash:[['经营活动','−100'],['购买商品付现','']],note:'资产内部一换一，总额与利润都不变——只有现金流量表能捕捉这笔动静。'},
+ {label:'③ 计提折旧 50 万',income:[['折旧费用','+50'],['净利润','约−37.5']],balance:[['固定资产净值','−50'],['货币资金','不变']],cash:[['经营活动','+50 加回'],['非付现成本','']],note:'<b>反直觉：</b>计提折旧压低利润，却不动现金，编现金流量表还要加回来。折旧年限的选择直接影响利润——这就是"财务的艺术"。'},
+ {label:'④ 银行贷款 500 万',income:[['不直接影响','0'],['（后续利息才影响）','']],balance:[['货币资金','+500'],['借款','+500']],cash:[['筹资活动','+500'],['取得借款','']],note:'利润表毫无感觉，但公司杠杆骤增。扩张迅猛"现金充裕"的公司，常是债务在支撑——看筹资活动现金流即可识破。'},
+ {label:'⑤ 收回应收 100 万',income:[['利润','0'],['收入早已确认','']],balance:[['货币资金','+100'],['应收账款','−100']],cash:[['经营活动','+100'],['销售收现','']],note:'利润不动、现金实收。所以"高利润+现金流差"要查应收；"低利润+现金流好"的生意（先款后货）反而可能很健康。'}
+];
+(function(){
+  var box=document.getElementById('evBtns');if(!box)return;
+  function fill(id,items){
+    var ul=document.getElementById(id);ul.innerHTML='';
+    items.forEach(function(x){
+      var li=document.createElement('li');
+      var cls=x[1].startsWith('+')?'up':(x[1].startsWith('−')||x[1].startsWith('-')?'down':'zero');
+      li.innerHTML='<span>'+x[0]+'</span><span class="delta '+cls+'">'+x[1]+'</span>';
+      ul.appendChild(li);
+    });
+  }
+  function render(i){
+    var d=evData[i];
+    fill('evIncome',d.income);fill('evBalance',d.balance);fill('evCash',d.cash);
+    document.getElementById('evNote').innerHTML=d.note;
+  }
+  evData.forEach(function(d,i){
+    var b=document.createElement('button');b.className='btn btn-ghost'+(i===0?' active':'');b.textContent=d.label;
+    b.addEventListener('click',function(){
+      box.querySelectorAll('button').forEach(function(x){x.classList.remove('active')});b.classList.add('active');render(i);
+    });
+    box.appendChild(b);
+  });
+  render(0);
+})();
+
+/* ============ ch7 比率体检器 ============ */
+(function(){
+  var grid=document.getElementById('ratioGrid');if(!grid)return;
+  function num(id){return parseFloat(document.getElementById(id).value)}
+  function pct(a,b){return b? a/b*100 : NaN}
+  function judge3(v,g,w){return isNaN(v)?['—','']:v>=g?['健康','good']:v>=w?['一般','warn']:['偏弱','bad']}
+  function judgeDown(v,g,w){return isNaN(v)?['—','']:v<=g?['健康','good']:v<=w?['一般','warn']:['偏高','bad']}
+  var defs=[
+   {n:'毛利率',f:'（收入−成本）÷收入',c:function(){return pct(num('r_rev')-num('r_cogs'),num('r_rev'))},s:'%',j:function(v){return judge3(v,30,15)},t:'产品盈利底色。<15% 时费用稍有波动就亏损。'},
+   {n:'净利率',f:'净利润 ÷ 收入',c:function(){return pct(num('r_np'),num('r_rev'))},s:'%',j:function(v){return judge3(v,10,5)},t:'每 100 元收入最终归属股东的利润。'},
+   {n:'ROE',f:'净利润 ÷ 净资产',c:function(){return pct(num('r_np'),num('r_eq'))},s:'%',j:function(v){return judge3(v,15,8)},t:'股东资金的赚钱效率，长期 >15% 通常优秀。'},
+   {n:'ROA',f:'净利润 ÷ 总资产',c:function(){return pct(num('r_np'),num('r_ta'))},s:'%',j:function(v){return judge3(v,8,4)},t:'全部资产的效率；ROE 远高于 ROA 说明含杠杆成分。'},
+   {n:'流动比率',f:'流动资产 ÷ 流动负债',c:function(){return num('r_ca')/num('r_cl')},s:'',j:function(v){return judge3(v,1.5,1)},t:'经验区间 1.5–2.5；>3 可能资金闲置。'},
+   {n:'速动比率',f:'（流动资产−存货）÷流动负债',c:function(){return (num('r_ca')-num('r_inv'))/num('r_cl')},s:'',j:function(v){return judge3(v,1,0.7)},t:'剔除存货后的短期偿债能力，≥1 较稳。'},
+   {n:'资产负债率',f:'负债 ÷ 总资产',c:function(){return pct(num('r_ta')-num('r_eq'),num('r_ta'))},s:'%',j:function(v){return judgeDown(v,60,70)},t:'40–60% 常见；>70% 风险显著放大（金融除外）。'},
+   {n:'存货周转率',f:'成本 ÷ 存货',c:function(){return num('r_cogs')/num('r_inv')},s:' 次',j:function(v){return judge3(v,4,2.5)},t:'存货一年周转几次，越快资金效率越高。'},
+   {n:'应收周转率',f:'收入 ÷ 应收账款',c:function(){return num('r_rev')/num('r_ar')},s:' 次',j:function(v){return judge3(v,6,3)},t:'回款速度，5 次 ≈ 73 天；越慢越说明对客户弱势。'}
+  ];
+  function render(){
+    grid.innerHTML='';
+    defs.forEach(function(d){
+      var v=d.c();var jt=d.j(v);
+      var el=document.createElement('div');el.className='ratio-card';
+      el.innerHTML='<h4>'+d.n+'</h4><div class="f">'+d.f+'</div>'+
+        '<div class="v">'+(isNaN(v)?'—':v.toFixed(1)+d.s)+(jt[1]?'<span class="chip '+jt[1]+'" style="margin-left:8px;vertical-align:5px">'+jt[0]+'</span>':'')+'</div>'+
+        '<p>'+d.t+'</p>';
+      grid.appendChild(el);
+    });
+  }
+  ['r_rev','r_cogs','r_np','r_ta','r_eq','r_ca','r_inv','r_ar','r_cl'].forEach(function(id){
+    document.getElementById(id).addEventListener('input',render);
+  });
+  render();
+})();
+
+/* ============ ch7 杜邦 ============ */
+(function(){
+  var dm=document.getElementById('d_margin');if(!dm)return;
+  var dt=document.getElementById('d_turn'),de=document.getElementById('d_em');
+  function fmt(v,d){return v.toFixed(d)}
+  function upd(){
+    var m=parseFloat(dm.value),t=parseFloat(dt.value),e=parseFloat(de.value);
+    document.getElementById('d_margin_o').textContent=fmt(m,1)+'%';
+    document.getElementById('d_turn_o').textContent=fmt(t,1)+' 次';
+    document.getElementById('d_em_o').textContent=fmt(e,1)+' 倍';
+    var roe=m/100*t*e*100;
+    document.getElementById('d_roe').textContent=fmt(roe,1)+'%';
+    var chip=document.getElementById('d_chip');
+    if(roe>=15){chip.className='chip good';chip.textContent='优秀'}
+    else if(roe>=8){chip.className='chip warn';chip.textContent='合格'}
+    else{chip.className='chip bad';chip.textContent='偏弱'}
+    var style=[];
+    if(m>=20)style.push('高利润厚度（品牌/壁垒型）');else if(m<=8)style.push('薄利多销（效率型）');
+    if(t>=2)style.push('资产翻台极快');else if(t<=0.6)style.push('重资产慢周转');
+    if(e>=3)style.push('高杠杆驱动');else if(e<=1.3)style.push('几乎无杠杆');
+    document.getElementById('d_desc').textContent=style.length?'生意画像：'+style.join(' + ')+'。':'介于典型形态之间的均衡生意。';
+  }
+  [dm,dt,de].forEach(function(s){s.addEventListener('input',upd)});upd();
+})();
+
+/* ============ ch8 复利图 ============ */
+(function(){
+  var pv=document.getElementById('c_pv');if(!pv)return;
+  var cr=document.getElementById('c_r'),ct=document.getElementById('c_t');
+  var svg=document.getElementById('c_svg');
+  function upd(){
+    var P=parseFloat(pv.value),r=parseFloat(cr.value)/100,T=parseInt(ct.value,10);
+    document.getElementById('c_pv_o').textContent=P;
+    document.getElementById('c_r_o').textContent=parseFloat(cr.value)+'%';
+    document.getElementById('c_t_o').textContent=T+' 年';
+    var simple=P*(1+r*T),comp=P*Math.pow(1+r,T);
+    var W=640,H=280,L=52,R=20,TopT=24,Bot=36;
+    var maxV=comp*1.05;
+    function X(t){return L+t/T*(W-L-R)}
+    function Y(v){return H-Bot-(v/maxV)*(H-TopT-Bot)}
+    var ptsC=[],ptsS=[];
+    for(var t=0;t<=T;t++){
+      ptsC.push(X(t)+','+Y(P*Math.pow(1+r,t)));
+      ptsS.push(X(t)+','+Y(P*(1+r*t)));
+    }
+    var grid='',labels='';
+    [0,0.5,1].forEach(function(f){
+      var v=maxV*f,y=Y(v);
+      grid+='<line x1="'+L+'" y1="'+y+'" x2="'+(W-R)+'" y2="'+y+'" stroke="#e6ebf1"/>';
+      labels+='<text x="'+(L-8)+'" y="'+(y+4)+'" text-anchor="end" font-size="11" fill="#8b98a6">'+(v>=10000?(v/10000).toFixed(1)+'万':Math.round(v))+'</text>';
+    });
+    var xlab='';
+    for(var t=0;t<=T;t+=Math.max(1,Math.round(T/8))){xlab+='<text x="'+X(t)+'" y="'+(H-14)+'" text-anchor="middle" font-size="11" fill="#8b98a6">'+t+'</text>'}
+    svg.innerHTML=grid+labels+xlab+
+      '<line x1="'+L+'" y1="'+(H-Bot)+'" x2="'+(W-R)+'" y2="'+(H-Bot)+'" stroke="#16324f" stroke-width="2"/>'+
+      '<polyline points="'+ptsS.join(' ')+'" fill="none" stroke="#c9a227" stroke-width="2.5" stroke-dasharray="6 4"/>'+
+      '<polyline points="'+ptsC.join(' ')+'" fill="none" stroke="#0f766e" stroke-width="3"/>'+
+      '<text x="'+(W-R)+'" y="'+(Y(comp)-10)+'" text-anchor="end" font-size="12.5" font-weight="700" fill="#0f766e">复利 '+comp.toFixed(1)+' 万</text>'+
+      '<text x="'+(W-R)+'" y="'+(Y(simple)-10)+'" text-anchor="end" font-size="12.5" font-weight="700" fill="#a8861a">单利 '+simple.toFixed(1)+' 万</text>';
+    document.getElementById('c_summary').innerHTML='本金 '+P+' 万、年化 '+cr.value+'%、'+T+' 年后：<b>复利终值 '+comp.toFixed(1)+' 万</b>（单利仅 '+simple.toFixed(1)+' 万，差额 '+(comp-simple).toFixed(1)+' 万全是"利滚利"）。按 72 法则约每 '+(72/parseFloat(cr.value)).toFixed(0)+' 年翻一倍。';
+  }
+  [pv,cr,ct].forEach(function(s){s.addEventListener('input',upd)});upd();
+})();
+
+/* ============ ch8 NPV ============ */
+(function(){
+  function upd(){
+    var c0=parseFloat(document.getElementById('n_c0').value),
+        cf=parseFloat(document.getElementById('n_cf').value),
+        r=parseFloat(document.getElementById('n_r').value)/100,
+        t=parseInt(document.getElementById('n_t').value,10);
+    if([c0,cf,r,t].some(isNaN)||r<=-1||t<=0){document.getElementById('n_npv').textContent='—';return}
+    var pv=0;
+    if(r===0)pv=cf*t;else pv=cf*(1-Math.pow(1+r,-t))/r;
+    var npv=pv-c0;
+    document.getElementById('n_npv').textContent=(npv>=0?'+':'')+npv.toFixed(0)+' 万';
+    document.getElementById('n_npv').style.color=npv>=0?'var(--teal)':'var(--red)';
+    document.getElementById('n_verdict').textContent=npv>0?'为正：项目回报超过 '+document.getElementById('n_r').value+'% 的要求回报率，值得投资。':(npv<0?'为负：赚不回要求回报，放弃或重新谈判条件。':'恰好达标：边际项目，谨慎。');
+  }
+  ['n_c0','n_cf','n_r','n_t'].forEach(function(id){document.getElementById(id).addEventListener('input',upd)});
+  upd();
+})();
+
+/* ============ ch9 PE ============ */
+(function(){
+  function upd(){
+    var price=parseFloat(document.getElementById('p_price').value),eps=parseFloat(document.getElementById('p_eps').value);
+    if(isNaN(price)||isNaN(eps)||eps<=0){document.getElementById('p_pe').textContent='—';return}
+    var pe=price/eps;
+    document.getElementById('p_pe').textContent=pe.toFixed(1)+' 倍';
+    var v=pe<10?'偏低（或低增长/周期顶部，先查原因）':pe<=20?'常见区间（盈利较稳公司的常态）':pe<=35?'偏高（需较高增长支撑，用 PEG 检验）':'很高（市场押注爆发式增长，风险同步放大）';
+    document.getElementById('p_verdict').textContent=v+'——记住：PE 要和自己历史、同行、增速比，没有绝对标准线。';
+  }
+  ['p_price','p_eps'].forEach(function(id){document.getElementById(id).addEventListener('input',upd)});
+  upd();
+})();
+
+/* ============ ch10 清单 ============ */
+(function(){
+  var list=document.getElementById('cklist');if(!list)return;
+  var inputs=list.querySelectorAll('input');
+  inputs.forEach(function(inp){
+    inp.checked=!!prog.ck[inp.getAttribute('data-k')];
+    if(inp.checked)inp.closest('label').classList.add('checked');
+    inp.addEventListener('change',function(){
+      prog.ck[inp.getAttribute('data-k')]=inp.checked;saveProg();
+      inp.closest('label').classList.toggle('checked',inp.checked);
+      var n=list.querySelectorAll('input:checked').length;
+      document.getElementById('ckSummary').textContent=n>=10?'🎉 十项全绿！进入比率体检和估值环节吧。':'已完成 '+n+' / 10 项——勾掉一项少一分担忧。';
+    });
+  });
+})();
+
+/* ============ ch11 舞弊案例 ============ */
+document.querySelectorAll('.fraud-case .choice button').forEach(function(b){
+  b.addEventListener('click',function(){
+    var wrap=b.closest('.choice');
+    wrap.querySelectorAll('button').forEach(function(x){x.classList.remove('right','wrong')});
+    var isBad=b.getAttribute('data-ans')==='bad';
+    /* 案例A/B/C/E 为危险，D 为正常 */
+    var idx=b.getAttribute('data-f');
+    var caseIsBad=(idx!=='3');
+    var correct=(isBad===caseIsBad);
+    if(correct){b.classList.add('right')}else{b.classList.add('wrong')}
+    document.querySelector('.fb[data-f="'+idx+'"]').classList.add('show');
+  });
+});
+
+/* ============ 启动 ============ */
+initNav();
+</script>
+</body>
+</html>
