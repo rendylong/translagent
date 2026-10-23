@@ -8,10 +8,11 @@
   - Pass2RunnerWiringTest:speaker_cluster 接线——段落与 pass2 事件带 speaker 字段;
     不传 cluster 时行为与 Task 5 完全一致(段落/事件无 speaker 键)。
 
-窗口选择依据(2026-10-23 实测,θ=0.35 在 0.30-0.40 带宽内全 6/6,见 task-6-report):
+窗口选择依据(2026-10-23 实测,DEFAULT_THETA=0.40 下 6/6,见 task-6-report):
   - en:两说话人各自前 3 窗(anchors.json 顺序);
-  - zh:sp0 取 [9.8, 4389.3, 4804.9]、sp1 取 [4439.1, 4469.1, 4499.1]
-    (避开寒暄区串音窗口 39.1/64.3 与离群窗 82.3,均按 anchors.json 内顺序)。
+  - zh:sp0 取列表下标 (0,2,3)=[9.8, 4389.3, 4804.9]、sp1 取 (5,6,7)=[4499.1,
+    4529.1, 4555.9](避开寒暄区串音窗口 39.1/64.3/4073.7 与离群窗 82.3)。
+锚点窗均 ≤6s < CHUNK_S(8s),单块喂入,不触发长段分块路径。
 音频与标签同源:models/bench/anchors.json + 对应 job wav。
 """
 import json
