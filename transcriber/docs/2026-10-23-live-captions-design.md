@@ -40,7 +40,7 @@
 | 客户端已采 16kHz/16bit 单声道 PCM | recorder.js / desktop |
 | sherpa_onnx 1.13.8 含 OnlineRecognizer(已验证);flask_sock 缺失 | 2026-10-23 核查 |
 | 桌面客户端 = Electron 主窗口 loadURL(127.0.0.1:8765 工作台网页) | desktop/main.js:161 |
-| MiniMax API:OpenAI 兼容 `POST https://api.minimax.io/v1/chat/completions`,模型 `MiniMax-M3.1-Flash`;key 在 `/Users/rendy/财务知识/env.rtf`(RTF 包装单行 sk-,**不入 spec 明文/不入代码/不入日志**,运行时解析) | 2026-10-23 用户指令 + 官方文档 |
+| MiniMax API:OpenAI 兼容 `POST https://api.minimaxi.com/v1/chat/completions`(中国域,2026-10-23 实测;国际域对国内 key 401),模型 `MiniMax-M3.1-Flash`;key 在 `/Users/rendy/财务知识/env.rtf`(RTF 包装单行 sk-,**不入 spec 明文/不入代码/不入日志**,运行时解析) | 2026-10-23 用户指令 + 官方文档 + Task 8 实测 |
 | **另一 session 正在优化界面交互**(2026-10-23 11:33~12:02 已改 `static/index.html`、`static/recorder.js`、`desktop/main.js`、`desktop/guide.html`、`build-app.sh`) | 用户指令 + 文件 mtime;同步纪律见 §7.4 |
 | 音频/声纹不出本机;文本出境范围以 §1 隐私约定变更为准 | AGENTS.md + 用户 2026-10-23 指令 |
 
@@ -160,14 +160,14 @@ S→C  {type:'stopped', job_id} / {type:'error', msg}
 **定位**:对 Pass2 definite 文本做**软更新**——异步、尽力而为,失败/超时永远保留 whisper 文本,不阻塞、不撤销任何已下发内容。字幕由此呈现三级状态:partial(灰)→ whisper 修正(黑,带说话人)→ LLM 修正+翻译(替换文本 + 附译文行)。
 
 **调用方式**
-- `POST https://api.minimax.io/v1/chat/completions`(OpenAI 兼容),model=`MiniMax-M3.1-Flash`;Python 标准库 `urllib.request` 直调,不装 SDK(零新依赖)。
+- `POST https://api.minimaxi.com/v1/chat/completions`(OpenAI 兼容;**2026-10-23 实测纠偏:中国域 `api.minimaxi.com` 可用,国际域 `api.minimax.io` 对本机 key 稳定 401**),model=`MiniMax-M3.1-Flash`;Python 标准库 `urllib.request` 直调,不装 SDK(零新依赖)。
 - key:启动时从 `/Users/rendy/财务知识/env.rtf` 读取(该文件是 RTF 包装的单行,解析时剥 RTF 标记提取 `sk-` 串),仅存内存;缺失时 Pass3 整层禁用并告警,Pass1/2 不受影响。key 不写入任何日志、meta 或下发明文。
 - 请求:非流式,超时 8s,重试 1 次(退避 2s);逐窗串行队列(20s+ 一窗,远低于速率限制)。
 
 **Prompt 契约(关键,防幻觉)**
 - 输入:本窗 whisper 文本(带说话人标签)+ 上一窗 LLM 已修正文本(滚动上下文 ≤2 窗)+ 可选术语表(v1 预留字段,AGENTS.md 错词表风格)。
 - 指令约束:只修 ASR 类错误(同音字、错词、专名、标点、口语顺滑),**不改意思、不加不删内容、不合并说话人**;输出 JSON `{"corrected": "...", "translation": "..."}`,translation 为指定目标语言(v1 默认 zh→en);拒绝修正时 corrected 原样返回。
-- 温度 0;max_tokens 按输入长度 2 倍封顶。
+- 温度 0;max_tokens 下限 1536(2026-10-23 实测:M3.1-Flash 是推理模型,思考 token 计入 max_tokens,低封顶会把 content 截空)。
 
 **出境数据范围(隐私边界,写死)**:仅 `(本窗文本, 前窗已修正文本, 术语表)` 三个字符串字段 + 模型名。**不出境**:音频任何形式、时间戳之外的元数据、说话人姓名(只有"说话人N"编号)、文件路径、其他 job 内容。终端稿(transcript.md)是否调用 LLM 清理**不在本 spec 范围**(仍走现有人工流程)。
 
