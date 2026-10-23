@@ -882,7 +882,22 @@ LIVE_MODEL_DIR = os.path.join(MODEL_DIR, 'streaming-zipformer-zh-en')
 
 
 def live_recover():
-    """启动时扫描 live/ 目录续接未完成会话的恢复钩子(Task 9 实现;先空转)。"""
+    """启动时扫描 live/ 未终态会话目录 → 自动转正建 job(Task 9;真身 live_finalize)。"""
+    import live_finalize
+    done = live_finalize.recover_all(LIVE_ROOT)
+    if done:
+        print('live 恢复:%d 个未完成会话已转正:%s'
+              % (len(done), ', '.join('%s→%s' % (s, j) for s, j in done)))
+
+
+@app.get('/live')
+def live_page():
+    return send_from_directory(STATIC_DIR, 'live.html')
+
+
+@app.get('/live.js')
+def live_js():
+    return send_from_directory(STATIC_DIR, 'live.js')
 
 
 @sock.route('/ws/live')
@@ -893,23 +908,12 @@ def ws_live(ws):
     gone = threading.Event()
 
     def pump(last_seq):
-        """转发会话事件队列;seq ≤ last_seq 的是 resume 已重放过的事件,跳过。"""
-        while True:
-            try:
-                ev = session.events.get(timeout=0.5)
-            except queue.Empty:
-                if gone.is_set():
-                    return
-                continue
-            if ev.get('seq', 0) <= last_seq:
-                continue
-            try:
-                ws.send(json.dumps(ev, ensure_ascii=False))
-            except Exception:  # noqa: BLE001 对端已断
-                return
-            last_seq = ev['seq']
-            if ev.get('type') == 'stopped':
-                return
+        """转发会话事件队列(主循环在 live_session.pump_events,便于单测):stopped
+        投出 / gone 置位 / 连续 send 失败(对端断开,事件已按序归还 tap)任一即退出
+        ——转正异步期间客户端断开也不会活锁。"""
+        def send(ev):
+            ws.send(json.dumps(ev, ensure_ascii=False))
+        return live_domain.pump_events(session.tap, send, gone, last_seq)
 
     try:
         while True:
@@ -925,14 +929,15 @@ def ws_live(ws):
             mtype = msg.get('type')
             if mtype == 'start' and session is None:
                 session = live_domain.LiveSession(LIVE_ROOT, LIVE_MODEL_DIR)
-                sid = session.start(str(msg.get('title') or ''), msg.get('speakers') or 0)
+                sid = session.start(str(msg.get('title') or ''), msg.get('speakers') or 0,
+                                    str(msg.get('language') or 'zh>en'))
                 ws.send(json.dumps({'type': 'started', 'session_id': sid}, ensure_ascii=False))
                 sender = threading.Thread(target=pump, args=(0,), daemon=True)
                 sender.start()
             elif mtype == 'stop' and session is not None and session.status == 'listening':
-                session.handle_stop()   # 阻塞至冲刷完成;stop_ack/stopped 事件经 pump 下行
+                session.handle_stop()   # 异步:返回即 stop_ack 入队;转正(尾窗+建 job)在后台
                 if sender is not None:
-                    sender.join(timeout=30)
+                    sender.join()       # pump 发完 stopped(或对端断开)后自然退出
                 return
             elif mtype == 'resume' and session is None:
                 session = live_domain.find_session(str(msg.get('session_id') or ''))
@@ -956,9 +961,24 @@ def ws_live(ws):
         gone.set()
 
 
-if __name__ == '__main__':
+def main():
+    """服务入口(仅 __main__ 委托调用):worker 线程 + Flask 监听。
+
+    收口成函数并让脚本态走 `import app` 是关键:`python3 app.py` 直跑时模块名是
+    __main__,而 live_pass2/live_finalize 的 `import app` 会把 app.py 再执行一遍
+    成第二个实例——两份 job_queue(live 转正的 job 进孤儿队列,worker 永远不取,
+    2026-10-23 replay 对拍实测卡 queued 15 分钟)与两份 GPU_LOCK(离线 whisper 与
+    live pass2 的互斥失效,Metal 抢占)。单实例化后两处身份恒等。"""
     os.makedirs(JOBS_DIR, exist_ok=True)
     recover_interrupted()
-    live_recover()   # live 会话恢复钩子(Task 9 实现前空转)
+    live_recover()   # live 断电恢复:非终态会话目录自动转正建 job(Task 9)
     threading.Thread(target=worker, daemon=True).start()
     app.run(host='127.0.0.1', port=8765, threaded=True)
+
+
+if __name__ == '__main__':
+    import sys as _sys
+    if __package__ in (None, ''):   # 直跑:确保能 import 到自身模块实例
+        _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import app as _real
+    _real.main()
