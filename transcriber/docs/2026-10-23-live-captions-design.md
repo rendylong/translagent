@@ -28,7 +28,7 @@
 **反目标(即使技术可行也不要)**
 - 实时层追求逐字准确——质量责任在终稿管线,实时层只求"跟得上、看得懂"。
 - **音频、声纹 embedding、原始录音永远不出本机**(MiniMax 只收 §6.8 列明的文本)。
-- 改动现有 job 管线的行为或数据形状:**唯一一处现有代码改动是 `run_whisper` 外加 GPU 锁(§6.6)**;live 会话放独立目录、转正走普通上传路径(§6.2/§6.7),`process_job`、`recover_interrupted`、jobs API 一概不动。
+- 改动现有 job 管线的行为或数据形状:**现有代码改动仅两处——`run_whisper` 外加 GPU 锁(§6.6),以及 `if __name__` 入口块改委托 `import app` 单实例(2026-10-23 Task 9 实测追认:`python3 app.py` 下 `__main__` 与 `import app` 双模块实例导致 GPU_LOCK 分裂、转正 job 进孤儿队列)**;live 会话放独立目录、转正走普通上传路径(§6.2/§6.7),`process_job`、`recover_interrupted`、jobs API 一概不动。
 
 ## 3. 约束(来自 AGENTS.md 与实测)
 
