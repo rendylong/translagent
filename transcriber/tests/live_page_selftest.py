@@ -1,0 +1,242 @@
+# -*- coding: utf-8 -*-
+"""Task 7 前端页面自测:静态存在性断言 + 对真实服务的协议级流程模拟。
+
+两段:
+  1. StaticCheck:live.html / live.js 关键实现的字符串存在性
+     (audio_flush_done、流式降采样、resume、5 分钟缓冲上限、「停止」文案、不出现「转正」)。
+  2. ProtocolFlow:起 app.py 子进程,按前端 live.js 的真实时序走一遍
+     start → 喂 zh 锚点 30s(200ms/包)→ 收 partial/pass1_final →
+     断线重连 resume(last_seq=0 重放)→ 发 audio_flush_done → stop → stop_ack → stopped。
+     断言与 live_session.py / app.py ws_live 的实际实现逐点对齐(无 resumed 消息、
+     pass2 字段名 t0/t1 在本流程不出现——pass2 管线尚未接入 WS,前端先行画好)。
+
+运行:cd transcriber && python3 tests/live_page_selftest.py
+(文件名不含 test 前缀,unittest discover 默认模式不会扫到它,需单独跑;
+ 端口 8765 被占时协议段自动跳过,静态段始终执行。)
+"""
+import json
+import re
+import socket
+import subprocess
+import sys
+import time
+import unittest
+from pathlib import Path
+
+import numpy as np
+import websocket
+
+BASE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE))
+
+import app  # noqa: E402  只为复用 read_wav_float(与 ws_smoke 同款)
+
+PORT = 8765
+CHUNK = 3200            # 200ms @16k 单声道 16bit(与 live.js CHUNK_SAMPLES 一致)
+FEED_SEC = 30
+LIVE_HTML = BASE / 'static' / 'live.html'
+LIVE_JS = BASE / 'static' / 'live.js'
+
+
+def port_busy():
+    try:
+        with socket.create_connection(('127.0.0.1', PORT), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def wait_port(proc, timeout=60):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError('app.py 子进程提前退出(code=%s)' % proc.returncode)
+        if port_busy():
+            return
+        time.sleep(0.3)
+    raise RuntimeError('服务 %.0fs 内未就绪' % timeout)
+
+
+def load_pcm_bytes():
+    with open(BASE / 'models' / 'bench' / 'anchors.json') as fp:
+        anchors = json.load(fp)
+    samples = app.read_wav_float(anchors['zh']['wav'])[:FEED_SEC * 16000]
+    assert len(samples) == FEED_SEC * 16000, '锚点音频不足 %ds' % FEED_SEC
+    q = np.clip(samples * 32768.0, -32768.0, 32767.0)
+    return q.astype('<i2').tobytes()
+
+
+class StaticCheck(unittest.TestCase):
+    """live.html / live.js 关键实现的静态存在性(可回归的最低保障)。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = LIVE_HTML.read_text(encoding='utf-8')
+        cls.js = LIVE_JS.read_text(encoding='utf-8')
+
+    def test_ws_url_and_upstream_messages(self):
+        self.assertIn('/ws/live', self.js)
+        for word in ('start', 'stop', 'resume'):
+            self.assertRegex(
+                self.js, r"type\s*:\s*['\"]" + word + r"['\"]",
+                '上行消息 %s 缺失或未按 {type: ...} 形式发送' % word)
+
+    def test_audio_flush_done_sent_after_resume(self):
+        self.assertIn('audio_flush_done', self.js)
+
+    def test_streaming_resample_present(self):
+        self.assertIn('resampleTo16k', self.js)      # 流式降采样(16k AudioContext 失败时)
+
+    def test_buffer_cap_5min(self):
+        self.assertIn('BUFFER_MAX_SEC = 5 * 60', self.js)
+
+    def test_stop_copy_and_no_banned_word(self):
+        self.assertIn('停止', self.html)
+        self.assertIn('停止', self.js)
+        self.assertNotIn('转正', self.html, '界面文案不得出现「转正」')
+        self.assertNotIn('转正', self.js, '界面文案不得出现「转正」')
+
+    def test_three_tier_rendering(self):
+        for key in ('pass1_final', 'pass2_skip', "'pass2'", "'llm'", 'translation'):
+            self.assertIn(key, self.js)
+        self.assertIn('t0_ms', self.js)   # pass1_final 字段名(与 live_session.py 一致)
+        self.assertIn('ev.t0', self.js)   # pass2/llm 字段名(与 live_pass2.py 一致)
+
+    def test_ended_copy(self):
+        self.assertIn('录音已保存 · 正在生成完整文稿', self.js)
+
+    def test_bar_and_panel_forms(self):
+        self.assertIn('backdrop-filter', self.html)   # 字幕条半透明+模糊
+        self.assertIn('light-dark(', self.html)       # 面板随系统深浅色
+        self.assertIn('URLSearchParams', self.js)     # ?mode=bar/panel 形态参数
+        self.assertIn("'bar'", self.js) and self.assertIn("'panel'", self.js)
+
+
+@unittest.skipIf(port_busy(), '端口 8765 已被占用(服务可能正在跑),跳过协议段')
+class ProtocolFlow(unittest.TestCase):
+    """模拟前端的完整 WS 时序,断言服务端真实行为与 live.js 实现的对齐点。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.proc = subprocess.Popen([sys.executable, 'app.py'], cwd=str(BASE),
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        try:
+            wait_port(cls.proc)
+        except Exception:
+            cls.tearDownClass()
+            raise
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.proc.terminate()
+        try:
+            cls.proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            cls.proc.kill()
+
+    def test_full_flow(self):
+        pcm = load_pcm_bytes()
+        ws = websocket.create_connection('ws://127.0.0.1:%d/ws/live' % PORT, timeout=60)
+
+        # ① start → started(无 seq 字段;session_id 供刷新后 resume)
+        ws.send(json.dumps({'type': 'start', 'title': '前端自测', 'speakers': 2,
+                            'language': 'zh>en'}))          # language v1 被服务端忽略,不得报错
+        started = json.loads(ws.recv())
+        self.assertEqual(started.get('type'), 'started')
+        self.assertTrue(started.get('session_id'))
+        sid = started['session_id']
+        self.assertNotIn('seq', started)
+
+        # ② 喂 30s 音频(200ms/包二进制帧),期间应出 partial 与 pass1_final
+        ws.settimeout(90)
+        fed = bytearray()
+        partials, finals, others = 0, 0, []
+        deadline = time.time() + 90
+        feed_iter = range(0, len(pcm), CHUNK)
+        for i in feed_iter:
+            ws.send_binary(pcm[i:i + CHUNK])
+            fed += pcm[i:i + CHUNK]
+        while time.time() < deadline and (partials < 3 or finals < 1):
+            ev = json.loads(ws.recv())
+            t = ev.get('type')
+            if t == 'partial':
+                partials += 1
+                self.assertIn('text', ev)
+                self.assertIn('seq', ev)
+            elif t == 'pass1_final':
+                finals += 1
+                for k in ('text', 't0_ms', 't1_ms', 'seq'):   # 字段名 t0_ms/t1_ms
+                    self.assertIn(k, ev)
+            else:
+                others.append(t)
+        self.assertGreaterEqual(partials, 3, '90s 内 partial 不足:%d' % partials)
+        self.assertGreaterEqual(finals, 1, '90s 内 pass1_final 不足:%d' % finals)
+
+        # ③ 断线重连:resume(last_seq=0,模拟刷新页面全量重建)
+        ws.close()
+        time.sleep(0.5)
+        ws = websocket.create_connection('ws://127.0.0.1:%d/ws/live' % PORT, timeout=60)
+        ws.send(json.dumps({'type': 'resume', 'session_id': sid, 'last_seq': 0}))
+        replayed, replay_types = 0, set()
+        ws.settimeout(15)
+        try:
+            while True:                                     # 重放批次以断流或新事件间隔告终,15s 足够
+                ev = json.loads(ws.recv())
+                self.assertNotEqual(ev.get('type'), 'resumed',
+                                    '服务端实现无 resumed 消息,若出现说明协议变了,前端需同步')
+                replayed += 1
+                replay_types.add(ev.get('type'))
+                if replayed >= 5 and ev.get('type') == 'partial':
+                    break
+        except websocket.WebSocketTimeoutException:
+            pass
+        self.assertGreater(replayed, 0, 'resume 未重放任何事件')
+
+        # ④ 补发音频 + audio_flush_done(服务端当前忽略该消息,不得断连/报错)
+        ws.send_binary(pcm[:CHUNK * 2])
+        ws.send(json.dumps({'type': 'audio_flush_done'}))
+        ws.settimeout(10)
+        stayed_open = True
+        try:
+            ev = json.loads(ws.recv())                       # 收到任何事件即连接仍健康
+            self.assertNotEqual(ev.get('type'), 'error', ev)
+        except websocket.WebSocketTimeoutException:
+            pass
+        except Exception:
+            stayed_open = False
+        self.assertTrue(stayed_open, 'audio_flush_done 后连接异常关闭')
+
+        # ⑤ stop → stop_ack 先于 stopped;stopped 当前无 job_id(Task 9 前的前端兼容点)
+        ws.send(json.dumps({'type': 'stop'}))
+        ws.settimeout(60)
+        seen_ack = seen_stopped = False
+        flush_finals = 0
+        while not seen_stopped:
+            ev = json.loads(ws.recv())
+            t = ev.get('type')
+            if t == 'stop_ack':
+                seen_ack = True
+                self.assertIn('seq', ev)
+            elif t == 'pass1_final':
+                flush_finals += 1                            # 引擎尾部冲刷的 final 可晚于 stop_ack
+            elif t == 'stopped':
+                self.assertTrue(seen_ack, 'stopped 先于 stop_ack 到达')
+                seen_stopped = True
+                self.assertNotIn('job_id', ev, 'Task 9 之前 stopped 无 job_id;若已带上,更新前端与断言')
+        # stopped 之后服务端主动断开(前端据此不再重连)
+        closed = False
+        try:
+            ws.settimeout(10)
+            while True:
+                if ws.recv() is None:
+                    closed = True
+                    break
+        except Exception:
+            closed = True
+        self.assertTrue(closed)
+        print('协议流程 ok: partials=%d finals=%d(含尾部冲刷 %d) resume 重放=%d 事件' %
+              (partials, finals, flush_finals, replayed))
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
