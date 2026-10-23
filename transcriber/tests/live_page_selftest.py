@@ -9,6 +9,9 @@
      断线重连 resume(last_seq=0 重放)→ 发 audio_flush_done → stop → stop_ack → stopped。
      断言与 live_session.py / app.py ws_live 的实际实现逐点对齐(无 resumed 消息、
      pass2 字段名 t0/t1 在本流程不出现——pass2 管线尚未接入 WS,前端先行画好)。
+     另有 test_stop_after_reconnect 覆盖「断线期按停止」路径:重连后必须先 resume
+     挂回会话再补发音频再 stop(否则新连接 session=None,stop 落空、会话悬死),
+     断言 stop_ack/stopped 到达且服务端 wav 已 finalize。
 
 运行:cd transcriber && python3 tests/live_page_selftest.py
 (文件名不含 test 前缀,unittest discover 默认模式不会扫到它,需单独跑;
@@ -236,6 +239,75 @@ class ProtocolFlow(unittest.TestCase):
         self.assertTrue(closed)
         print('协议流程 ok: partials=%d finals=%d(含尾部冲刷 %d) resume 重放=%d 事件' %
               (partials, finals, flush_finals, replayed))
+
+    def test_stop_after_reconnect(self):
+        """断线期按「停止」:重连后必须 resume→补发→stop(修复回归)。
+
+        模拟修复后 live.js 的 onopen userStop 分支线上顺序:resume → 二进制补发 →
+        audio_flush_done → stop。断言:stop_ack 与 stopped 均在本连接到达、顺序正确、
+        服务端随后断开;且 live/<sid>/live_audio.wav 已被 finalize(读回 ≈15s,
+        未收尾的会话头部长度为 0,读回 0 样本)。"""
+        pcm = load_pcm_bytes()
+        seg_a, seg_b = pcm[:12 * 32000], pcm[12 * 32000:15 * 32000]   # 12s + 3s,不重发
+        ws = websocket.create_connection('ws://127.0.0.1:%d/ws/live' % PORT, timeout=60)
+        ws.send(json.dumps({'type': 'start', 'title': '停止重连自测', 'speakers': 1}))
+        sid = json.loads(ws.recv())['session_id']
+        for i in range(0, len(seg_a), CHUNK):
+            ws.send_binary(seg_a[i:i + CHUNK])
+        last_seq, partials = 0, 0
+        ws.settimeout(20)
+        deadline = time.time() + 20
+        while time.time() < deadline and partials < 2:                 # 确认会话确实在出事件
+            ev = json.loads(ws.recv())
+            if ev.get('type') == 'partial':
+                partials += 1
+            if isinstance(ev.get('seq'), int):
+                last_seq = max(last_seq, ev['seq'])
+        self.assertGreaterEqual(partials, 1, '连接1 未收到 partial')
+        ws.close()                                                    # 模拟断线(音频 B 视为断线期缓冲)
+        # 等 1s 让服务端旧 pump 线程退出:断连后 ≤0.5s 内旧/新两个 pump 并发消费同一
+        # 事件队列,旧 pump 抢到事件后 send 失败会把它从实时流中吞掉(实测 stop_ack 偶发
+        # 丢失,6 次丢 2 次)。前端 RECONNECT_MS=3000 远大于该窗口,真实路径不受影响;
+        # 此处 1s 是对齐真实前端重连节奏的保守下限。此为服务端待修竞态,见任务报告。
+        time.sleep(1.0)
+
+        ws = websocket.create_connection('ws://127.0.0.1:%d/ws/live' % PORT, timeout=60)
+        ws.send(json.dumps({'type': 'resume', 'session_id': sid, 'last_seq': last_seq}))
+        for i in range(0, len(seg_b), CHUNK):                         # flushPending 补发
+            ws.send_binary(seg_b[i:i + CHUNK])
+        ws.send(json.dumps({'type': 'audio_flush_done'}))
+        ws.send(json.dumps({'type': 'stop'}))                         # 随后 stop
+
+        ws.settimeout(60)
+        ack = stopped = None
+        while not stopped:
+            ev = json.loads(ws.recv())
+            t = ev.get('type')
+            if t == 'stop_ack':
+                ack = ev
+            elif t == 'error':
+                self.fail('停止重连路径收到 error:%s' % ev)
+            elif t == 'stopped':
+                self.assertIsNotNone(ack, 'stopped 先于 stop_ack')
+                self.assertGreater(ev['seq'], ack['seq'])
+                stopped = ev
+        self.assertIsNotNone(ack, '未收到 stop_ack(会话未挂回,stop 落空)')
+        closed = False
+        try:
+            ws.settimeout(10)
+            while ws.recv() is not None:
+                pass
+        except Exception:
+            closed = True
+        self.assertTrue(closed, 'stopped 后服务端未断开')
+
+        wav = BASE / 'live' / sid / 'live_audio.wav'                  # 服务端会话确实收尾
+        self.assertTrue(wav.is_file(), 'live_audio.wav 不存在')
+        n = len(app.read_wav_float(str(wav)))
+        self.assertGreaterEqual(n, int(15 * 16000 * 0.98),
+                                'wav 仅 %.1fs,会话疑似悬死未 finalize' % (n / 16000))
+        print('停止重连路径 ok: stop_ack=seq%s stopped=seq%s wav=%.1fs' %
+              (ack['seq'], stopped['seq'], n / 16000))
 
 
 if __name__ == '__main__':

@@ -94,8 +94,11 @@ function connect(){
     state.wsOpen = true;
     $('connChip').hidden = true;
     barChip(null);
-    if (state.userStop){                          // 停止请求在断线期挂起:先补发音频再停止
-      flushPending();
+    if (state.userStop){                          // 停止请求在断线期挂起:新连接 session=None,
+      if (state.sessionId)                        // 必须先 resume 挂回会话,否则 stop 落空、会话悬死
+        ws.send(JSON.stringify({type: 'resume', session_id: state.sessionId,
+                                last_seq: state.lastSeq}));
+      flushPending();                             // 补发断线音频(此刻服务端已挂回会话)
       try { ws.send(JSON.stringify({type: 'stop'})); } catch (e){}
       return;
     }
@@ -144,6 +147,7 @@ function handleEvent(ev){
   if (typeof ev.seq === 'number'){
     if (ev.seq <= state.lastSeq) return;          // resume 重放边界去重(seq 单调)
     state.lastSeq = ev.seq;
+    if (state.phase === 'connecting') setPhase('live');   // resume 无 started 应答:首条事件即转 live
   }
   switch (ev.type){
     case 'started':
@@ -192,6 +196,7 @@ function onError(ev){
   if (msg.indexOf('会话不存在') >= 0){
     setPhase('ended');
     stopCapture();
+    stopTimer();
     clearSessionStorage();
     clearTimeout(state.reconnectTimer);
     $('connChip').hidden = true;
@@ -208,6 +213,7 @@ function onError(ev){
 function onStopped(ev){
   setPhase('ended');
   stopCapture();
+  stopTimer();
   clearTimeout(state.reconnectTimer);
   clearSessionStorage();
   try { if (state.ws) state.ws.close(); } catch (e){}   // 正常路径服务端先断;此处兜底
@@ -670,6 +676,7 @@ function requestStop(){
   stopCapture();
   if (!state.sessionId){                          // 会话尚未建立:本地取消即可
     setPhase('ended');
+    stopTimer();
     clearSessionStorage();
     $('endTitle').textContent = '已停止';
     $('endSub').textContent = '尚未建立会话,没有产生录音。';
