@@ -160,11 +160,6 @@ class Pass2RunnerTest(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
 
-    def _patch_fake(self):
-        p = unittest.mock.patch.object(live_pass2, 'WHISPER_BIN', str(self.fake_bin))
-        p.start()
-        self.addCleanup(p.stop)
-
     def _setenv(self, key, value):
         old = os.environ.get(key)
         os.environ[key] = value

@@ -7,7 +7,9 @@
      故重连后按 seq 去重即可,首个下行消息可能就是重放事件;
    - audio_flush_done 上行消息当前被服务端忽略(前向兼容,补发完毕后照发);
    - stop → stop_ack →(引擎尾部冲刷的 pass1_final)→ stopped,随后服务端主动断开;
-     stopped 事件当前无 job_id(Task 9 接入),前端兼容有链接的将来;
+     stopped 自 Task 9 起携带 job_id(停止即建 job,可在工作台查看完整文稿);
+   - start 阶段失败:服务端回 {'type':'error','message':'无法开始实时会话:…'} 并断开,
+     前端收到后停止自动重连、显示错误(onError),不再无限重试;
    - pass2 / pass2_skip / llm 事件字段名是 t0 / t1(与 live_pass2.py 一致)。
 
    文案硬约束:停止按钮的文案就是「停止」二字,不用任何替代表述。 */
@@ -205,6 +207,22 @@ function onError(ev){
     $('endSub').textContent = '服务可能已重启,刚才的会话无法恢复。已录音频仍在服务端 live 目录中。';
     $('endLink').hidden = true;
     $('endwrap').hidden = false;
+  } else if (msg.indexOf('无法开始实时会话') >= 0){
+    /* start 阶段失败(模型加载等):服务端发完 error 即断开。必须停掉自动重连
+       (否则 onclose 又会 scheduleReconnect,无限重试同一失败),收尾采集并显示原因。 */
+    setPhase('ended');
+    stopCapture();
+    stopTimer();
+    clearTimeout(state.reconnectTimer);
+    clearSessionStorage();
+    $('connChip').hidden = true;
+    $('stopChip').hidden = true;
+    barChip(null);
+    try { if (state.ws) state.ws.close(); } catch (e){}
+    $('endTitle').textContent = '无法开始实时会话';
+    $('endSub').textContent = msg + '。可刷新页面重试;若持续失败请重启转写服务。';
+    $('endLink').hidden = true;
+    $('endwrap').hidden = false;
   } else {
     setChip('stopChip', msg, 6000);
   }
@@ -222,7 +240,7 @@ function onStopped(ev){
   barChip(null);
   $('endTitle').textContent = '录音已保存 · 正在生成完整文稿';
   $('endSub').textContent = '完整文稿生成后可在转录工作台查看。';
-  if (ev.job_id){                                 // Task 9 起携带 job_id;当前版本无此字段
+  if (ev.job_id){                                 // Task 9 起停止即建 job,可回工作台看完整文稿
     $('endLink').hidden = false;
     $('endLink').href = '/';
   } else {

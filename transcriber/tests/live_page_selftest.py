@@ -131,6 +131,15 @@ class StaticCheck(unittest.TestCase):
         self.assertIn('URLSearchParams', self.js)     # ?mode=bar/panel 形态参数
         self.assertIn("'bar'", self.js) and self.assertIn("'panel'", self.js)
 
+    def test_start_failure_and_copy_fixes(self):
+        """终审修复项 2/3 的静态钉子:start 阶段 error 前端停止自动重连并显示;
+        语言对文案如实(参与 Pass2/LLM);stopped 带 job_id 的旧失实注释已删。"""
+        self.assertIn('无法开始实时会话', self.js, 'onError 应处理 start 失败分支')
+        self.assertIn("clearTimeout(state.reconnectTimer)", self.js)
+        self.assertNotIn('当前版本不参与识别', self.html, '语言对文案失实(实际参与 Pass2/LLM)')
+        self.assertIn('翻译目标', self.html)
+        self.assertNotIn('Task 9 接入', self.js, 'stopped 无 job_id 的过期注释应删')
+
 
 @unittest.skipIf(port_busy(), '端口 8765 已被占用(服务可能正在跑),跳过协议段')
 class ProtocolFlow(unittest.TestCase):
