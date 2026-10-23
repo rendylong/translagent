@@ -866,8 +866,94 @@ def recover_interrupted():
         os.replace(tmp, mp)
 
 
+# ---------- live 实时字幕 WS 域(Task 4 追加;业务逻辑在 live_session.py) ----------
+
+import live_session as live_domain
+from flask_sock import Sock
+
+sock = Sock(app)
+LIVE_ROOT = os.path.join(BASE, 'live')
+LIVE_MODEL_DIR = os.path.join(MODEL_DIR, 'streaming-zipformer-zh-en')
+
+
+def live_recover():
+    """启动时扫描 live/ 目录续接未完成会话的恢复钩子(Task 9 实现;先空转)。"""
+
+
+@sock.route('/ws/live')
+def ws_live(ws):
+    """纯转发层:二进制帧→feed_bytes;start/stop/resume→LiveSession;事件队列→下行。"""
+    session = None
+    sender = None
+    gone = threading.Event()
+
+    def pump(last_seq):
+        """转发会话事件队列;seq ≤ last_seq 的是 resume 已重放过的事件,跳过。"""
+        while True:
+            try:
+                ev = session.events.get(timeout=0.5)
+            except queue.Empty:
+                if gone.is_set():
+                    return
+                continue
+            if ev.get('seq', 0) <= last_seq:
+                continue
+            try:
+                ws.send(json.dumps(ev, ensure_ascii=False))
+            except Exception:  # noqa: BLE001 对端已断
+                return
+            last_seq = ev['seq']
+            if ev.get('type') == 'stopped':
+                return
+
+    try:
+        while True:
+            data = ws.receive()
+            if isinstance(data, (bytes, bytearray)):
+                if session is not None:
+                    session.feed_bytes(bytes(data))
+                continue
+            try:
+                msg = json.loads(data)
+            except (TypeError, ValueError):
+                continue
+            mtype = msg.get('type')
+            if mtype == 'start' and session is None:
+                session = live_domain.LiveSession(LIVE_ROOT, LIVE_MODEL_DIR)
+                sid = session.start(str(msg.get('title') or ''), msg.get('speakers') or 0)
+                ws.send(json.dumps({'type': 'started', 'session_id': sid}, ensure_ascii=False))
+                sender = threading.Thread(target=pump, args=(0,), daemon=True)
+                sender.start()
+            elif mtype == 'stop' and session is not None and session.status == 'listening':
+                session.handle_stop()   # 阻塞至冲刷完成;stop_ack/stopped 事件经 pump 下行
+                if sender is not None:
+                    sender.join(timeout=30)
+                return
+            elif mtype == 'resume' and session is None:
+                session = live_domain.find_session(str(msg.get('session_id') or ''))
+                if session is None:
+                    ws.send(json.dumps({'type': 'error', 'message': '会话不存在或已失效'},
+                                       ensure_ascii=False))
+                    return
+                try:
+                    last_seq = int(msg.get('last_seq') or 0)
+                except (TypeError, ValueError):
+                    last_seq = 0
+                replay = session.backlog_after(last_seq)
+                for ev in replay:
+                    ws.send(json.dumps(ev, ensure_ascii=False))
+                sender = threading.Thread(
+                    target=pump, args=(replay[-1]['seq'] if replay else last_seq,), daemon=True)
+                sender.start()
+    except Exception:  # noqa: BLE001 客户端断开(ConnectionClosed)等,正常收尾
+        pass
+    finally:
+        gone.set()
+
+
 if __name__ == '__main__':
     os.makedirs(JOBS_DIR, exist_ok=True)
     recover_interrupted()
+    live_recover()   # live 会话恢复钩子(Task 9 实现前空转)
     threading.Thread(target=worker, daemon=True).start()
     app.run(host='127.0.0.1', port=8765, threaded=True)
