@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 import numpy as np
@@ -18,12 +19,28 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import app  # noqa: E402  复用工作台的 RIFF 解析(勿改 app.py)
+import live_pass2  # noqa: E402  Task 9 接线后 Pass2 驱动随会话起,单测用替身 whisper
+import live_session  # noqa: E402
 from live_session import LiveSession  # noqa: E402
 
 BASE = Path(__file__).resolve().parent.parent
 MODEL_DIR = str(BASE / 'models' / 'streaming-zipformer-zh-en')
 CHUNK = 3200          # 200ms @16k 单声道 16bit
 BYTES_PER_SEC = 32000
+
+
+class _StubCluster:
+    """声纹替身:本文件只测 Pass1/落盘域,不加载 titanet。"""
+    n_speakers = 1
+
+    def assign(self, pcm):
+        return 0
+
+
+try:
+    from test_live_pass2 import FAKE_WHISPER  # noqa: E402
+except ImportError:
+    from tests.test_live_pass2 import FAKE_WHISPER  # noqa: E402
 
 
 def load_zh_samples(start_s, dur_s):
@@ -55,7 +72,19 @@ class LiveSessionTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = tmp.name
-        self.sess = LiveSession(self.root, MODEL_DIR)
+        # Task 9 接线后:停止异步转正(finalizer 用替身防污染真实 jobs/)、
+        # Pass2 驱动随会话起(whisper 用替身防占 GPU)、Pass3 无 key 禁用。
+        fake_bin = Path(self.root) / 'fake-whisper.py'
+        fake_bin.write_text(FAKE_WHISPER)
+        fake_bin.chmod(fake_bin.stat().st_mode | 0o111)
+        wp = unittest.mock.patch.object(live_pass2, 'WHISPER_BIN', str(fake_bin))
+        wp.start()
+        self.addCleanup(wp.stop)
+        kp = unittest.mock.patch.object(live_session, 'parse_key', lambda: None)
+        kp.start()
+        self.addCleanup(kp.stop)
+        self.sess = LiveSession(self.root, MODEL_DIR, speaker_cluster=_StubCluster(),
+                                finalizer=lambda d, speakers_hint=None: 'unit-test-job')
         self.addCleanup(self.sess.handle_stop)   # 幂等,防模型线程泄漏
         self.sid = self.sess.start('单测会话', 2)
         self.dir = str(Path(self.root) / self.sid)
@@ -120,7 +149,9 @@ class LiveSessionTest(unittest.TestCase):
                           for e in collected if e['type'] == 'pass1_final'])
 
     def test_meta_lifecycle(self):
-        """start→live_meta.json status='listening';handle_stop→'stopping'(幂等);wav finalize 后头部长度回填。"""
+        """start→live_meta.json status='listening';handle_stop→'stopping'(幂等);wav finalize 后头部长度回填。
+        喂 0.5s 数字静音:空会话(0 字节)在 Task 9 起不转正、直接删目录,走不到
+        finalize 断言。"""
         self.assertTrue(re.fullmatch(r'\d{8}-\d{6}_[0-9a-f]{4}', self.sid), self.sid)
         with open(Path(self.dir) / 'live_meta.json', encoding='utf-8') as f:
             meta = json.load(f)
@@ -128,14 +159,22 @@ class LiveSessionTest(unittest.TestCase):
         self.assertEqual(meta['title'], '单测会话')
         self.assertEqual(meta['speakers'], 2)
         self.assertEqual(meta['id'], self.sid)
+        self.sess.feed_bytes(b'\x00\x00' * 4000)     # 0.5s 静音,保住转正路径
         self.sess.handle_stop()
         self.sess.handle_stop()   # 幂等
-        with open(Path(self.dir) / 'live_meta.json', encoding='utf-8') as f:
-            self.assertEqual(json.load(f)['status'], 'stopping')
+        # Task 9 起转正异步:等 stopped 事件(wav finalize 在其后)再读头部长度
+        ended = []
+        deadline = time.perf_counter() + 30
+        while time.perf_counter() < deadline:
+            drain(self.sess.events, ended)
+            if any(e['type'] == 'stopped' for e in ended):
+                break
+            time.sleep(0.1)
+        self.assertTrue(any(e['type'] == 'stopped' for e in ended), '转正线程应发出 stopped')
         import struct
         with open(Path(self.dir) / 'live_audio.wav', 'rb') as f:
             raw = f.read()
-        self.assertEqual(struct.unpack('<I', raw[40:44])[0], 0, '空会话 finalize 后 data 长度=0')
+        self.assertEqual(struct.unpack('<I', raw[40:44])[0], 8000, 'finalize 后 data 长度回填 0.5s')
 
 
 if __name__ == '__main__':

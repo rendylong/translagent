@@ -16,7 +16,8 @@ Pass1 流式识别追低延迟、文本欠佳;Pass2 把流式定稿句(finals)�
     finals 只是调度提示(哪些音频段落已有定稿内容),窗口内容真值来自音频本身,
     因此跨游标的 final 或跳过的静音都不会造成内容丢失。
 
-  - Pass2Runner.run_window:read_wav_float 读区间 → write_slice 落临时切片 → GPU_LOCK
+  - Pass2Runner.run_window:read_wav_slice 只读窗口区间(Task 9 改,长跑内存平稳;
+    与全量读+切片逐位等价)→ write_slice 落临时切片 → GPU_LOCK
     互斥 → whisper-cli → 段落 dict(时间戳折回整场会议时间轴),并经 session_events 回调
     emit 下行事件:{type:'pass2', t0, t1, text} 或 {type:'pass2_skip', t0, t1}
     (接 LiveSession._emit 时 seq 自动补;pass2 事件只带窗口全文,逐段时间戳在返回值里)。
@@ -29,6 +30,7 @@ Pass1 流式识别追低延迟、文本欠佳;Pass2 把流式定稿句(finals)�
 """
 import json
 import os
+import struct
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -36,11 +38,47 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from app import (GPU_LOCK, PROMPTS, WHISPER_BIN, WHISPER_DIR,  # noqa: F401  GPU_LOCK 在 run_window 使用
-                 WHISPER_MODEL, read_wav_float)
+                 WHISPER_MODEL)
 from live_wav import write_slice
 
 SAMPLE_RATE = 16000
 TAIL_CHARS = 200      # prev_tail 保留的上一窗口结尾字符数(whisper --prompt 语境续接)
+
+
+# ---------- 窗口化读音频(Task 9:2h 会话全量读一次 460MB,长跑内存不稳) ----------
+
+def _wav_data_span(path):
+    """RIFF 遍历定位 data 块,返回 (data 起始字节偏移, 实际样本数)。
+    样本数按文件实际大小算(崩溃残留的 0 长度头文件也正确),奇数字节截断。"""
+    size = os.path.getsize(path)
+    with open(path, 'rb') as f:
+        if f.read(12)[:4] != b'RIFF':
+            raise RuntimeError('不是有效的 WAV 文件:%s' % path)
+        pos = 12
+        while pos + 8 <= size:
+            f.seek(pos)
+            hdr = f.read(8)
+            if len(hdr) < 8:
+                break
+            cid, sz = struct.unpack('<4sI', hdr)
+            if cid == b'data':
+                n = size - (pos + 8)
+                return pos + 8, n // 2
+            pos += 8 + sz + (sz % 2)
+    raise RuntimeError('WAV 中未找到 data 块:%s' % path)
+
+
+def read_wav_slice(path, a, b):
+    """只读样本区间 [a, b) 的 float32(app.read_wav_float 全量读后切片的逐位等价)。
+    单窗最大 ~37s ≈ 2.4MB,长跑内存恒定。"""
+    off, total = _wav_data_span(path)
+    a, b = max(0, int(a)), min(int(b), total)
+    if b <= a:
+        return np.empty(0, dtype=np.float32)
+    with open(path, 'rb') as f:
+        f.seek(off + a * 2)
+        raw = f.read((b - a) * 2)
+    return np.frombuffer(raw, dtype='<i2').astype(np.float32) / 32768.0
 
 
 # ---------- 决策表纯函数 ----------
@@ -117,15 +155,16 @@ class Pass2Runner:
         (时间轴为整场会议),并 emit pass2/pass2_skip 事件。窗口无音频或无文本 →
         pass2_skip 且返回 []。"""
         t0_ms, t1_ms = int(t0_ms), int(t1_ms)
-        samples = read_wav_float(self.wav_path)
+        total = _wav_data_span(self.wav_path)[1]      # 窗口化读(Task 9),内存与窗长成正比
         a = max(0, t0_ms * SAMPLE_RATE // 1000)
-        b = min(len(samples), t1_ms * SAMPLE_RATE // 1000)
+        b = min(total, t1_ms * SAMPLE_RATE // 1000)
         if b <= a:
             self._emit({'type': 'pass2_skip', 't0': t0_ms, 't1': t1_ms})
             return []
+        samples = read_wav_slice(self.wav_path, a, b)
         with tempfile.TemporaryDirectory(prefix='pass2-') as td:
             slice_path = os.path.join(td, 'window.wav')
-            write_slice(slice_path, samples[a:b])
+            write_slice(slice_path, samples)
             prefix = os.path.join(td, 'whisper')
             # ↓ 参数与 app.run_whisper 保持同步,勿单边改(二进制/-m/-oj/-otxt/-olrc/-of/-pp/
             #    -l/--prompt/cwd 一致;唯一差异:--prompt 优先取 prev_tail 续接上一窗口语境,
@@ -164,7 +203,7 @@ class Pass2Runner:
                 sa = max(a, s['start_ms'] * SAMPLE_RATE // 1000)
                 sb = min(b, s['end_ms'] * SAMPLE_RATE // 1000)
                 s['speaker'] = self.cluster.assign(
-                    np.ascontiguousarray(samples[sa:sb], dtype=np.float32))
+                    np.ascontiguousarray(samples[sa - a:sb - a], dtype=np.float32))
             # 事件 speaker = 窗口内时长最长段落(主导说话人)的簇号
             dom = max(segs, key=lambda s: s['end_ms'] - s['start_ms'])
             ev = {'speaker': dom['speaker']}
