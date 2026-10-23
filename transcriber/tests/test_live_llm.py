@@ -108,6 +108,19 @@ class RefinerTest(unittest.TestCase):
         self.assertFalse(r.fused)
         self.assertEqual(r.last_error, 'timeout')
 
+    def test_http_exception_returns_none(self):
+        """评审 Important:截断的 200 响应(IncompleteRead,HTTPException 子类、
+        非 OSError)不穿透——refine 返回 None、计入失败、重试 1 次耗尽。"""
+        import http.client
+        r = self._refiner()
+        with unittest.mock.patch.object(
+                live_llm.urllib.request, 'urlopen',
+                side_effect=http.client.IncompleteRead(b'{"choices')) as m:
+            self.assertIsNone(r.refine('测试文本'))
+            self.assertEqual(m.call_count, 2)      # 传输层类:首发 + 重试
+        self.assertFalse(r.fused)
+        self.assertEqual(r.last_error, 'IncompleteRead')
+
     def test_bad_json_returns_none(self):
         """HTTP 200 但回复不是可解析 JSON → None(不重试,响应格式问题重试无益)。"""
         r = self._refiner()
@@ -293,6 +306,88 @@ class RefineWorkerTest(unittest.TestCase):
             [{'type': 'pass2', 't0': 0, 't1': 9, 'text': '原文'}], FusedRefiner())
         self.assertEqual(emitted, [])
         self.assertEqual(calls, [])          # refine 根本没被调用
+
+    def test_worker_speaker_name_never_leaks(self):
+        """评审 Minor1:speaker 传姓名字符串(上游 bug/恶意)→ 标签整体丢弃,
+        姓名绝不出现在 refine 输入里。"""
+        seen = []
+
+        class FakeRefiner:
+            fused = False
+
+            def refine(self, text, prev_refined=''):
+                seen.append(text)
+                return {'corrected': text, 'translation': 't'}
+
+        self._run([{'type': 'pass2', 't0': 0, 't1': 9, 'speaker': '张三',
+                    'text': '原文'}], FakeRefiner())
+        self.assertEqual(seen, ['原文'])          # 无标签,姓名未出境
+
+    def test_worker_survives_transport_exception(self):
+        """评审 Important:真 LLMRefiner + mock urlopen 抛 IncompleteRead——
+        第一窗 refine 失败(不 emit),worker 存活并继续消费第二窗成功 emit。"""
+        import http.client
+        r = LLMRefiner(FAKE_KEY, retry_backoff_s=0)
+        good = _FakeResp(_reply('{"corrected": "说话人1:第二窗", "translation": "W2"}'))
+        bad = http.client.IncompleteRead(b'{"choices')
+        events = [{'type': 'pass2', 't0': 0, 't1': 9, 'speaker': 1, 'text': '第一窗'},
+                  {'type': 'pass2', 't0': 9, 't1': 19, 'speaker': 1, 'text': '第二窗'}]
+        emitted = []
+        stop = threading.Event()
+        state = {'i': 0}
+
+        def get_event():
+            if state['i'] < len(events):
+                ev = events[state['i']]
+                state['i'] += 1
+                return ev
+            stop.set()
+            raise queue.Empty()
+
+        with unittest.mock.patch.object(live_llm.urllib.request, 'urlopen',
+                                        side_effect=[bad, bad, good]):
+            refine_worker(get_event, emitted.append, r, stop)   # 不抛即存活
+        self.assertEqual(len(emitted), 1)          # 只有第二窗 emit
+        self.assertEqual(emitted[0]['text'], '说话人1:第二窗')
+        self.assertFalse(r.fused)                  # 一次失败未熔断
+
+    def test_worker_survives_broken_refiner_and_emit(self):
+        """兜底防线:refiner.refine 抛 RuntimeError、emit 抛异常——worker 都只丢
+        当前窗继续消费,最终把 stop 前的最后事件 emit 成功。"""
+
+        class ExplodingRefiner:
+            fused = False
+            n = 0
+
+            def refine(self, text, prev_refined=''):
+                ExplodingRefiner.n += 1
+                if ExplodingRefiner.n == 1:
+                    raise RuntimeError('模拟残余 bug')
+                return {'corrected': '好', 'translation': 't'}
+
+        emitted = []
+        emit_calls = []
+
+        def emit(ev):
+            emit_calls.append(1)
+            if len(emit_calls) == 1:               # 仅第一次 emit 炸
+                raise RuntimeError('emit 故障')
+            emitted.append(ev)
+
+        events = [{'type': 'pass2', 't0': i, 't1': i + 1, 'text': 'x'} for i in range(4)]
+        stop = threading.Event()
+        state = {'i': 0}
+
+        def get_event():
+            if state['i'] < len(events):
+                ev = events[state['i']]
+                state['i'] += 1
+                return ev
+            stop.set()
+            raise queue.Empty()
+
+        refine_worker(get_event, emit, ExplodingRefiner(), stop)   # 不抛即存活
+        self.assertEqual([e['text'] for e in emitted], ['好', '好'])   # 第 2/3 窗成功
 
     def test_worker_stop_exits_from_blocking(self):
         """队列空时阻塞等待(queue.Empty 轮询),stop_flag 置位后及时退出。"""
