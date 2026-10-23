@@ -105,8 +105,7 @@ app.py 新增 live 会话域(与 jobs 域隔离,仅共享模型路径)
   1. final 句自光标累计 ≥ **20s** 且当前静音 ≥1.5s(句边界切,whisper 吃完整句);
   2. 强制:累计 ≥ **35s** 不管静音(长 uninterrupted 发言也要出修正)。
 - 切片 `[t_cursor, t_end]`,边距各 +200ms 重叠;`--prompt` 注入上一窗口最后一句(语境延续,抑制断句幻觉);其余参数与 `run_whisper` 完全一致。
-- 修正下发:`{type:'pass2', t0, t1, speaker, text, seq}`——前端**替换** `[t0,t1]` 区间已显示的 Pass1 定稿文本,替换后不可变。
-- 对齐:以时间轴为准,不做文本 diff(Pass1 与 Pass2 文本不逐字对齐,整窗替换)。窗口内 whisper 多段时逐段下发。
+- 修正下发:`{type:'pass2', t0, t1, speaker, text, seq}`——前端**替换** `[t0,t1]` 区间已显示的 Pass1 定稿文本,替换后不可变。窗口内 whisper 多段时**合并为单事件**(文本拼接 + 主导说话人簇号;2026-10-23 实施定稿,与 §8 窗口粒度验收一致)。
 
 ### 6.4 说话人(Pass2 内,v1 仅在线聚类)
 
@@ -122,9 +121,9 @@ C→S  {type:'start', title?, speakers?}          → 创建 live 会话,返回 
 C→S  二进制帧(s16le/16k/mono PCM,严格按采集顺序)
 C→S  {type:'audio_flush_done'}                  → 断线补发批次结束(见 §6.7)
 C→S  {type:'stop'}                              → 停止:补跑最后一窗后转正
-C→S  {type:'resume', session_id, last_seq}      → 断线重连
+C→S  {type:'resume', session_id, last_seq}      → 断线重连(服务端直接重放 backlog,无 resumed 应答;前端以首条带 seq 事件为已恢复信号——2026-10-23 实施定稿)
 S→C  {type:'started', session_id}
-S→C  {type:'resumed', backlog:[缺失下行消息]}    — 音频补发完成前暂停下行字幕
+S→C  {type:'resumed', backlog:[缺失下行消息]}    — ~~音频补发完成前暂停下行字幕~~ 2026-10-23 实施定稿:此消息未实现,resume 即重放 backlog;`audio_flush_done` 服务端 v1 忽略(字节计数锚定无需特殊处理,前向兼容保留)
 S→C  {type:'partial', text}                     — 覆盖当前活动行
 S→C  {type:'pass1_final', text, t0, t1, seq}    — 追加为待修正行
 S→C  {type:'pass2', t0, t1, speaker, text, seq} — 替换区间,definite

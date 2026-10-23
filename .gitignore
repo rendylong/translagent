@@ -34,3 +34,6 @@ __pycache__/
 *.pyc
 *.log
 selftest-report.json
+
+# 测试产物
+transcriber/tests/soak_report.json
