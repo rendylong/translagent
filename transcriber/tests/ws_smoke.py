@@ -2,7 +2,9 @@
 """端到端冒烟:临时起 app.py 子进程,走 /ws/live 全流程。
 
 流程:start → 喂 zh 锚点前 60s 音频(200ms/包)→ 断言 30s 内 ≥5 个 partial
-→ 发 stop → 收 stop_ack/stopped → 杀子进程。端口被占则直接失败(不代杀)。
+→ 发 stop → 收 stop_ack/stopped(Task 9 起 stopped 带 job_id,转正异步、
+需等尾窗 whisper + LLM 排空)→ 等 job 跑完并删除(不污染工作台)→ 杀子进程。
+端口被占则直接失败(不代杀)。
 运行:cd transcriber && python3 tests/ws_smoke.py,期望输出 ok。
 """
 import json
@@ -13,6 +15,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import urllib.request
 import websocket
 
 BASE = Path(__file__).resolve().parent.parent
@@ -53,6 +56,22 @@ def load_pcm_bytes():
     return q.astype('<i2').tobytes()
 
 
+def cleanup_job(job_id, timeout_s=420):
+    """冒烟转正产生的 job:等子进程服务跑完再删,不留垃圾在工作台。"""
+    base = 'http://127.0.0.1:%d/api/jobs/%s' % (PORT, job_id)
+    deadline = time.time() + timeout_s
+    status = ''
+    while time.time() < deadline:
+        with urllib.request.urlopen(base, timeout=10) as r:
+            status = json.load(r)['job']['status']
+        if status in ('done', 'error'):
+            break
+        time.sleep(2)
+    req = urllib.request.Request(base, method='DELETE')
+    urllib.request.urlopen(req, timeout=10).read()
+    print('job %s %s,已删除' % (job_id, status))
+
+
 def main():
     if port_busy():
         raise RuntimeError('端口 %d 已被占用,先处理既有服务再跑冒烟' % PORT)
@@ -87,17 +106,20 @@ def main():
         assert stop_ack, '未收到 stop_ack'
         if not stopped:
             try:
+                ws.settimeout(180)          # 转正异步:尾窗 whisper + LLM 排空 + 建 job
                 while True:
                     ev = json.loads(ws.recv())
                     if ev.get('type') == 'stopped':
                         stopped = ev
                         break
-            except Exception:
-                pass
+            except Exception as e:
+                print('等 stopped 异常:%r' % e)
         print('partials=%d stop_ack=seq%s stopped=%s' %
               (partials, stop_ack.get('seq'), 'yes' if stopped else 'no'))
         assert partials >= 5 and stop_ack
+        assert stopped and stopped.get('job_id'), 'stopped 应带 job_id(Task 9 转正)'
         ws.close()
+        cleanup_job(stopped['job_id'])
         print('ok')
     finally:
         proc.terminate()

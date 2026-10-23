@@ -24,6 +24,7 @@ import subprocess
 import sys
 import time
 import unittest
+import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -67,6 +68,22 @@ def load_pcm_bytes():
     assert len(samples) == FEED_SEC * 16000, '锚点音频不足 %ds' % FEED_SEC
     q = np.clip(samples * 32768.0, -32768.0, 32767.0)
     return q.astype('<i2').tobytes()
+
+
+def cleanup_job(job_id, timeout_s=420):
+    """测试转正产生的 job:等服务跑完再删,不留垃圾在工作台(Task 9 起停止即建 job)。"""
+    base = 'http://127.0.0.1:%d/api/jobs/%s' % (PORT, job_id)
+    deadline = time.time() + timeout_s
+    status = ''
+    while time.time() < deadline:
+        with urllib.request.urlopen(base, timeout=10) as r:
+            status = json.load(r)['job']['status']
+        if status in ('done', 'error'):
+            break
+        time.sleep(2)
+    req = urllib.request.Request(base, method='DELETE')
+    urllib.request.urlopen(req, timeout=10).read()
+    print('job %s %s,已删除' % (job_id, status))
 
 
 class StaticCheck(unittest.TestCase):
@@ -209,11 +226,13 @@ class ProtocolFlow(unittest.TestCase):
             stayed_open = False
         self.assertTrue(stayed_open, 'audio_flush_done 后连接异常关闭')
 
-        # ⑤ stop → stop_ack 先于 stopped;stopped 当前无 job_id(Task 9 前的前端兼容点)
+        # ⑤ stop → stop_ack 先于 stopped;Task 9 起 stopped 带 job_id(转正异步:
+        #    stop_ack 即回,stopped 隔着尾窗 whisper + LLM 排空 + 建 job)
         ws.send(json.dumps({'type': 'stop'}))
-        ws.settimeout(60)
+        ws.settimeout(180)
         seen_ack = seen_stopped = False
         flush_finals = 0
+        job_id = None
         while not seen_stopped:
             ev = json.loads(ws.recv())
             t = ev.get('type')
@@ -225,7 +244,8 @@ class ProtocolFlow(unittest.TestCase):
             elif t == 'stopped':
                 self.assertTrue(seen_ack, 'stopped 先于 stop_ack 到达')
                 seen_stopped = True
-                self.assertNotIn('job_id', ev, 'Task 9 之前 stopped 无 job_id;若已带上,更新前端与断言')
+                job_id = ev.get('job_id')
+                self.assertTrue(job_id, 'Task 9 起 stopped 应带 job_id')
         # stopped 之后服务端主动断开(前端据此不再重连)
         closed = False
         try:
@@ -237,16 +257,19 @@ class ProtocolFlow(unittest.TestCase):
         except Exception:
             closed = True
         self.assertTrue(closed)
-        print('协议流程 ok: partials=%d finals=%d(含尾部冲刷 %d) resume 重放=%d 事件' %
-              (partials, finals, flush_finals, replayed))
+        cleanup_job(job_id)
+        print('协议流程 ok: partials=%d finals=%d(含尾部冲刷 %d) resume 重放=%d 事件 job=%s' %
+              (partials, finals, flush_finals, replayed, job_id))
 
     def test_stop_after_reconnect(self):
         """断线期按「停止」:重连后必须 resume→补发→stop(修复回归)。
 
         模拟修复后 live.js 的 onopen userStop 分支线上顺序:resume → 二进制补发 →
         audio_flush_done → stop。断言:stop_ack 与 stopped 均在本连接到达、顺序正确、
-        服务端随后断开;且 live/<sid>/live_audio.wav 已被 finalize(读回 ≈15s,
-        未收尾的会话头部长度为 0,读回 0 样本)。"""
+        服务端随后断开;Task 9 起停止即异步转正:live 目录删除、jobs/<job_id>/
+        source.wav 读回 ≈15s(硬链接,头部长度已回填)。
+        旧 pump 竞态(断连后 ≤0.5s 重连吞 stop_ack)已由 Task 9 EventTap 修复,
+        此处 1s 等待保留——对齐真实前端 3s 重连节奏的保守下限。"""
         pcm = load_pcm_bytes()
         seg_a, seg_b = pcm[:12 * 32000], pcm[12 * 32000:15 * 32000]   # 12s + 3s,不重发
         ws = websocket.create_connection('ws://127.0.0.1:%d/ws/live' % PORT, timeout=60)
@@ -265,10 +288,8 @@ class ProtocolFlow(unittest.TestCase):
                 last_seq = max(last_seq, ev['seq'])
         self.assertGreaterEqual(partials, 1, '连接1 未收到 partial')
         ws.close()                                                    # 模拟断线(音频 B 视为断线期缓冲)
-        # 等 1s 让服务端旧 pump 线程退出:断连后 ≤0.5s 内旧/新两个 pump 并发消费同一
-        # 事件队列,旧 pump 抢到事件后 send 失败会把它从实时流中吞掉(实测 stop_ack 偶发
-        # 丢失,6 次丢 2 次)。前端 RECONNECT_MS=3000 远大于该窗口,真实路径不受影响;
-        # 此处 1s 是对齐真实前端重连节奏的保守下限。此为服务端待修竞态,见任务报告。
+        # 等 1s 对齐真实前端重连节奏(前端 RECONNECT_MS=3000);旧 pump 吞事件的竞态
+        # 已由 Task 9 的 EventTap 修复(事件锁内归还队首),此处不再是竞态复现场景。
         time.sleep(1.0)
 
         ws = websocket.create_connection('ws://127.0.0.1:%d/ws/live' % PORT, timeout=60)
@@ -278,7 +299,7 @@ class ProtocolFlow(unittest.TestCase):
         ws.send(json.dumps({'type': 'audio_flush_done'}))
         ws.send(json.dumps({'type': 'stop'}))                         # 随后 stop
 
-        ws.settimeout(60)
+        ws.settimeout(180)
         ack = stopped = None
         while not stopped:
             ev = json.loads(ws.recv())
@@ -301,13 +322,17 @@ class ProtocolFlow(unittest.TestCase):
             closed = True
         self.assertTrue(closed, 'stopped 后服务端未断开')
 
-        wav = BASE / 'live' / sid / 'live_audio.wav'                  # 服务端会话确实收尾
-        self.assertTrue(wav.is_file(), 'live_audio.wav 不存在')
-        n = len(app.read_wav_float(str(wav)))
+        # Task 9 起:停止即转正——live 目录删除,音频以硬链接进 jobs/<job_id>/source.wav
+        self.assertTrue(stopped.get('job_id'), 'stopped 应带 job_id')
+        self.assertFalse((BASE / 'live' / sid).exists(), '转正后 live 目录应删除')
+        src = BASE / 'jobs' / stopped['job_id'] / 'source.wav'
+        self.assertTrue(src.is_file(), '转正产物 source.wav 不存在')
+        n = len(app.read_wav_float(str(src)))
         self.assertGreaterEqual(n, int(15 * 16000 * 0.98),
-                                'wav 仅 %.1fs,会话疑似悬死未 finalize' % (n / 16000))
-        print('停止重连路径 ok: stop_ack=seq%s stopped=seq%s wav=%.1fs' %
-              (ack['seq'], stopped['seq'], n / 16000))
+                                'source.wav 仅 %.1fs,会话疑似悬死未收尾' % (n / 16000))
+        cleanup_job(stopped['job_id'])
+        print('停止重连路径 ok: stop_ack=seq%s stopped=seq%s job=%s audio=%.1fs' %
+              (ack['seq'], stopped['seq'], stopped['job_id'], n / 16000))
 
 
 if __name__ == '__main__':
