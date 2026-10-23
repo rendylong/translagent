@@ -59,6 +59,7 @@ app = Flask(__name__, static_folder=None)
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
 job_queue = queue.Queue()
 _speakers_lock = threading.Lock()
+GPU_LOCK = threading.Lock()   # whisper GPU 全局互斥:离线管线 run_whisper 与 live pass2(live_pass2)串行占用
 
 
 # ---------- 任务存储(meta.json 即状态机) ----------
@@ -383,18 +384,22 @@ def run_whisper(job_id, wav, language):
         cmd += ['-l', language]
     if language in PROMPTS:
         cmd += ['--prompt', PROMPTS[language]]
-    proc = subprocess.Popen(cmd, cwd=WHISPER_DIR, stdout=subprocess.DEVNULL,
-                            stderr=subprocess.PIPE, text=True)
-    write_meta(job_id, worker_pid=proc.pid)
-    tail = deque(maxlen=30)
-    for line in proc.stderr:
-        tail.append(line)
-        m = re.search(r'progress = (\d+)', line)
-        if m:
-            pct = int(m.group(1))
-            write_meta(job_id, progress=5 + pct * 80 // 100)
-    if proc.wait() != 0:
-        raise RuntimeError('whisper 转录失败:' + ''.join(tail)[-1500:])
+    GPU_LOCK.acquire()   # GPU 互斥:与 live pass2 窗口修正(live_pass2.Pass2Runner)串行
+    try:
+        proc = subprocess.Popen(cmd, cwd=WHISPER_DIR, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.PIPE, text=True)
+        write_meta(job_id, worker_pid=proc.pid)
+        tail = deque(maxlen=30)
+        for line in proc.stderr:
+            tail.append(line)
+            m = re.search(r'progress = (\d+)', line)
+            if m:
+                pct = int(m.group(1))
+                write_meta(job_id, progress=5 + pct * 80 // 100)
+        if proc.wait() != 0:
+            raise RuntimeError('whisper 转录失败:' + ''.join(tail)[-1500:])
+    finally:
+        GPU_LOCK.release()
     with open(prefix + '.json', encoding='utf-8') as f:
         data = json.load(f)
     segs = [{'start_ms': t['offsets']['from'], 'end_ms': t['offsets']['to'], 'text': t['text'].strip()}
