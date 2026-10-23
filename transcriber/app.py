@@ -900,6 +900,16 @@ def live_js():
     return send_from_directory(STATIC_DIR, 'live.js')
 
 
+def live_start_brief(e):
+    """live start 失败的下行文案:异常类名 + 首行简述;路径与疑似密钥一律打码,
+    不得把本机信息(websocket 帧可直接读到)泄给页面。"""
+    s = str(e).strip()
+    brief = s.splitlines()[0][:100] if s else ''
+    brief = re.sub(r'(?:[A-Za-z]:)?[/\\]\S*', '[路径]', brief)
+    brief = re.sub(r'sk-[A-Za-z0-9_-]{8,}', '[密钥]', brief)
+    return '%s:%s' % (type(e).__name__, brief) if brief else type(e).__name__
+
+
 @sock.route('/ws/live')
 def ws_live(ws):
     """纯转发层:二进制帧→feed_bytes;start/stop/resume→LiveSession;事件队列→下行。"""
@@ -928,9 +938,20 @@ def ws_live(ws):
                 continue
             mtype = msg.get('type')
             if mtype == 'start' and session is None:
-                session = live_domain.LiveSession(LIVE_ROOT, LIVE_MODEL_DIR)
-                sid = session.start(str(msg.get('title') or ''), msg.get('speakers') or 0,
-                                    str(msg.get('language') or 'zh>en'))
+                # 构造(加载 300MB 流式模型)或 start() 抛错不得落进外层静默 pass:
+                # 连接无消息即关,前端只会无限重连。显式回 error 后收尾断开(不发
+                # started、不挂 pump;session 置回 None,半途对象不再接收字节)。
+                # 前端收到该 error 即停止自动重连并显示原因,是否重试交给人。
+                try:
+                    session = live_domain.LiveSession(LIVE_ROOT, LIVE_MODEL_DIR)
+                    sid = session.start(str(msg.get('title') or ''), msg.get('speakers') or 0,
+                                        str(msg.get('language') or 'zh>en'))
+                except Exception as e:  # noqa: BLE001 任何 start 阶段失败都显式告知
+                    session = None
+                    ws.send(json.dumps({'type': 'error',
+                                        'message': '无法开始实时会话:%s' % live_start_brief(e)},
+                                       ensure_ascii=False))
+                    return
                 ws.send(json.dumps({'type': 'started', 'session_id': sid}, ensure_ascii=False))
                 sender = threading.Thread(target=pump, args=(0,), daemon=True)
                 sender.start()

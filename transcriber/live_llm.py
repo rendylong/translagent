@@ -207,7 +207,9 @@ def refine_worker(get_event, emit, refiner, stop_flag):
 
     降级语义(设计决定):refine 失败(返回 None)或 refiner.fused 熔断 →
     本窗不 emit llm(不 emit 原文替位),UI 保留 pass2 whisper 文本、无译文——
-    即 spec §6.8 的 unrefined 降级;非 pass2 事件(partial 等)直接丢弃。
+    即 spec §6.8 的 unrefined 降级;熔断时先 emit 一条 error 提示「翻译服务已暂停」
+    (恰一次,不随事件重复——spec §6.8 说「熔断并提示」,原实现静默);
+    非 pass2 事件(partial 等)直接丢弃。
     说话人标签只接受可 int() 化的编号(防御:上游若传姓名字符串,标签整体丢弃,
     姓名绝不出境),以"说话人N"拼进行首,corrected 按指令保留该标签。
     滚动上下文:最近 ≤2 窗 corrected 换行拼接为 prev_refined;失败窗不进上下文。
@@ -216,6 +218,15 @@ def refine_worker(get_event, emit, refiner, stop_flag):
     把 Task 9 的驱动线程带走;refine 自身的兜底在 LLMRefiner.refine 内。
     """
     ctx = deque(maxlen=2)
+    fused_noticed = False
+
+    def notice_fused():
+        """熔断提示只发一次:第 FUSE_AFTER 次失败当场提示,后续事件不再重复。"""
+        nonlocal fused_noticed
+        if not fused_noticed and getattr(refiner, 'fused', False):
+            fused_noticed = True
+            emit({'type': 'error', 'message': '翻译服务已暂停(连续失败)'})
+
     while not stop_flag.is_set():
         try:
             ev = get_event()
@@ -227,7 +238,8 @@ def refine_worker(get_event, emit, refiner, stop_flag):
             if not isinstance(ev, dict) or ev.get('type') != 'pass2':
                 continue
             if getattr(refiner, 'fused', False):
-                continue                   # 熔断:消费事件但不 refine、不 emit
+                notice_fused()          # 已熔断(含上一场会话遗留状态):提示一次
+                continue                # 熔断:消费事件但不 refine、不 emit
             text = (ev.get('text') or '').strip()
             if not text:
                 continue
@@ -237,7 +249,8 @@ def refine_worker(get_event, emit, refiner, stop_flag):
                 label = ''
             out = refiner.refine(label + text, '\n'.join(ctx))
             if not out:
-                continue                   # 失败:保留 whisper 文本,不进上下文
+                notice_fused()          # 恰在第 FUSE_AFTER 次失败上熔断:当场提示
+                continue                # 失败:保留 whisper 文本,不进上下文
             ctx.append(out['corrected'])
             emit({'type': 'llm', 't0': ev.get('t0'), 't1': ev.get('t1'),
                   'text': out['corrected'], 'translation': out['translation']})

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Task 9:停止转正 / 断电恢复 / 异步停止 / Pass2 驱动与 LLM 接线 / pump 竞态(EventTap)。
 
-快测:FinalizeSessionTest / RecoverTest / EventTapTest(毫秒级,不碰模型)。
+快测:FinalizeSessionTest / RecoverTest / EventTapTest / WatchdogTest(毫秒级,不碰模型)。
 慢测:StopAsyncTest / Pass2WiringTest(真实流式 Pass1 + whisper 替身,约 10-25s)。
 """
 import json
@@ -606,6 +606,77 @@ class Pass2WiringTest(unittest.TestCase):
                 break
         self.assertIsNotNone(got, '静音应触发 pass2_skip(不进 whisper)')
         self.assertEqual(set(got), {'type', 't0', 't1', 'seq'})
+
+
+class WatchdogTest(unittest.TestCase):
+    """孤儿会话看门狗(终审修复项 1):无字节喂入且无事件投递持续超阈值 →
+    自动 handle_stop 走正常转正;会话进入 stopping 后看门狗退出。
+
+    快测口径:不 start()(不加载 300MB 模型),阈值/周期经构造注入,并把
+    _last_activity「拨回 11 分钟前」模拟孤儿,不真睡 10 分钟。"""
+
+    def _mk_sess(self, **kw):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        kw.setdefault('watchdog_period_s', 0.02)     # 巡检周期压到毫秒级
+        return LiveSession(tmp.name, MODEL_DIR, speaker_cluster=_StubCluster(),
+                           finalizer=lambda d, speakers_hint=None: 'j', **kw)
+
+    def test_fires_handle_stop_after_idle(self):
+        """最后活动拨回 661s 前(> 600s 阈值):首巡检即自动 handle_stop。"""
+        sess = self._mk_sess()                       # 阈值用默认真值 600s
+        calls = []
+        with unittest.mock.patch.object(sess, 'handle_stop',
+                                       side_effect=lambda: calls.append(1)):
+            sess.status = 'listening'
+            sess._last_activity = time.monotonic() - 661
+            t0 = time.perf_counter()
+            sess._run_watchdog()
+        self.assertEqual(calls, [1], '空闲超阈值应自动 handle_stop')
+        self.assertLess(time.perf_counter() - t0, 5.0)
+
+    def test_quiet_below_threshold_keeps_waiting(self):
+        """只闲 30s(< 600s):多个巡检周期内不得触发;会话正常停止(status 离开
+        listening)后看门狗必须退出,不留常驻线程。"""
+        sess = self._mk_sess()
+        calls = []
+
+        def fake_stop():
+            calls.append(1)
+            sess.status = 'stopping'
+        with unittest.mock.patch.object(sess, 'handle_stop', side_effect=fake_stop):
+            sess.status = 'listening'
+            sess._last_activity = time.monotonic() - 30
+            th = threading.Thread(target=sess._run_watchdog, daemon=True)
+            th.start()
+            time.sleep(0.2)                          # ≥ 数个巡检周期
+            self.assertEqual(calls, [], '未超阈值不得自动停止')
+            sess.status = 'stopping'                 # 模拟正常 handle_stop 置位
+            th.join(2.0)
+        self.assertFalse(th.is_alive(), '进入 stopping 后看门狗应退出')
+
+    def test_exits_immediately_when_not_listening(self):
+        sess = self._mk_sess(watchdog_period_s=30.0)
+        sess.status = 'stopping'
+        t0 = time.perf_counter()
+        sess._run_watchdog()
+        self.assertLess(time.perf_counter() - t0, 1.0, '非 listening 应立即退出(不睡周期)')
+
+    def test_feed_and_tap_delivery_mark_activity(self):
+        """判活的两个来源:feed_bytes(采集推进,静音也有字节)与 tap.deliver
+        (pump 挂接在消费事件)都必须刷新 _last_activity。"""
+        sess = self._mk_sess()
+        sess.status = 'listening'
+        base = sess._last_activity
+        time.sleep(0.01)
+        sess.feed_bytes(b'\x00\x01' * 10)
+        self.assertGreater(sess._last_activity, base, 'feed_bytes 应刷新活动时间')
+        base = sess._last_activity
+        time.sleep(0.01)
+        sess.tap._q.put({'seq': 1, 'type': 'partial'})
+        got = sess.tap.deliver(lambda e: None, threading.Event())
+        self.assertEqual(got['seq'], 1)
+        self.assertGreater(sess._last_activity, base, 'tap 投递应刷新活动时间(pump 活跃)')
 
 
 if __name__ == '__main__':

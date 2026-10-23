@@ -21,6 +21,11 @@
     live_finalize.finalize_session 建 job → emit stopped(带 job_id)→ 从 _SESSIONS
     摘除会话;转正失败发 error + stopped(无 job_id,音频留 live/ 由重启恢复转正),
     同样摘除——pumpEvents 三种退出路径都因此有界。
+  - live-watchdog 看门狗线程:周期巡检,无字节喂入(feed_bytes)且无事件投递
+    (tap.deliver 有 pump 在消费)持续超过 WATCHDOG_IDLE_S → 自动 handle_stop
+    走正常转正(桌面端退出而未按「停止」的孤儿会话,否则要等服务重启的
+    live_recover);静音不算触发——采集持续时静音也有字节流,字节口径安全;
+    会话离开 listening(stopping/转正完成)即退出;
   - 硬约束:绝不在 on_partial/on_final 回调内调 engine.stop()(join 自身线程抛
     RuntimeError),stop 一律由会话调用方线程(handle_stop)发起。
 
@@ -52,6 +57,8 @@ BYTES_PER_SEC = SAMPLE_RATE * 2          # 16bit 单声道
 BACKLOG_MAX = 1000                        # resume 重放的环形缓存上限
 PASS2_TICK_S = 0.5                        # Pass2 驱动线程周期(秒)
 LLM_DRAIN_S = 30                          # 停止时 LLM 队列有界排空上限(秒)
+WATCHDOG_IDLE_S = 10 * 60                 # 孤儿会话阈值:无字节且无投递持续超过即自动停止
+WATCHDOG_PERIOD_S = 60                    # 看门狗巡检周期(秒;测试注入小值)
 META = 'live_meta.json'
 AUDIO = 'live_audio.wav'
 JSONL = 'live_pass1.jsonl'
@@ -90,10 +97,11 @@ class EventTap:
     先取归还队列再取事件队列——不吞事件、不乱序。seq ≤ last_seq 的事件视为 resume
     已重放过,消费但不发送。"""
 
-    def __init__(self, events):
+    def __init__(self, events, on_deliver=None):
         self._q = events
         self._front = deque()              # 断连 pump 归还的事件(队首优先)
         self._lock = threading.Lock()
+        self._on_deliver = on_deliver      # 事件成功投递(pump 活跃)时回调,看门狗判活用
 
     def deliver(self, send, gone, last_seq=0, timeout=0.2):
         """取一个事件并投递。返回事件 dict(已发送,或 seq≤last_seq 已重放过而免发);
@@ -117,6 +125,8 @@ class EventTap:
                 except Exception:            # noqa: BLE001 对端已断:锁内归还,交给下一个 pump
                     self._front.appendleft(ev)
                     return None
+            if self._on_deliver is not None:
+                self._on_deliver()           # 已投递(或按 seq 判重免发但已被消费):pump 活跃
             return ev
 
 
@@ -155,17 +165,24 @@ class LiveSession:
     构造注入点(测试/长跑用,生产默认全真实):
       pass2_cfg:窗口调度参数(默认 Pass2Cfg 20/35/1.5/200);
       speaker_cluster:传 None 则构造 OnlineSpeakerCluster;
-      finalizer:(session_dir, speakers_hint) -> job_id,默认走 live_finalize.finalize_session。
+      finalizer:(session_dir, speakers_hint) -> job_id,默认走 live_finalize.finalize_session;
+      watchdog_idle_s / watchdog_period_s:孤儿看门狗的空闲阈值与巡检周期
+      (默认 600s / 60s;测试注入小值,不真睡 10 分钟)。
     """
 
     def __init__(self, sessions_root, model_dir, pass2_cfg=None, speaker_cluster=None,
-                 finalizer=None):
+                 finalizer=None, watchdog_idle_s=WATCHDOG_IDLE_S,
+                 watchdog_period_s=WATCHDOG_PERIOD_S):
         self.sessions_root = sessions_root
         self.model_dir = model_dir
         self.id = None
         self.status = 'idle'               # idle → listening → stopping(目录随后删除)
         self.events = queue.Queue()        # WS 层直接消费的下行事件队列
-        self.tap = EventTap(self.events)   # pump 安全取用(修双 pump 竞态)
+        self._last_activity = time.monotonic()   # 看门狗判活:最近一次字节喂入或事件投递
+        self._watchdog_idle_s = watchdog_idle_s
+        self._watchdog_period_s = watchdog_period_s
+        self._watchdog = None
+        self.tap = EventTap(self.events, on_deliver=self._touch)   # pump 安全取用(修双 pump 竞态)
         self._backlog = deque(maxlen=BACKLOG_MAX)
         self._seq = 0
         self._ev_lock = threading.Lock()   # 守 seq 分配 + backlog + 入队三步原子
@@ -227,6 +244,9 @@ class LiveSession:
                 name='live-llm-' + self.id, daemon=True)
             self._llm.start()
         self.status = 'listening'
+        self._watchdog = threading.Thread(target=self._run_watchdog,
+                                          name='live-watchdog-' + self.id, daemon=True)
+        self._watchdog.start()
         with _SESSIONS_LOCK:
             _SESSIONS[self.id] = self
         return self.id
@@ -239,6 +259,7 @@ class LiveSession:
         if not keep:
             return
         self._bytes_fed += keep
+        self._touch()                      # 采集仍在推进(静音也有字节流):看门狗不触发
         self._q.put(b[:keep])
 
     def duration_s(self):
@@ -257,6 +278,25 @@ class LiveSession:
         self._finalizing = threading.Thread(target=self._finish, name='live-finalize-' + self.id,
                                             daemon=True)
         self._finalizing.start()
+
+    def _touch(self):
+        """刷新最近活动时间(字节喂入或事件投递),孤儿看门狗的判活依据。"""
+        self._last_activity = time.monotonic()
+
+    def _run_watchdog(self):
+        """孤儿会话看门狗:桌面端退出而未按「停止」时,会话永滞 listening,只能等
+        服务重启的 live_recover 转正。本线程在「无字节喂入且无事件投递」持续超过
+        watchdog_idle_s 后自动 handle_stop(走正常转正,与手动停止同路径)。
+        静音不是触发条件:采集持续时静音也有字节流,字节口径安全。周期巡检,
+        会话离开 listening(stopping/转正完成)即退出。handle_stop 幂等且只拉起
+        转正线程,从本线程发起与从 WS 调用方线程发起等价。"""
+        while self.status == 'listening':
+            time.sleep(self._watchdog_period_s)
+            if self.status != 'listening':
+                return
+            if time.monotonic() - self._last_activity > self._watchdog_idle_s:
+                self.handle_stop()
+                return
 
     # ---------- 转正线程 ----------
 

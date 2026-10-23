@@ -292,7 +292,8 @@ class RefineWorkerTest(unittest.TestCase):
         self.assertEqual(emitted, [])
 
     def test_worker_fused_no_emit(self):
-        """熔断后:事件照常消费,但不再 refine、不 emit llm(透传 whisper 版本)。"""
+        """熔断后:事件照常消费,但不再 refine、不 emit llm(透传 whisper 版本);
+        熔断可见——恰一条 error 提示(spec §6.8「熔断并提示」,终审修复项 5)。"""
         calls = []
 
         class FusedRefiner:
@@ -304,8 +305,32 @@ class RefineWorkerTest(unittest.TestCase):
 
         emitted = self._run(
             [{'type': 'pass2', 't0': 0, 't1': 9, 'text': '原文'}], FusedRefiner())
-        self.assertEqual(emitted, [])
+        self.assertEqual(emitted, [{'type': 'error', 'message': '翻译服务已暂停(连续失败)'}])
         self.assertEqual(calls, [])          # refine 根本没被调用
+
+    def test_worker_fused_notifies_once(self):
+        """运行中熔断(连续 FUSE_AFTER 次失败):提示恰好在熔断当窗发出一次,
+        后续窗口不再重复;期间不 emit llm。"""
+        class FuseRefiner:
+            FUSE_AFTER = 5
+
+            def __init__(self):
+                self.fails = 0
+                self.fused = False
+
+            def refine(self, text, prev_refined=''):
+                self.fails += 1
+                if self.fails >= self.FUSE_AFTER:   # 第 5 次失败即熔断(与真实现一致)
+                    self.fused = True
+                return None
+
+        r = FuseRefiner()
+        events = [{'type': 'pass2', 't0': i, 't1': i + 1, 'text': 'x'} for i in range(8)]
+        emitted = self._run(events, r)
+        notices = [e for e in emitted if e.get('type') == 'error']
+        self.assertEqual([e['type'] for e in emitted], ['error'],
+                         '只应有一条熔断提示,无 llm:%s' % emitted)
+        self.assertEqual(notices[0]['message'], '翻译服务已暂停(连续失败)')
 
     def test_worker_speaker_name_never_leaks(self):
         """评审 Minor1:speaker 传姓名字符串(上游 bug/恶意)→ 标签整体丢弃,
