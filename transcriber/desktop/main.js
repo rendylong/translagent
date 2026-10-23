@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const {spawn} = require('child_process');
+const {installDockMenu} = require('./live-window');
 
 const SERVER_URL = 'http://127.0.0.1:8765';
 const REPORT_PATH = path.join(__dirname, 'selftest-report.json');
@@ -553,6 +554,7 @@ function onReady(){
   });
 
   createWindow();
+  installDockMenu(SERVER_URL, () => win);   // 实时字幕悬浮条入口:右键 Dock 图标
   if(SELF_TEST) runSelfTest();
   else boot();
 }

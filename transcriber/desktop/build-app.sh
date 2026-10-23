@@ -21,7 +21,7 @@ ditto "$SRC_ELECTRON" "$APP"
 
 echo "[3/5] 注入应用代码…"
 mkdir -p "$APP/Contents/Resources/app"
-for f in package.json main.js preload.js guide.html app-icon-128.png; do
+for f in package.json main.js live-window.js preload.js guide.html app-icon-128.png; do
   [[ -f "$f" ]] && cp "$f" "$APP/Contents/Resources/app/" || true
 done
 cp AppIcon.icns "$APP/Contents/Resources/"
