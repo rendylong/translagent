@@ -112,7 +112,7 @@ function createLiveCaptionWindow(serverUrl, mainWin){
     width: 560,
     height: 150,
     frame: false,
-    alwaysOnTop: 'screen-saver',
+    alwaysOnTop: true,
     transparent: true,
     hasShadow: false,
     resizable: true,
@@ -126,6 +126,10 @@ function createLiveCaptionWindow(serverUrl, mainWin){
       backgroundThrottling: false
     }
   });
+  // 构造项的 alwaysOnTop 文档类型是 Boolean,level 字符串会被静默丢弃
+  // (源码按真值硬编码 floating 档);压过其他应用的全屏空间必须用带 level
+  // 签名的 setAlwaysOnTop 显式升到 screen-saver 档
+  liveWin.setAlwaysOnTop(true, 'screen-saver');
   liveWin.on('closed', () => { liveWin = null; });
   // 关闭 = 隐藏,会话不中断;真正销毁只走 destroyLiveWindow
   liveWin.on('close', e => {
