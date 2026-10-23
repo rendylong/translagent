@@ -8,7 +8,9 @@
      纯静音区间 → pass2_skip(驱动侧事件,不进 whisper);喂完 stop 冲刷尾部 final 后
      force_tail=True 收尾补窗;
   3. 闸门:收到 pass2 事件,且 pass2 文本合并 vs transcript.json 对应区间(与各 pass2 窗口
-     时间重叠 ≥50% 的段整段计入,bench 同口径)的 CER < Pass1 finals 合并的 CER。
+     时间重叠 ≥50% 的段整段计入,bench 同口径)的 CER < Pass1 finals 合并的 CER;
+     Task 6 起 Pass2Runner 挂 OnlineSpeakerCluster,闸门另断言 pass2 事件的
+     speaker ∈ {0,1} 且双人会(zh 前 90s 两说话人都有开口)两值齐现。
 
 CER 口径复用 models/bench/bench_streaming_asr.py(norm_text/levenshtein/build_ref),
 即 Task 1 基线同一把尺子。
@@ -37,6 +39,7 @@ import app  # noqa: E402
 from bench_streaming_asr import build_ref, levenshtein, norm_text  # noqa: E402
 from live_pass1 import Pass1Engine  # noqa: E402
 from live_pass2 import Pass2Cfg, Pass2Runner, plan_windows  # noqa: E402
+from live_speaker import OnlineSpeakerCluster  # noqa: E402
 
 SR = 16000
 CHUNK = 3200            # 200ms,与 bench/单测同粒度
@@ -76,7 +79,9 @@ def main():
     eng = Pass1Engine(str(BASE / 'models' / 'streaming-zipformer-zh-en'),
                       lambda t: None, on_final)
     events = []
-    runner = Pass2Runner(wav_path, events.append, language='zh')
+    cluster = OnlineSpeakerCluster()           # Task 6:段落声纹在线聚类
+    runner = Pass2Runner(wav_path, events.append, language='zh',
+                         speaker_cluster=cluster)
     cursor = 0
 
     def drive(cur_ms, force_tail=False):
@@ -121,22 +126,28 @@ def main():
                            ''.join(f['text'] for f in p1_finals), range_ms)
     cer2, ref2, hyp2 = cer(segments, [(e['t0'], e['t1']) for e in p2_events],
                            ''.join(e['text'] for e in p2_events), range_ms)
+    speakers = [e.get('speaker') for e in p2_events]
+    spk_ok = bool(speakers) and all(s in (0, 1) for s in speakers) and set(speakers) == {0, 1}
 
     print(json.dumps({
         'job': job_dir.name, 'limit_s': args.limit_sec, 'wall_s': round(wall, 1),
         'n_pass1_finals': len(p1_finals),
         'n_pass2_windows': len(p2_events), 'n_pass2_skip': len(skip_events),
-        'windows': [[e['t0'], e['t1']] for e in p2_events],
+        'windows': [[e['t0'], e['t1'], e.get('speaker')] for e in p2_events],
         'cursor_final_ms': cursor,
+        'n_speakers': cluster.n_speakers,
         'pass1': {'cer': round(cer1, 4), 'ref_chars': ref1, 'hyp_chars': hyp1},
         'pass2': {'cer': round(cer2, 4), 'ref_chars': ref2, 'hyp_chars': hyp2},
         'pass2_text_head': ''.join(e['text'] for e in p2_events)[:60],
     }, ensure_ascii=False, indent=1))
 
-    ok = bool(p2_events) and cer1 is not None and cer2 is not None and cer2 < cer1
-    print('GATE %s: pass2 窗口 %d 个,CER %.4f vs Pass1 %.4f(修正%s)'
+    ok = (bool(p2_events) and cer1 is not None and cer2 is not None and cer2 < cer1
+          and spk_ok)
+    print('GATE %s: pass2 窗口 %d 个,CER %.4f vs Pass1 %.4f(修正%s);'
+          '说话人 %s,簇数 %d'
           % ('PASS' if ok else 'FAIL', len(p2_events), cer2 or -1, cer1 or -1,
-             '有效' if ok else '未生效'))
+             '有效' if (cer1 is not None and cer2 is not None and cer2 < cer1) else '未生效',
+             speakers, cluster.n_speakers))
     return 0 if ok else 1
 
 

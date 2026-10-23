@@ -22,12 +22,18 @@ Pass1 流式识别追低延迟、文本欠佳;Pass2 把流式定稿句(finals)�
     (接 LiveSession._emit 时 seq 自动补;pass2 事件只带窗口全文,逐段时间戳在返回值里)。
     窗口无可切片音频或 whisper 无文本 → pass2_skip。成功后 prev_tail 自动更新为
     本窗口结尾文本,作下一窗口 --prompt(首窗口用 app.PROMPTS 的语言提示,与离线管线一致)。
+    传入 speaker_cluster(live_speaker.OnlineSpeakerCluster 等 assign(pcm)->int 对象,
+    Task 6)时:每个 whisper 段落按其时间戳从窗口音频切片喂 cluster.assign,段落 dict
+    增加 'speaker' 簇号,pass2 事件增加 'speaker'=窗口内时长最长段落(主导说话人)的
+    簇号;不传则段落/事件与 Task 5 完全一致(无 speaker 键)。
 """
 import json
 import os
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
+
+import numpy as np
 
 from app import (GPU_LOCK, PROMPTS, WHISPER_BIN, WHISPER_DIR,  # noqa: F401  GPU_LOCK 在 run_window 使用
                  WHISPER_MODEL, read_wav_float)
@@ -93,14 +99,18 @@ class Pass2Runner:
     wav_path: live WAV 路径(AppendWav 产物或任何 read_wav_float 可读的 16k 单声道 wav);
     session_events: 下行事件回调 dict -> None(LiveSession 侧接 _emit,seq 自动补;
     测试可直接 list.append);
-    prev_tail: 上一窗口结尾文本,初始作本会话第一窗口之后的 --prompt 语境。
+    prev_tail: 上一窗口结尾文本,初始作本会话第一窗口之后的 --prompt 语境;
+    speaker_cluster: 可选,live_speaker.OnlineSpeakerCluster 等 assign(pcm)->int
+    对象(Task 6)。传入则段落与 pass2 事件带 speaker 簇号(见模块 docstring)。
     """
 
-    def __init__(self, wav_path, session_events, language='zh', prev_tail=''):
+    def __init__(self, wav_path, session_events, language='zh', prev_tail='',
+                 speaker_cluster=None):
         self.wav_path = wav_path
         self._emit = session_events
         self.language = language
         self.prev_tail = prev_tail
+        self.cluster = speaker_cluster
 
     def run_window(self, t0_ms, t1_ms):
         """切 [t0_ms, t1_ms) 音频跑 whisper,返回段落 list[{start_ms,end_ms,text}]
@@ -148,7 +158,17 @@ class Pass2Runner:
         if not segs:
             self._emit({'type': 'pass2_skip', 't0': t0_ms, 't1': t1_ms})
             return []
+        ev = None
+        if self.cluster is not None:
+            for s in segs:                          # 段落切片喂声纹,簇号写回段落
+                sa = max(a, s['start_ms'] * SAMPLE_RATE // 1000)
+                sb = min(b, s['end_ms'] * SAMPLE_RATE // 1000)
+                s['speaker'] = self.cluster.assign(
+                    np.ascontiguousarray(samples[sa:sb], dtype=np.float32))
+            # 事件 speaker = 窗口内时长最长段落(主导说话人)的簇号
+            dom = max(segs, key=lambda s: s['end_ms'] - s['start_ms'])
+            ev = {'speaker': dom['speaker']}
         text = ''.join(s['text'] for s in segs)
         self.prev_tail = text[-TAIL_CHARS:]         # 下一窗口的 --prompt 语境
-        self._emit({'type': 'pass2', 't0': t0_ms, 't1': t1_ms, 'text': text})
+        self._emit(dict({'type': 'pass2', 't0': t0_ms, 't1': t1_ms, 'text': text}, **(ev or {})))
         return segs
