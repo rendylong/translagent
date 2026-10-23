@@ -1,7 +1,7 @@
 # 密钥——绝不入库
 env.rtf
 
-# 用户会议资料与音频文件
+# 用户会议资料与音频文件(所有音频、文稿不出本机)
 会议/
 *.m4a
 *.wav
@@ -11,14 +11,18 @@ env.rtf
 *.aiff
 *.flac
 
-# 大二进制模型与任务数据(脚本与 bench 记录入库)
+# 大二进制模型与任务数据(脚本与指标类 bench 记录入库)
 transcriber/models/**
 !transcriber/models/bench/
 !transcriber/models/bench/*.py
 !transcriber/models/bench/*.json
-!transcriper/models/bench/
+# stream bench 输出内嵌真实会议转录文本,不出本机
+transcriber/models/bench/stream_*.json
 transcriber/jobs/
 transcriber/live/
+
+# 声纹库(192 维质心为生物特征数据,不出本机)
+transcriber/speakers/
 
 # 工具链与构建产物
 .tools/
