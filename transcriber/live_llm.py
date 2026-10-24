@@ -156,11 +156,15 @@ class LLMRefiner:
 
     def _build_messages(self, text, prev_refined):
         src, tgt = self.lang_pair
+        # 剥标签指令(Task 6,Task 5 e2e 实测译文常带「Speaker 0:」行前缀):
+        # 两分支都要求 translation 为纯译文、不得复述行首的说话人标签
         if src == tgt:
             # 「不翻译」组合(spec 2026-10-24 §4.4):不请求译文,省 token 且避免同语种重复上屏
-            rule4 = '4.translation 输出空字符串 ""(源语与目标语相同,无需翻译);'
+            rule4 = ('4.translation 输出空字符串 ""(源语与目标语相同,无需翻译;'
+                     '如非空也不得包含说话人标签或行前缀);')
         else:
-            rule4 = '4.translation 输出%s译文,忠实原意;' % _LANG_NAME.get(tgt, tgt)
+            rule4 = ('4.translation 输出纯%s译文,忠实原意,'
+                     '不得包含说话人标签或行前缀;' % _LANG_NAME.get(tgt, tgt))
         system = (
             '你是实时会议字幕的校对与翻译引擎,处理一段语音识别(ASR)产出的窗口文本。规则:'
             '1.只修 ASR 类错误,即同音错字、系统性错词、专有名词、标点与口语顺滑;'

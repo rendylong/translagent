@@ -254,6 +254,12 @@ class RefinerTest(unittest.TestCase):
         sysmsg = body['messages'][0]['content']
         for kw in ('ASR', 'JSON', '说话人', 'translation', 'corrected', '补全标点'):
             self.assertIn(kw, sysmsg)
+        # 剥标签指令(Task 6,e2e 实测译文带「Speaker 0:」前缀):translation 须为
+        # 纯译文;翻译分支与本分支(默认 zh>en)都不得包含说话人标签或行前缀
+        self.assertIn('输出纯英语译文', sysmsg)
+        self.assertIn('不得包含说话人标签或行前缀', sysmsg)
+        r_nt = LLMRefiner(FAKE_KEY, lang_pair=('zh', 'zh'), timeout_s=1)
+        self.assertIn('不得包含说话人标签或行前缀', r_nt._build_messages('x', '')[0])
 
 
 class RefineWorkerTest(unittest.TestCase):

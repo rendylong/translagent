@@ -127,7 +127,11 @@ class StaticCheck(unittest.TestCase):
         self.assertIn('t0_ms', self.js)   # pass1_final 字段名(与 live_session.py 一致)
         self.assertIn('ev.t0', self.js)   # llm 字段名 t0/t1(与 live_llm.py 一致)
         self.assertIn('speaker: ev.speaker', self.js)     # pass1_final 透传 speaker
-        self.assertIn("entry.kind === 'f1' || entry.kind === 'llm'", self.js)  # 着色条件
+        # 着色门控(Task 6):有 speaker 才设内联色;无 speaker(f1 分人失败 / llm 跨批)
+        # 不设内联色,回落 .e.f1/.e.llm 的 CSS 灰(否则内联灰覆盖 CSS,.e.f1 成死规则)
+        self.assertIn("(entry.kind === 'f1' || entry.kind === 'llm') && entry.speaker != null",
+                      self.js)
+        self.assertIn('.e.f1 .txt,.e.llm .txt', self.html)   # 无 speaker 的 CSS 灰兜底
         self.assertIn('llmReplace(t0, t1, text, translation, speaker)', self.js)
         self.assertIn("llmReplace(ev.t0, ev.t1, ev.text || '', ev.translation || '', ev.speaker)",
                       self.js)

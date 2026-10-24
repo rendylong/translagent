@@ -55,7 +55,8 @@ from live_session import LiveSession  # noqa: E402
 
 MODEL_ZH = str(BASE / 'models' / 'streaming-zipformer-zh-en')
 MODEL_JA = str(BASE / 'models' / 'streaming-zipformer-ja')
-CHUNK = 3200            # 200ms @16k mono s16le(与前端 live.js 同口径)
+CHUNK = 3200            # 每包 3200 字节 = 100ms @16k mono s16le(feed_bytes 吃 int16 字节,不是
+                        # 200ms——前端 live.js 的 3200 是样本数;S1 直驱引擎同样按样本切片,见其循环内)
 BPS = 32000             # 字节/秒
 SR = 16000
 LLM_WAIT_S = 45         # 等单条 llm 事件的超时(含合并等待窗 1.5s + 网络)
@@ -231,8 +232,8 @@ def s1(tmp):
                       lambda text, t0, t1: finals.append({'text': text, 't0_ms': t0, 't1_ms': t1}))
     try:
         x = np.frombuffer(pcm, dtype='<i2').astype(np.float32) / 32768.0
-        for i in range(0, len(x), CHUNK):
-            eng.feed(np.ascontiguousarray(x[i:i + CHUNK]))
+        for i in range(0, len(x), 3200):   # 样本切片:3200 样本 = 200ms(与 CHUNK 的字节口径区分,值巧合相同)
+            eng.feed(np.ascontiguousarray(x[i:i + 3200]))
     finally:
         eng.stop()                      # 排空 + 尾部冲刷(空文本 final 不计)
     print('  合成 %.1fs → %d 条 final:' % (len(pcm) / BPS, len(finals)))

@@ -550,7 +550,9 @@ function makeEntryEl(entry){
   }
   var txt = document.createElement('span'); txt.className = 'txt';
   txt.textContent = entry.text || '';
-  if (entry.kind === 'f1' || entry.kind === 'llm') txt.style.color = color;   // 有 speaker 即着色,内联色覆盖 .e.f1 灰
+  // 有 speaker 即着色,无 speaker 回落 CSS 灰(f1 分人失败无键 / llm 跨说话人批 speaker=null,
+  // 均不设内联色,.e.f1/.e.llm 的 CSS 灰才得以生效)
+  if ((entry.kind === 'f1' || entry.kind === 'llm') && entry.speaker != null) txt.style.color = color;
   row.appendChild(txt);
   div.appendChild(row);
   if (entry.translation){
