@@ -245,6 +245,9 @@ class StaticCheck(unittest.TestCase):
         self.assertNotIn('id="barMain"', self.html)
         self.assertIn('.blog .srow', self.html)
         self.assertIn('bspace', self.html)
+        # 账本条目紧凑间距必须压过全局 .e 的面板 8px 边距(否则每个窗口边界吃掉一整行;
+        # 终审曾连带误删,几何钉子只测条目内行高拦不住,故静态钉死)
+        self.assertIn('.blog .e{margin:2px 0;padding:0', self.html)
         self.assertNotIn('syncBarLog', self.js)
         self.assertNotIn('renderBar', self.js)
 

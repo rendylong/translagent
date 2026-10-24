@@ -85,7 +85,7 @@
     -webkit-mask-image:linear-gradient(transparent 0,#000 10px);
   }
   .blog .bspace{flex:1 1 0;min-height:0;-webkit-app-region:drag}   /* 悬浮窗早期空窗整块可拖动摆放 */
-  .blog .e{animation:lc-in .18s ease}                               /* 仅新增条目入场淡入 */
+  .blog .e{margin:2px 0;padding:0;animation:lc-in .18s ease}        /* 紧凑间距压过全局 .e 的 8px(面板值);仅新增条目入场淡入 */
   .blog .e.no-anim{animation:none}                                  /* 重建路径不眨眼 */
   @keyframes lc-in{from{opacity:0}to{opacity:1}}
   .blog .srow{display:grid;grid-template-columns:10px 1fr;column-gap:8px;
