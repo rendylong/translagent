@@ -1,8 +1,9 @@
 /* 实时字幕前端(Task 7):双形态 UI(半透明字幕条 ↔ 完整面板)+ /ws/live 客户端 +
    流式降采样 + 断线缓冲。独立页面,不依赖 recorder.js。
 
-   与服务端实现(app.py ws_live / live_session.py / live_pass2.py)的对齐点:
+   与服务端实现(app.py ws_live / live_session.py / live_llm.py)的对齐点:
    - started 应答无 seq;partial/pass1_final(字段 t0_ms/t1_ms)带单调 seq;
+     pass1_final 分人成功时另带 speaker(簇号 int;失败/禁用则无此键);
    - resume 无 resumed 应答:服务端直接重放 seq > last_seq 的 backlog 再继续实时流,
      故重连后按 seq 去重即可,首个下行消息可能就是重放事件;
    - audio_flush_done 上行消息当前被服务端忽略(前向兼容,补发完毕后照发);
@@ -10,7 +11,9 @@
      stopped 自 Task 9 起携带 job_id(停止即建 job,可在工作台查看完整文稿);
    - start 阶段失败:服务端回 {'type':'error','message':'无法开始实时会话:…'} 并断开,
      前端收到后停止自动重连、显示错误(onError),不再无限重试;
-   - pass2 / pass2_skip / llm 事件字段名是 t0 / t1(与 live_pass2.py 一致)。
+   - llm 事件字段名是 t0 / t1(与 live_llm.py 一致),speaker 为簇号 int 或 null:
+     单一说话人批的文本已剥行标签(speaker=簇号),跨说话人批保留行标签
+     (speaker=null,前端通用色)。两级渲染:f1 即时上屏,llm 软替换。
 
    文案硬约束:停止按钮的文案就是「停止」二字,不用任何替代表述。 */
 (function(){
@@ -31,7 +34,7 @@ var state = {
   sessionId: null, lastSeq: 0,
   userStop: false,          // 已按「停止」;断线时挂起,重连后补发 stop
   reconnectTimer: 0,
-  doc: [],                  // {id, kind:'f1'|'p2'|'llm'|'skip', t0, t1, speaker, text, translation, el}
+  doc: [],                  // {id, kind:'f1'|'llm', t0, t1, speaker, text, translation, el}
   partial: '',
   paused: false,            // 暂停显示:仅冻结 DOM,事件照收、录音照常
   startedAt: 0, timerIv: 0, entryId: 0,
@@ -175,20 +178,12 @@ function handleEvent(ev){
       renderActive(); renderBar();
       break;
     case 'pass1_final':
-      insertEntry({kind: 'f1', t0: ev.t0_ms, t1: ev.t1_ms, text: ev.text || ''});
+      insertEntry({kind: 'f1', t0: ev.t0_ms, t1: ev.t1_ms, text: ev.text || '',
+                   speaker: ev.speaker});          // 分人失败时事件无 speaker 键 → undefined → 通用灰
       badge('bdgAsr');
       break;
-    case 'pass2':
-      replaceWindow(ev.t0, ev.t1,
-        {kind: 'p2', speaker: ev.speaker, text: ev.text || '', translation: ''});
-      badge('bdgFix');
-      break;
-    case 'pass2_skip':
-      replaceWindow(ev.t0, ev.t1, {kind: 'skip', text: ''});
-      badge('bdgFix');
-      break;
     case 'llm':
-      llmReplace(ev.t0, ev.t1, ev.text || '', ev.translation || '');
+      llmReplace(ev.t0, ev.t1, ev.text || '', ev.translation || '', ev.speaker);
       badge('bdgTr');
       break;
     case 'stop_ack':
@@ -478,7 +473,7 @@ function stopCapture(){
   try { c.ctx.close(); } catch (e){}
 }
 
-/* ---------- 三级渲染:partial 覆盖活动行 / pass1_final 追加 / pass2 整窗替换染色 ---------- */
+/* ---------- 两级渲染:partial 覆盖活动行 / pass1_final 追加(带说话人)/ llm 软替换修正翻译 ---------- */
 
 function speakerColor(speaker){
   return SPEAKER_COLORS[speaker != null && speaker < SPEAKER_COLORS.length - 1 ? speaker
@@ -488,13 +483,13 @@ function speakerName(speaker){
   return speaker == null ? '' : '说话人' + (speaker + 1);
 }
 
-function intersects(e, t0, t1){ return e.kind !== 'skip' && e.t0 < t1 && e.t1 > t0; }
+function intersects(e, t0, t1){ return e.t0 < t1 && e.t1 > t0; }
 
 function insertEntry(entry){
-  if (entry.kind === 'f1'){                       // 已被 pass2/llm 覆盖的窗口不再收留旧 final
+  if (entry.kind === 'f1'){                       // 已被 llm 覆盖的窗口不再收留旧 final
     for (var k = 0; k < state.doc.length; k++){
       var d = state.doc[k];
-      if ((d.kind === 'p2' || d.kind === 'llm') && d.t0 <= entry.t0 && entry.t1 <= d.t1) return;
+      if (d.kind === 'llm' && d.t0 <= entry.t0 && entry.t1 <= d.t1) return;
     }
   }
   entry.id = ++state.entryId;
@@ -520,17 +515,15 @@ function removeEntry(entry){
   if (entry.bel) entry.bel.remove();
 }
 
-function replaceWindow(t0, t1, base){
-  var victims = state.doc.filter(function(e){ return intersects(e, t0, t1); });
-  victims.forEach(removeEntry);
-  insertEntry(Object.assign({t0: t0, t1: t1, speaker: null, translation: ''}, base));
-}
-
-function llmReplace(t0, t1, text, translation){   // 软替换:替换文本并附译文,保留位置与说话人
+function llmReplace(t0, t1, text, translation, speaker){   // 软替换:替换文本并附译文,保留位置
+  /* speaker 取事件值优先:int=单一说话人批(文本已剥行标签,染该说话人色);
+     null=跨说话人批(正文自带行标签,通用色);undefined=事件无 speaker 键
+     (老服务端),回落旧逻辑取末位受害者的说话人。null 是合法值,勿与缺键混同。 */
   var victims = state.doc.filter(function(e){ return intersects(e, t0, t1); });
   if (victims.length === 1){
     var e = victims[0];
     e.kind = 'llm'; e.text = text; e.translation = translation;
+    if (speaker !== undefined) e.speaker = speaker;
     if (e.el){ var fresh = makeEntryEl(e); e.el.replaceWith(fresh); e.el = fresh; }
     if (e.bel){ var bfresh = makeEntryEl(e); e.bel.replaceWith(bfresh); e.bel = bfresh; }
     autoScroll($('plist')); autoScroll($('barLog'));
@@ -538,17 +531,14 @@ function llmReplace(t0, t1, text, translation){   // 软替换:替换文本并�
     return;
   }
   victims.forEach(removeEntry);
-  var sp = victims.length ? victims[victims.length - 1].speaker : null;
+  var sp = speaker !== undefined ? speaker
+         : (victims.length ? victims[victims.length - 1].speaker : null);
   insertEntry({kind: 'llm', t0: t0, t1: t1, speaker: sp, text: text, translation: translation});
 }
 
 function makeEntryEl(entry){
   var div = document.createElement('div');
   div.className = 'e ' + entry.kind;
-  if (entry.kind === 'skip'){
-    div.innerHTML = '<span class="skiptxt">· 静音段已略过 ·</span>';
-    return div;
-  }
   var row = document.createElement('div'); row.className = 'row';
   var color = speakerColor(entry.speaker);
   var dot = document.createElement('i'); dot.className = 'dot';
@@ -560,7 +550,7 @@ function makeEntryEl(entry){
   }
   var txt = document.createElement('span'); txt.className = 'txt';
   txt.textContent = entry.text || '';
-  if (entry.kind === 'p2' || entry.kind === 'llm') txt.style.color = color;
+  if (entry.kind === 'f1' || entry.kind === 'llm') txt.style.color = color;   // 有 speaker 即着色,内联色覆盖 .e.f1 灰
   row.appendChild(txt);
   div.appendChild(row);
   if (entry.translation){
@@ -585,18 +575,17 @@ function renderBar(){                             // 字幕条 = 最近 1 条定
   if (state.paused) return;
   var main = null, i = state.doc.length;
   while (i-- > 0){
-    var k = state.doc[i].kind;
-    if (k === 'p2' || k === 'llm'){ main = state.doc[i]; break; }
+    if (state.doc[i].kind === 'llm'){ main = state.doc[i]; break; }
   }
   var fallback = null;
   if (!main) for (i = 0; i < state.doc.length; i++)
     if (state.doc[i].kind === 'f1') fallback = state.doc[i];
   var show = main || fallback;
   var bmain = $('barMain');
-  bmain.classList.toggle('fallback', !main && !!fallback);
+  bmain.classList.toggle('fallback', !main && (show == null || show.speaker == null));
   if (show){
     $('barText').textContent = show.text || '…';
-    var sp = main ? show.speaker : null;
+    var sp = show.speaker;                       // f1 兜底也带 speaker(llm 主行同);无键/跨批为 null → 灰
     $('barDot').style.background = speakerColor(sp);
     var n = speakerName(sp);
     $('barWho').textContent = n; $('barWho').hidden = !n;

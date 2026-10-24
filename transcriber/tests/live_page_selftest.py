@@ -3,12 +3,13 @@
 
 两段:
   1. StaticCheck:live.html / live.js 关键实现的字符串存在性
-     (audio_flush_done、流式降采样、resume、5 分钟缓冲上限、「停止」文案、不出现「转正」)。
+     (audio_flush_done、流式降采样、resume、5 分钟缓冲上限、「停止」文案、不出现「转正」、
+     两级渲染钉子:pass1_final 透传 speaker / llm speaker 三态 / pass2 层零残留)。
   2. ProtocolFlow:起 app.py 子进程,按前端 live.js 的真实时序走一遍
      start → 喂 zh 锚点 30s(200ms/包)→ 收 partial/pass1_final →
      断线重连 resume(last_seq=0 重放)→ 发 audio_flush_done → stop → stop_ack → stopped。
-     断言与 live_session.py / app.py ws_live 的实际实现逐点对齐(无 resumed 消息、
-     pass2 字段名 t0/t1 在本流程不出现——pass2 管线尚未接入 WS,前端先行画好)。
+     断言与 live_session.py / app.py ws_live 的实际实现逐点对齐(无 resumed 消息;
+     两层管线下 llm 事件需 LLM 密钥,协议流程不覆盖,llm 事件形状由静态段钉住)。
      另有 test_stop_after_reconnect 覆盖「断线期按停止」路径:重连后必须先 resume
      挂回会话再补发音频再 stop(否则新连接 session=None,stop 落空、会话悬死),
      断言 stop_ack/stopped 到达且服务端 wav 已 finalize。
@@ -117,11 +118,36 @@ class StaticCheck(unittest.TestCase):
         self.assertNotIn('转正', self.html, '界面文案不得出现「转正」')
         self.assertNotIn('转正', self.js, '界面文案不得出现「转正」')
 
-    def test_three_tier_rendering(self):
-        for key in ('pass1_final', 'pass2_skip', "'pass2'", "'llm'", 'translation'):
+    def test_two_tier_rendering(self):
+        """两级渲染钉子:pass1_final 透传 speaker(分人失败无键)、f1/llm 文本着色
+        条件、llmReplace 的 speaker 参数与 undefined/null/int 三态区分、renderBar
+        兜底主行取 show.speaker 且降亮只在无 speaker 时挂、表单两级口径文案。"""
+        for key in ('pass1_final', "'llm'", 'translation'):
             self.assertIn(key, self.js)
         self.assertIn('t0_ms', self.js)   # pass1_final 字段名(与 live_session.py 一致)
-        self.assertIn('ev.t0', self.js)   # pass2/llm 字段名(与 live_pass2.py 一致)
+        self.assertIn('ev.t0', self.js)   # llm 字段名 t0/t1(与 live_llm.py 一致)
+        self.assertIn('speaker: ev.speaker', self.js)     # pass1_final 透传 speaker
+        self.assertIn("entry.kind === 'f1' || entry.kind === 'llm'", self.js)  # 着色条件
+        self.assertIn('llmReplace(t0, t1, text, translation, speaker)', self.js)
+        self.assertIn("llmReplace(ev.t0, ev.t1, ev.text || '', ev.translation || '', ev.speaker)",
+                      self.js)
+        self.assertIn('speaker !== undefined', self.js)   # null(跨说话人批)与缺键(undefined)区分
+        self.assertIn('var sp = show.speaker;', self.js)  # renderBar 兜底主行也取 speaker
+        self.assertIn('show == null || show.speaker == null', self.js)  # 降亮仅挂「无 speaker」
+        self.assertIn('句尾停顿后', self.html)            # 两级口径文案(修正翻译句尾停顿后替换)
+
+    def test_pass2_layer_retired(self):
+        """pass2 层退役:事件分支、修正徽标、p2/skip 样式零残留(前端只余 f1+llm 两级)。"""
+        self.assertNotIn('pass2', self.js)
+        self.assertNotIn('pass2', self.html)
+        self.assertNotIn('bdgFix', self.js)
+        self.assertNotIn('bdgFix', self.html)
+        self.assertNotIn('b-fix', self.html)
+        self.assertNotIn('replaceWindow', self.js)   # 仅 pass2/pass2_skip 分支使用,随之删除
+        self.assertNotIn('.e.p2', self.html)
+        self.assertNotIn('.e.skip', self.html)
+        self.assertNotIn('skiptxt', self.js)
+        self.assertNotIn('skiptxt', self.html)
 
     def test_ended_copy(self):
         self.assertIn('录音已保存 · 正在生成完整文稿', self.js)
