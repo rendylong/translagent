@@ -299,7 +299,11 @@ SPLIT_VECTORS = [
     ('', []),                                                    # 空串
     ('。。。!?!', ['。。。!?!']),                                # 纯标点:并入一行,不产孤标点行
     ('明日は晴れます。Really? はい!', ['明日は晴れます。', 'Really?', 'はい!']),   # 日文混排半角 ?!
-    ('完了!次へ?了解;', ['完了!', '次へ?', '了解;']),           # 全角 ！？; 须在终符集(勘误 v2)
+    ('完了!次へ?了解;', ['完了!', '次へ?', '了解;']),           # 半角 !?; 对照
+    # 全角 ！？; 必须在终符集(勘误 v2)。输入/期望都按码点转义构造并经用例内码点自检——
+    # 手打全角会在工具链路被折成半角(Task 1 修复轮实测的坑),字面直写不可信。
+    ('完了\uff01次へ\uff1f了解\uff1b',
+     ['完了\uff01', '次へ\uff1f', '了解\uff1b']),
 ]
 
 
@@ -310,6 +314,11 @@ class SentenceSplitCheck(unittest.TestCase):
     整文件进 node 会炸;纯函数单独执行才有确定性的断言向量。"""
 
     def test_vectors(self):
+        # 码点自检:末位全角例的输入必须真含 U+FF01/U+FF1F/U+FF1B(手打全角曾被折半角,
+        # 字面直写的「全角用例」可能整个是半角假货——审查实测发生过)
+        fw_input = SPLIT_VECTORS[-1][0]
+        for cp in ('\uff01', '\uff1f', '\uff1b'):
+            self.assertIn(cp, fw_input, '全角对照向量缺码点 %s' % hex(ord(cp)))
         extracted = extract_function(LIVE_JS.read_text(encoding='utf-8'), 'splitSentences')
         with tempfile.TemporaryDirectory(prefix='lc_split_') as td:
             script = Path(td) / 'split.js'
