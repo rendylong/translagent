@@ -344,5 +344,62 @@ class LiveSessionLLMTest(unittest.TestCase):
         self.assertFalse([t for t in types if t in ('pass2', 'pass2_skip')])
 
 
+class GpuLockTest(unittest.TestCase):
+    """GPU 锁语义(2026-10-24 自原 test_live_pass2.py 迁入,pass2 驱动两例随 Pass2
+    退役;live 两层管线不碰 GPU_LOCK,此处只钉离线管线纪律与 Pass1 不受锁影响)。"""
+
+    def test_pass1_not_blocked(self):
+        """持 GPU 锁时 Pass1Engine.feed 立即返回(<50ms):Pass1 流式识别不依赖 whisper 的 GPU 锁。"""
+        from live_pass1 import Pass1Engine
+        eng = Pass1Engine(MODEL_DIR, lambda t: None, lambda *a: None)
+        self.addCleanup(eng.stop)
+        self.assertTrue(app.GPU_LOCK.acquire(blocking=False))
+        try:
+            noise = np.zeros(3200, dtype=np.float32)
+            t0 = time.perf_counter()
+            for _ in range(10):
+                eng.feed(noise)
+            dt = time.perf_counter() - t0
+        finally:
+            app.GPU_LOCK.release()
+        self.assertLess(dt, 0.05, 'feed 必须非阻塞(持锁不影响 Pass1)')
+
+    def test_app_run_whisper_holds_gpu_lock(self):
+        """app.run_whisper(离线管线)在子进程存续期间持 GPU_LOCK,返回后释放(替身 Popen 验证接线)。"""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        jobs = Path(tmp.name) / 'jobs' / 'j1'
+        jobs.mkdir(parents=True)
+        (jobs / 'meta.json').write_text('{"id": "j1"}', encoding='utf-8')
+        wav = jobs / 'audio16k.wav'
+        wav.write_bytes(b'RIFF--placeholder--')
+        seen = {}
+
+        class FakeProc:
+            def __init__(self, cmd, **kw):
+                seen['at_popen'] = app.GPU_LOCK.locked()
+                seen['cwd'] = kw.get('cwd')
+                self.pid = 4242
+                self.stderr = ['progress = 50\n']
+                prefix = cmd[cmd.index('-of') + 1]
+                with open(prefix + '.json', 'w', encoding='utf-8') as f:
+                    json.dump({'transcription': [
+                        {'offsets': {'from': 0, 'to': 900}, 'text': '离线模拟'}]}, f)
+
+            def wait(self):
+                seen['at_wait'] = app.GPU_LOCK.locked()
+                return 0
+
+        with unittest.mock.patch.object(app, 'JOBS_DIR', str(jobs.parent)), \
+                unittest.mock.patch.object(app.subprocess, 'Popen', FakeProc):
+            duration, segs = app.run_whisper('j1', str(wav), 'zh')
+        self.assertTrue(seen['at_popen'], 'Popen 时必须已持锁')
+        self.assertTrue(seen['at_wait'], 'wait 时必须仍持锁')
+        self.assertEqual(seen['cwd'], app.WHISPER_DIR)
+        self.assertFalse(app.GPU_LOCK.locked(), '返回后必须已释放')
+        self.assertEqual(len(segs), 1)
+        self.assertGreater(duration, 0)
+
+
 if __name__ == '__main__':
     unittest.main()
