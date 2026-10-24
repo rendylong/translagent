@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Task 9:停止转正 / 断电恢复 / 异步停止 / Pass2 驱动与 LLM 接线 / pump 竞态(EventTap)。
+"""Task 9:停止转正 / 断电恢复 / 异步停止 / LLM 接线 / pump 竞态(EventTap)。
 
 快测:FinalizeSessionTest / RecoverTest / EventTapTest / WatchdogTest(毫秒级,不碰模型)。
-慢测:StopAsyncTest / Pass2WiringTest(真实流式 Pass1 + whisper 替身,约 10-25s)。
+慢测:StopAsyncTest / Pass2WiringTest(真实流式 Pass1,约 10-25s)。
+2026-10-24 spec 摘 Pass2:Pass2 驱动单测整类退役,事件流口径改两层(绝无 pass2/pass2_skip)。
 """
 import json
 import os
@@ -25,7 +26,6 @@ import app  # noqa: E402
 import live_finalize  # noqa: E402
 import live_pass2  # noqa: E402
 import live_session  # noqa: E402
-from live_pass2 import Pass2Cfg  # noqa: E402
 from live_session import EventTap, LiveSession  # noqa: E402
 from live_wav import AppendWav  # noqa: E402
 
@@ -322,65 +322,6 @@ class PumpEventsTest(unittest.TestCase):
         self.assertEqual([e['seq'] for e in sent], [1, 2], '归还的事件应按序重投')
 
 
-class Pass2DriverUnitTest(unittest.TestCase):
-    """驱动线程退出策略的确定性单测(不起引擎/whisper,毫秒级)。
-
-    场景:最后一条 final t1=3000 < now=5000(典型:语音结束后长静音,引擎
-    flush 无残余 final)。force_tail 只把游标推到 t_end;驱动必须在下一轮
-    用 skip 补齐 [t_end, now] 才允许退出——否则游标悬在 3000,stop 后实时
-    字幕永远缺最后一段静音结算(soak 的「游标 == 总时长」判据即抓此病)。"""
-
-    def _mk_sess(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        return LiveSession(tmp.name, MODEL_DIR,
-                           pass2_cfg=Pass2Cfg(min_s=1.0, force_s=2.0, quiet_s=0.3, pad_ms=100),
-                           speaker_cluster=_StubCluster(),
-                           finalizer=lambda d, speakers_hint=None: 'j')
-
-    def test_settles_residual_silence_before_exit(self):
-        sess = self._mk_sess()
-
-        class FakeEngine:
-            @staticmethod
-            def finals():
-                return [{'text': 'x', 't0_ms': 0, 't1_ms': 3000}]
-        ran = []
-
-        class FakeRunner:
-            @staticmethod
-            def run_window(a, b):
-                ran.append((a, b))
-                return []
-        sess._engine = FakeEngine()
-        sess._runner = FakeRunner()
-        sess._bytes_fed = 5000 * 32              # duration_s() == 5.0
-        sess._pass2_stopping.set()
-        sess._run_pass2()
-        self.assertEqual(ran, [(0, 2000), (1900, 3100)],
-                         '长积压按 force_s 切窗 + 尾窗 [t-pad, min(t_end+pad, now))')
-        self.assertEqual(sess._cursor_ms, 5000,
-                         '退出前游标必须推满到 now(残余静音以 skip 结算)')
-        self.assertTrue(sess._pass2_done.is_set())
-
-    def test_exits_when_plan_keeps_failing(self):
-        """plan_windows 持续抛错:驱动不得死循环,置 done 后退出(转正不被卡死)。"""
-        sess = self._mk_sess()
-
-        class BadEngine:
-            @staticmethod
-            def finals():
-                raise RuntimeError('engine gone')
-        sess._engine = BadEngine()
-        sess._runner = None
-        sess._bytes_fed = 1000 * 32
-        sess._pass2_stopping.set()
-        t0 = time.perf_counter()
-        sess._run_pass2()
-        self.assertLess(time.perf_counter() - t0, 3.0)
-        self.assertTrue(sess._pass2_done.is_set())
-
-
 class _StubCluster:
     n_speakers = 1
 
@@ -413,7 +354,7 @@ def _session_case():
 
 
 class StopAsyncTest(unittest.TestCase):
-    """handle_stop 立即返回;事件流 stop_ack →(驱动补跑尾窗)→ stopped(带 job_id)。"""
+    """handle_stop 立即返回;事件流 stop_ack → stopped(带 job_id)(转正异步)。"""
 
     def setUp(self):
         tmp, self.box, finalizer = _session_case()
@@ -431,10 +372,7 @@ class StopAsyncTest(unittest.TestCase):
         kp = unittest.mock.patch.object(live_session, 'parse_key', lambda: None)
         kp.start()
         self.addCleanup(kp.stop)
-        # min_s=10:4-5s 喂入量在 listening 期间不可能成窗,尾窗必然发生在
-        # stop_ack 之后(转正异步、间隔 ≥ 一窗 whisper 的可复现前提)
         self.sess = LiveSession(self.root, MODEL_DIR,
-                                pass2_cfg=Pass2Cfg(min_s=10.0, force_s=15.0, quiet_s=0.3, pad_ms=100),
                                 speaker_cluster=_StubCluster(), finalizer=finalizer)
         self.addCleanup(self.sess.handle_stop)
         self.sid = self.sess.start('停测', 2)
@@ -536,7 +474,8 @@ class StopAsyncTest(unittest.TestCase):
 
 
 class Pass2WiringTest(unittest.TestCase):
-    """接线 A/B:驱动线程按字节时钟发 pass2/pass2_skip;pass2 事件喂 LLM 出 llm 事件。"""
+    """接线口径(2026-10-24 spec 摘 Pass2 后为两层):会话事件流绝无 pass2/pass2_skip;
+    pass1_final 直接喂 LLM 出 llm 事件(旧 pass2 断言所在用例的两层化改写)。"""
 
     def setUp(self):
         tmp, self.box, finalizer = _session_case()
@@ -555,7 +494,6 @@ class Pass2WiringTest(unittest.TestCase):
         rp.start()
         self.addCleanup(rp.stop)
         self.sess = LiveSession(self.root, MODEL_DIR,
-                                pass2_cfg=Pass2Cfg(min_s=1.0, force_s=2.0, quiet_s=0.3, pad_ms=100),
                                 speaker_cluster=_StubCluster(), finalizer=finalizer)
         self.addCleanup(self.sess.handle_stop)
         self.sid = self.sess.start('接线', 2)
@@ -587,25 +525,30 @@ class Pass2WiringTest(unittest.TestCase):
         self.assertEqual(got['llm']['text'], '修:说话人0:替身窗口文本')
         self.assertEqual(got['llm']['translation'], 'TRANS')
 
-    def test_silence_skip_emitted_by_driver(self):
-        """纯静音(无 finals)超过 min_s:驱动侧发 pass2_skip(skip 责任在驱动,Task 5 裁定)。"""
+    def test_silence_no_pass2_events(self):
+        """两层口径(原 pass2_skip 驱动用例改写):纯静音会话停止,全事件流
+        绝无 pass2/pass2_skip(驱动已摘,静音不再有「结算」事件)。"""
         silence = b'\x00\x00' * int(2.0 * 16000)   # 2s 数字静音
         for i in range(0, len(silence), CHUNK):
             self.sess.feed_bytes(silence[i:i + CHUNK])
-        got = None
+        self.sess.handle_stop()
+        events, ok = [], False
         deadline = time.perf_counter() + 30
         while time.perf_counter() < deadline:
             try:
-                ev = self.sess.events.get(timeout=0.3)
+                events.append(self.sess.events.get(timeout=0.3))
             except queue.Empty:
-                if got:
+                if events and events[-1].get('type') == 'stopped':
+                    ok = True
                     break
                 continue
-            if ev['type'] == 'pass2_skip':
-                got = ev
+            if events[-1].get('type') == 'stopped':
+                ok = True
                 break
-        self.assertIsNotNone(got, '静音应触发 pass2_skip(不进 whisper)')
-        self.assertEqual(set(got), {'type', 't0', 't1', 'seq'})
+        self.assertTrue(ok, '静音会话停止应发出 stopped')
+        types = [e['type'] for e in events]
+        self.assertFalse([t for t in types if t in ('pass2', 'pass2_skip')],
+                         'Pass2 已摘除,静音不得触发任何 pass2 族事件:%s' % types)
 
 
 class WatchdogTest(unittest.TestCase):
