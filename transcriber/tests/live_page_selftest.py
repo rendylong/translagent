@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Task 7 前端页面自测:静态存在性断言 + 对真实服务的协议级流程模拟。
+"""Task 7 前端页面自测:静态存在性断言 + SentenceSplit/几何离屏断言 + 协议级流程模拟。
 
-两段:
+四段:
   1. StaticCheck:live.html / live.js 关键实现的字符串存在性
-     (audio_flush_done、流式降采样、resume、5 分钟缓冲上限、「停止」文案、不出现「转正」)。
-  2. ProtocolFlow:起 app.py 子进程,按前端 live.js 的真实时序走一遍
+     (audio_flush_done、流式降采样、resume、5 分钟缓冲上限、「停止」文案、不出现「转正」,
+     及 2026-10-24 句子账本化钉子:双轨删除回归、静态骨架、色板变量、reduced-motion)。
+  2. SentenceSplitCheck:从 live.js 源码抠出 splitSentences(花括号配平,不 eval 整文件),
+     经本机 .tools/electron 的 node 模式执行断言向量(本机无 node;二进制缺失时 skip)。
+  3. BarGeometryCheck:离屏 BrowserWindow 加载真实 live.html,实测账本两静态行
+     (prow/empty)行高 >0 且 ≤30px、与正常句行同高(Task 1 复审的持久回归钉子;同 skip 模式)。
+  4. ProtocolFlow:起 app.py 子进程,按前端 live.js 的真实时序走一遍
      start → 喂 zh 锚点 30s(200ms/包)→ 收 partial/pass1_final →
      断线重连 resume(last_seq=0 重放)→ 发 audio_flush_done → stop → stop_ack → stopped。
      断言与 live_session.py / app.py ws_live 的实际实现逐点对齐(无 resumed 消息、
@@ -18,10 +23,12 @@
  端口 8765 被占时协议段自动跳过,静态段始终执行。)
 """
 import json
+import os
 import re
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 import urllib.request
@@ -41,6 +48,50 @@ FEED_SEC = 30
 LIVE_HTML = BASE / 'static' / 'live.html'
 LIVE_JS = BASE / 'static' / 'live.js'
 INDEX_HTML = BASE / 'static' / 'index.html'   # 主界面(实时字幕入口钉子用)
+REPO = BASE.parent                            # 仓库根(.tools/electron 按 AGENTS.md 约定在此)
+ELECTRON = REPO / '.tools' / 'electron' / 'Electron.app' / 'Contents' / 'MacOS' / 'Electron'
+
+
+def electron_missing():
+    """本机无 node,SentenceSplit/几何两段都靠 .tools/electron 执行;二进制缺失时跳过
+    (与协议段的端口占用跳过同款协议:环境不满足→skip,而非误报失败)。"""
+    return not ELECTRON.is_file()
+
+
+def extract_function(src, name):
+    """按花括号配平从 live.js 源码抠出单个函数定义。
+
+    不 eval 整文件:live.js 是 IIFE,顶层还有 DOM/WS 依赖,整文件进 node 只会炸;
+    函数体内无字符串/正则含裸花括号,配平才可靠。"""
+    m = re.search(r'function\s+' + name + r'\s*\(', src)
+    if not m:
+        raise AssertionError('live.js 缺少函数 %s' % name)
+    start = src.index('{', m.end())
+    depth = 0
+    for i in range(start, len(src)):
+        if src[i] == '{':
+            depth += 1
+        elif src[i] == '}':
+            depth -= 1
+            if depth == 0:
+                return src[m.start():i + 1]
+    raise AssertionError('%s 花括号未配平(源码残缺?)' % name)
+
+
+def run_electron_node(script_path):
+    """ELECTRON_RUN_AS_NODE=1 把 Electron 二进制当纯 node 用(本机装 node 的替代)。"""
+    env = dict(os.environ, ELECTRON_RUN_AS_NODE='1')
+    return subprocess.run([str(ELECTRON), str(script_path)], env=env,
+                          capture_output=True, timeout=60, cwd=str(REPO))
+
+
+def last_json_line(raw):
+    """从子进程 stdout 抠 JSON 行(倒序找,容忍上游警告行)。"""
+    for ln in reversed(raw.decode('utf-8', 'replace').splitlines()):
+        ln = ln.strip()
+        if ln[:1] in ('[', '{'):
+            return ln
+    raise AssertionError('子进程输出中无 JSON 行:%r' % raw[:200])
 
 
 def port_busy():
@@ -188,12 +239,28 @@ class StaticCheck(unittest.TestCase):
         self.assertIn("autoScroll($('barLog')", self.js)
         self.assertIn('splitSentences', self.js)
         self.assertIn('makeBarEl', self.js)
-        self.assertIn('barPartialRow', self.js)
+        # partial 行的 js 钉子用真实语义引用($('barPartial') 是 renderActive 操控该行
+        # 文本的把手),勿退回行 id 字符串——live.js 里那只在注释里出现过,语义空心。
+        self.assertIn("$('barPartial')", self.js)
         self.assertNotIn('id="barMain"', self.html)
         self.assertIn('.blog .srow', self.html)
         self.assertIn('bspace', self.html)
         self.assertNotIn('syncBarLog', self.js)
         self.assertNotIn('renderBar', self.js)
+
+    def test_static_skeleton_pins(self):
+        """评审补的静态钉子(spec §6.2):账本静态骨架与降级路径在位——空态行
+        html 骨架 + js 真实引用、reduced-motion 停动画、bspace 兼作悬浮窗拖动区、
+        --lc- 色板变量集中、no-anim 防眨眼类 html/js 双侧存在。"""
+        self.assertIn('id="barEmpty"', self.html)    # 空态「等待语音…」行骨架
+        self.assertIn("$('barEmpty')", self.js)      # js 侧显隐控制的真实引用(非注释字符串)
+        self.assertIn('prefers-reduced-motion', self.html)   # 系统减弱动效:入场/caret 动画停用
+        self.assertTrue(any('.bspace' in ln and '-webkit-app-region:drag' in ln
+                            for ln in self.html.splitlines()),
+                        '.bspace 规则行须含 -webkit-app-region:drag(悬浮窗早期空窗整块可拖)')
+        self.assertIn('--lc-', self.html)            # 账本灰度分层色板(改动须重验对比度)
+        self.assertIn('no-anim', self.html)
+        self.assertIn("classList.add('no-anim')", self.js)   # 重建路径真的加类,不是只有 CSS 没人用
 
     def test_floating_window_injection(self):
         """2026-10-24 交互修复(desktop/live-window.js 注入):
@@ -218,6 +285,120 @@ class StaticCheck(unittest.TestCase):
         self.assertIn('openLiveCaption', idx)
         self.assertIn("window.open('/live?mode=panel'", idx)
         self.assertIn('pill live', idx)
+
+
+# 断言向量(spec §6.3):(输入, 期望句列表)。期望断到句内容而非只断句数——
+# 「→ 2 句」防的是切多,切错位置(如小数处切)句数可能仍对,内容断言才拦得住。
+SPLIT_VECTORS = [
+    ('好的,先看数据。营收 320 万,涨 12%。', ['好的,先看数据。', '营收 320 万,涨 12%。']),
+    ('Revenue was 3.2M, up 12% QoQ. Margins dipped.',
+     ['Revenue was 3.2M, up 12% QoQ.', 'Margins dipped.']),       # 小数 3.2/12 不切
+    ('See Mr. Smith. He agreed.', ['See Mr. Smith.', 'He agreed.']),   # 缩写 Mr. 不切
+    ('好!!!知道了。', ['好!!!', '知道了。']),                     # 连续终符并入前一句,非 4 句
+    ('这句话还没说完', ['这句话还没说完']),                        # 无终符尾巴自成一行(pass1 裸文本)
+    ('', []),                                                    # 空串
+    ('。。。!?!', ['。。。!?!']),                                # 纯标点:并入一行,不产孤标点行
+    ('明日は晴れます。Really? はい!', ['明日は晴れます。', 'Really?', 'はい!']),   # 日文混排半角 ?!
+    ('完了!次へ?了解;', ['完了!', '次へ?', '了解;']),           # 全角 ！？; 须在终符集(勘误 v2)
+]
+
+
+@unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断句向量用例')
+class SentenceSplitCheck(unittest.TestCase):
+    """spec §6.3:splitSentences 是纯函数,从 live.js 源码抠出函数体经 node 模式执行。
+    提取用花括号配平而非 eval 整文件——live.js 是 IIFE 且依赖 DOM/WS,
+    整文件进 node 会炸;纯函数单独执行才有确定性的断言向量。"""
+
+    def test_vectors(self):
+        extracted = extract_function(LIVE_JS.read_text(encoding='utf-8'), 'splitSentences')
+        with tempfile.TemporaryDirectory(prefix='lc_split_') as td:
+            script = Path(td) / 'split.js'
+            script.write_text(
+                extracted + '\n'
+                + 'var CASES = ' + json.dumps([v[0] for v in SPLIT_VECTORS],
+                                              ensure_ascii=False) + ';\n'
+                + 'var out = [];\n'
+                + 'for (var i = 0; i < CASES.length; i++) out.push(splitSentences(CASES[i]));\n'
+                + 'console.log(JSON.stringify(out));\n',
+                encoding='utf-8')
+            proc = run_electron_node(script)
+        self.assertEqual(proc.returncode, 0,
+                         'node 模式执行失败:%s' % proc.stderr.decode('utf-8', 'replace')[:400])
+        out = json.loads(last_json_line(proc.stdout))
+        self.assertEqual(len(out), len(SPLIT_VECTORS), '返回向量数不符:%r' % out)
+        for (text, want), got in zip(SPLIT_VECTORS, out):
+            self.assertEqual(got, want, 'splitSentences(%r) 切分错误' % text)
+
+
+# 离屏测量时注入页面的取数脚本:揭开运行中舞台让静态骨架进入真实 CSS 布局,
+# partial 行灌一段单行文本,并造一条与 makeBarEl 同构的句行当对照组。
+GEOM_PAGE_JS = """(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  $('stage').hidden = false;
+  $('barEmpty').hidden = false;
+  $('barPartial').textContent = '正在识别的滚动字幕内容示意';
+  var e = document.createElement('div'); e.className = 'e f1';
+  var row = document.createElement('div'); row.className = 'srow f1';
+  var dot = document.createElement('i'); dot.className = 'sdot';
+  var stx = document.createElement('div'); stx.className = 'stx';
+  stx.textContent = '定稿句行高度对照行';
+  row.appendChild(dot); row.appendChild(stx); e.appendChild(row);
+  $('barLog').insertBefore(e, $('barEmpty'));
+  function h(el){ return el.getBoundingClientRect().height; }
+  return {prow: h($('barPartialRow')), empty: h($('barEmpty')), srow: h(row)};
+})()"""
+
+
+def geom_main_script(page_js):
+    """临时 Electron 主进程脚本:离屏窗口加载 file:// 真实 live.html 后执行取数脚本。
+    带超时兜底,防窗口事件循环挂死拖垮整个测试进程。"""
+    return ("const {app, BrowserWindow} = require('electron');\n"
+            "if (app.dock) app.dock.hide();\n"
+            "setTimeout(function(){ console.error('geometry: 15s 超时'); app.exit(2); }, 15000);\n"
+            "app.whenReady().then(function(){\n"
+            "  const win = new BrowserWindow({show: false, width: 760, height: 420,\n"
+            "    webPreferences: {offscreen: true}});\n"
+            "  const page = " + json.dumps(page_js, ensure_ascii=False) + ";\n"
+            "  win.loadFile(process.argv[2]).then(function(){\n"
+            "    return win.webContents.executeJavaScript(page, false);\n"
+            "  }).then(function(r){\n"
+            "    console.log(JSON.stringify(r));\n"
+            "    win.destroy(); app.exit(0);\n"
+            "  }).catch(function(e2){\n"
+            "    console.error('geometry: ' + (e2 && e2.message ? e2.message : String(e2)));\n"
+            "    app.exit(1);\n"
+            "  });\n"
+            "});\n")
+
+
+@unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过账本几何钉子')
+class BarGeometryCheck(unittest.TestCase):
+    """Task 1 复审的硬性要求:prow/empty 两静态行必须退出 .srow 的 grid——
+    10px 固定列会把纯文本竖排成一字一行。此前防线只在 /private/tmp 临时脚本里,
+    随清理即失;此处离屏加载真实 live.html 实测行高,落成持久回归钉子:
+    两静态行高度 >0(在布局,非 display:none 假绿)且 ≤30px(单行 13.5px×1.6≈22px,
+    grid 回归时 13 字竖排 ≈280px 必炸),并与正常句行同高(对照,防上下文未布局的假绿)。"""
+
+    def test_static_row_heights(self):
+        with tempfile.TemporaryDirectory(prefix='lc_geom_') as td:
+            script = Path(td) / 'geom.js'
+            script.write_text(geom_main_script(GEOM_PAGE_JS), encoding='utf-8')
+            proc = subprocess.run([str(ELECTRON), str(script), str(LIVE_HTML)],
+                                  capture_output=True, timeout=90, cwd=str(REPO))
+        self.assertEqual(proc.returncode, 0,
+                         '离屏测量失败:%s' % proc.stderr.decode('utf-8', 'replace')[:400])
+        r = json.loads(last_json_line(proc.stdout))
+        srow = r['srow']
+        self.assertTrue(0 < srow <= 30,
+                        '对照句行高度 %.1f 越界 (0,30]:测量上下文疑似未真实布局' % srow)
+        for key, name in (('prow', 'partial 行'), ('empty', '空态行')):
+            h = r[key]
+            self.assertTrue(0 < h <= 30, '%s高度 %.1f 越界 (0,30]:'
+                            '疑似退回 grid 被 10px 固定列竖排' % (name, h))
+            self.assertLessEqual(abs(h - srow), 3, '%s高度 %.1f 与句行 %.1f 不一致:'
+                                 '两静态行应与句行同高(单行文本)' % (name, h, srow))
+        print('几何钉子 ok: prow=%.1fpx empty=%.1fpx srow=%.1fpx' %
+              (r['prow'], r['empty'], r['srow']))
 
 
 @unittest.skipIf(port_busy(), '端口 8765 已被占用(服务可能正在跑),跳过协议段')
