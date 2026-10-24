@@ -40,6 +40,7 @@ var state = {
   pending: [], pendingBytes: 0, droppedSec: 0,   // 断线缓冲(16k Int16)
   mode: 'bar',
   title: '', speakers: 0, lang: 'zh>en',
+  autoResume: false,        // 正在自动恢复上次的会话(撞上死会话时回表单而非报错卡)
 };
 
 /* ---------- 流式降采样:16k AudioContext 构造失败时按实际捕获率逐块线性重采样 ---------- */
@@ -121,7 +122,9 @@ function connect(){
   };
   ws.onclose = function(){
     state.wsOpen = false;
-    if (state.phase === 'ended') return;          // stopped 后服务端主动断开,属正常收尾
+    // ended:正常收尾;idle:尚未开始(含自动恢复失败回表单)——都无需重连,
+    // 否则 idle 下重连会误发 start,凭空开出一个无人供音的幽灵会话
+    if(state.phase === 'ended' || state.phase === 'idle') return;
     scheduleReconnect();
   };
   ws.onerror = function(){ /* onclose 随后必至 */ };
@@ -154,10 +157,17 @@ function handleEvent(ev){
   switch (ev.type){
     case 'started':
       state.sessionId = ev.session_id;
+      state.autoResume = false;                     // 已真正挂上会话,此后失效走错误卡
       state.startedAt = Date.now();
       localStorage.setItem('live.sessionId', state.sessionId);
       localStorage.setItem('live.startedAt', String(state.startedAt));
       setPhase('live');
+      // 翻译目标非同语种但服务端无 LLM 密钥(env.rtf 缺失):显式告知,而非静默无翻译
+      if (ev.llm === false){
+        var p = (state.lang || '').split('>');
+        if (p[1] && p[1] !== p[0])
+          setChip('stopChip', '未配置翻译密钥(.env),本场仅识别、不修正不翻译', 9000);
+      }
       break;
     case 'partial':
       state.partial = ev.text || '';
@@ -196,6 +206,25 @@ function handleEvent(ev){
 function onError(ev){
   var msg = ev.message || '未知错误';
   if (msg.indexOf('会话不存在') >= 0){
+    if (state.autoResume){
+      /* 打开页面时的自动恢复撞上死会话(服务被重启过):不是用户会话的失败,
+         清掉陈旧记录、回到开始表单,可直接开新会话——而不是死路错误卡 */
+      state.autoResume = false;
+      state.sessionId = null;                      // 不清的话重连会再 resume 死 ID,二次落入错误卡
+      try { if (state.ws) state.ws.close(); } catch (e){}
+      setPhase('idle');
+      stopCapture();
+      stopTimer();
+      clearSessionStorage();
+      clearTimeout(state.reconnectTimer);
+      $('connChip').hidden = true;
+      barChip(null);
+      $('setup').hidden = false;
+      $('endwrap').hidden = true;                  // 防御:恢复过程中错误卡若已亮,一并收起
+      $('resumeNote').textContent = '上次会话已因服务重启结束,可直接开始新会话。';
+      $('resumeNote').hidden = false;
+      return;
+    }
     setPhase('ended');
     stopCapture();
     stopTimer();
@@ -239,10 +268,17 @@ function onStopped(ev){
   $('connChip').hidden = true;
   barChip(null);
   $('endTitle').textContent = '录音已保存 · 正在生成完整文稿';
-  $('endSub').textContent = '完整文稿生成后可在转录工作台查看。';
+  $('endSub').textContent = '完整文稿生成后会出现在工作台历史记录中(带「实时」标记)。';
   if (ev.job_id){                                 // Task 9 起停止即建 job,可回工作台看完整文稿
     $('endLink').hidden = false;
-    $('endLink').href = '/';
+    $('endLink').href = '/#' + ev.job_id;         // hash 深链:工作台启动读 hash 直接打开该任务
+    $('endLink').onclick = function(e){           // 悬浮窗内:聚焦主窗跳转并隐藏悬浮窗(使命已完成)
+      if (window.desk && window.desk.openMainJob){
+        e.preventDefault();
+        window.desk.openMainJob(ev.job_id);
+        if (window.desk.closeLiveCaption) window.desk.closeLiveCaption();
+      }
+    };
   } else {
     $('endLink').hidden = true;
   }
@@ -470,7 +506,10 @@ function insertEntry(entry){
     var next = state.doc[i + 1];
     $('plist').insertBefore(entry.el, next && next.el ? next.el : $('activeLine'));
     $('plistEmpty').hidden = true;
-    renderBar(); autoScroll();
+    entry.bel = makeEntryEl(entry);               // 字幕条历史区的同源条目(紧凑样式由 .blog 作用域)
+    $('barLog').insertBefore(entry.bel, next && next.bel ? next.bel : null);
+    $('barLog').hidden = false;
+    renderBar(); autoScroll($('plist')); autoScroll($('barLog'));
   }
 }
 
@@ -478,6 +517,7 @@ function removeEntry(entry){
   var i = state.doc.indexOf(entry);
   if (i >= 0) state.doc.splice(i, 1);
   if (entry.el) entry.el.remove();
+  if (entry.bel) entry.bel.remove();
 }
 
 function replaceWindow(t0, t1, base){
@@ -491,7 +531,9 @@ function llmReplace(t0, t1, text, translation){   // 软替换:替换文本并�
   if (victims.length === 1){
     var e = victims[0];
     e.kind = 'llm'; e.text = text; e.translation = translation;
-    if (e.el){ var fresh = makeEntryEl(e); e.el.replaceWith(fresh); e.el = fresh; autoScroll(); }
+    if (e.el){ var fresh = makeEntryEl(e); e.el.replaceWith(fresh); e.el = fresh; }
+    if (e.bel){ var bfresh = makeEntryEl(e); e.bel.replaceWith(bfresh); e.bel = bfresh; }
+    autoScroll($('plist')); autoScroll($('barLog'));
     renderBar();
     return;
   }
@@ -568,22 +610,36 @@ function renderBar(){                             // 字幕条 = 最近 1 条定
     $('barTrans').hidden = true;
   }
   $('barPartial').textContent = state.partial;
+  syncBarLog(show);                               // 历史区不重复展示当前主行
+}
+
+/* 历史区可见性:正在作为主行展示的条目在 log 里隐藏,避免同句上下重复 */
+function syncBarLog(show){
+  for (var i = 0; i < state.doc.length; i++){
+    var e = state.doc[i];
+    if (e.bel) e.bel.style.display = (e === show) ? 'none' : '';
+  }
 }
 
 function fullRender(){                            // 暂停恢复/形态切换时整体重建
   state.doc.forEach(function(e){
     if (e.el) e.el.remove();
+    if (e.bel) e.bel.remove();
     e.el = makeEntryEl(e);
     $('plist').insertBefore(e.el, $('activeLine'));
+    e.bel = makeEntryEl(e);
+    $('barLog').appendChild(e.bel);
   });
+  $('barLog').hidden = state.doc.length === 0;
   $('plistEmpty').hidden = state.doc.length > 0;
   renderActive(); renderBar();
+  autoScroll($('plist')); autoScroll($('barLog'));
 }
 
-function autoScroll(){
-  var body = $('plist');
-  if (body.scrollHeight - body.scrollTop - body.clientHeight < 90)
-    body.scrollTop = body.scrollHeight;
+function autoScroll(box){                         // 距底 ≤90px 时跟随新内容;用户上滚时不打扰
+  box = box || $('plist');
+  if (box.scrollHeight - box.scrollTop - box.clientHeight < 90)
+    box.scrollTop = box.scrollHeight;
 }
 
 /* ---------- UI:计时/徽标/形态/拖动/暂停 ---------- */
@@ -686,6 +742,38 @@ function makeDraggable(handle, target, storeKey, defaultPos){
   });
 }
 
+/* ---------- 语言选择(识别语言 + 翻译目标,spec 2026-10-24) ---------- */
+
+var LANG_OK = {zh: 1, en: 1, ja: 1};
+var LANG_NAME = {zh: '中文', en: '英文', ja: '日文'};
+
+function langFromStorage(){
+  /* 存储仍是 'src>tgt' 对字符串(兼容旧值 zh>en / zh>zh 等):
+     tgt==src 即「不翻译」;非法值回落默认 zh>en。 */
+  var p = String(localStorage.getItem('live.lang') || 'zh>en').split('>');
+  var src = LANG_OK[p[0]] ? p[0] : 'zh';
+  var tgt = LANG_OK[p[1]] ? p[1] : 'en';
+  return {src: src, tgt: tgt === src ? '' : tgt};
+}
+
+function restoreLangSelects(){
+  var l = langFromStorage();
+  $('fSrc').value = l.src;
+  $('fTgt').value = l.tgt;
+}
+
+function currentLangSpec(){
+  var src = $('fSrc').value || 'zh';
+  var tgt = $('fTgt').value || src;   // 「不翻译」序列化为 tgt==src
+  return src + '>' + tgt;
+}
+
+function langLabel(pairStr){
+  var p = String(pairStr || '').split('>');
+  var s = LANG_NAME[p[0]] || p[0], t = LANG_NAME[p[1]] || p[1];
+  return p[1] === p[0] ? s + '(不翻译)' : s + ' → ' + t;
+}
+
 /* ---------- 停止(文案硬约束:按钮就叫「停止」) ---------- */
 
 function requestStop(){
@@ -731,9 +819,10 @@ function enterLiveUI(){
 }
 
 function beginSession(){
+  state.autoResume = false;
   state.title = ($('fTitle').value || '').trim();
   state.speakers = parseInt($('fSpeakers').value, 10) || 0;
-  state.lang = $('fLang').value;
+  state.lang = currentLangSpec();
   localStorage.setItem('live.title', state.title);
   localStorage.setItem('live.speakers', String(state.speakers));
   localStorage.setItem('live.lang', state.lang);
@@ -756,6 +845,7 @@ function tryAutoResume(){
   if (!saved) return false;
   $('setup').hidden = true;                       // 恢复期间先藏起表单,失败再放回
   state.sessionId = saved;
+  state.autoResume = true;
   state.title = localStorage.getItem('live.title') || '实时会议';
   state.speakers = parseInt(localStorage.getItem('live.speakers') || '0', 10) || 0;
   state.lang = localStorage.getItem('live.lang') || 'zh>en';
@@ -781,7 +871,7 @@ function init(){
     ? modeParam
     : (localStorage.getItem('live.mode') === 'panel' ? 'panel' : 'bar');
   $('fTitle').value = localStorage.getItem('live.title') || '';
-  $('fLang').value = localStorage.getItem('live.lang') || 'zh>en';
+  restoreLangSelects();
   var sp = localStorage.getItem('live.speakers');
   if (sp != null && $('fSpeakers').querySelector('option[value="' + sp + '"]'))
     $('fSpeakers').value = sp;
@@ -813,7 +903,7 @@ function init(){
     if (pop.hidden){
       $('spTitle').textContent = state.title || '实时会议';
       $('spSpeakers').textContent = state.speakers > 0 ? state.speakers + ' 人' : '自动';
-      $('spLang').textContent = state.lang || '—';
+      $('spLang').textContent = langLabel(state.lang);
       $('spSession').textContent = state.sessionId || '尚未建立';
       $('spConn').textContent = state.phase === 'live'
         ? (state.wsOpen ? '已连接' : '重连中') : state.phase;
@@ -821,6 +911,13 @@ function init(){
     pop.hidden = !pop.hidden;
   });
   $('endNew').addEventListener('click', function(){ location.href = location.pathname; });
+  // 关闭:桌面端隐藏悬浮窗(会话已结束,重开入口仍在主界面/Dock);网页端回工作台
+  $('endClose').addEventListener('click', function(){
+    if (window.desk && window.desk.closeLiveCaption){
+      try{ window.desk.closeLiveCaption(); return; }catch(e){}
+    }
+    location.href = '/';
+  });
 
   if (!tryAutoResume()){ $('setup').hidden = false; }
 }

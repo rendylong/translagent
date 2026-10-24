@@ -67,6 +67,22 @@ def drain(q, out):
             return out
 
 
+class ParseLangTest(unittest.TestCase):
+    """语言对解析:src/tgt 支持 ja 全组合;非法输入回落 ('zh','en')。spec 2026-10-24 §4.3。"""
+
+    def test_ja_combinations_and_fallbacks(self):
+        from live_session import _parse_lang
+        self.assertEqual(_parse_lang('ja>zh'), ('ja', 'zh'))
+        self.assertEqual(_parse_lang('zh>ja'), ('zh', 'ja'))
+        self.assertEqual(_parse_lang('ja>ja'), ('ja', 'ja'))     # 不翻译
+        self.assertEqual(_parse_lang('en>ja'), ('en', 'ja'))
+        self.assertEqual(_parse_lang('ja>en'), ('ja', 'en'))
+        self.assertEqual(_parse_lang('fr>de'), ('zh', 'en'))     # 非法语种回落
+        self.assertEqual(_parse_lang('zh'), ('zh', 'en'))        # 无 '>' 结构
+        self.assertEqual(_parse_lang(None), ('zh', 'en'))
+        self.assertEqual(_parse_lang(' zh > ja '), ('zh', 'ja')) # 容忍空白
+
+
 class LiveSessionTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

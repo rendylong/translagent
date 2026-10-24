@@ -40,7 +40,8 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 JOBS_DIR = os.path.join(BASE, 'jobs')
 STATIC_DIR = os.path.join(BASE, 'static')
 MODEL_DIR = os.path.join(BASE, 'models')
-WHISPER_DIR = '/Users/rendy/财务知识/.tools/whisper.cpp'
+REPO_ROOT = os.path.dirname(BASE)
+WHISPER_DIR = os.environ.get('WHISPER_DIR', os.path.join(REPO_ROOT, '.tools', 'whisper.cpp'))
 WHISPER_BIN = os.path.join(WHISPER_DIR, 'build', 'bin', 'whisper-cli')
 WHISPER_MODEL = os.path.join(WHISPER_DIR, 'models', 'ggml-large-v3-turbo.bin')
 SEG_MODEL = os.path.join(MODEL_DIR, 'sherpa-onnx-pyannote-segmentation-3-0', 'model.onnx')
@@ -89,6 +90,7 @@ def job_public(meta):
         'status', 'stage', 'progress', 'error', 'duration_s', 'speaker_names',
         'speaker_map', 'voiceprint', 'note')}
     out['running'] = meta.get('status') not in TERMINAL
+    out['is_live'] = bool(meta.get('live_session'))   # 实时字幕会话转正的任务(历史列表徽标用)
     return out
 
 
@@ -878,7 +880,8 @@ from flask_sock import Sock
 
 sock = Sock(app)
 LIVE_ROOT = os.path.join(BASE, 'live')
-LIVE_MODEL_DIR = os.path.join(MODEL_DIR, 'streaming-zipformer-zh-en')
+LIVE_MODEL_DIR = os.path.join(MODEL_DIR, 'streaming-zipformer-zh-en')       # 中英双语流式
+LIVE_JA_MODEL_DIR = os.path.join(MODEL_DIR, 'streaming-zipformer-ja')       # 多语言流式(含日文,spec 2026-10-24)
 
 
 def live_recover():
@@ -943,16 +946,22 @@ def ws_live(ws):
                 # started、不挂 pump;session 置回 None,半途对象不再接收字节)。
                 # 前端收到该 error 即停止自动重连并显示原因,是否重试交给人。
                 try:
-                    session = live_domain.LiveSession(LIVE_ROOT, LIVE_MODEL_DIR)
+                    lang_spec = str(msg.get('language') or 'zh>en')
+                    src = lang_spec.split('>', 1)[0].strip()
+                    # pass1 流式模型按识别语言选目录:ja → 多语言模型,其余 → 中英双语
+                    model_dir = LIVE_JA_MODEL_DIR if src == 'ja' else LIVE_MODEL_DIR
+                    session = live_domain.LiveSession(LIVE_ROOT, model_dir)
                     sid = session.start(str(msg.get('title') or ''), msg.get('speakers') or 0,
-                                        str(msg.get('language') or 'zh>en'))
+                                        lang_spec)
                 except Exception as e:  # noqa: BLE001 任何 start 阶段失败都显式告知
                     session = None
                     ws.send(json.dumps({'type': 'error',
                                         'message': '无法开始实时会话:%s' % live_start_brief(e)},
                                        ensure_ascii=False))
                     return
-                ws.send(json.dumps({'type': 'started', 'session_id': sid}, ensure_ascii=False))
+                ws.send(json.dumps({'type': 'started', 'session_id': sid,
+                                    'llm': bool(getattr(session, 'llm_enabled', False))},
+                                   ensure_ascii=False))
                 sender = threading.Thread(target=pump, args=(0,), daemon=True)
                 sender.start()
             elif mtype == 'stop' and session is not None and session.status == 'listening':

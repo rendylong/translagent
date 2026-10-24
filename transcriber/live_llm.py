@@ -15,6 +15,7 @@ docs/2026-10-23-live-captions-design.md §6.8。
 """
 import http.client
 import json
+import os
 import queue
 import re
 import time
@@ -22,7 +23,9 @@ import urllib.error
 import urllib.request
 from collections import deque
 
-ENV_RTF = '/Users/rendy/财务知识/env.rtf'
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ENV_DOTENV = os.path.join(_REPO_ROOT, '.env')     # 优先:MINIMAX_API_KEY=sk-… 或裸密钥
+ENV_RTF = os.path.join(_REPO_ROOT, 'env.rtf')     # 兼容旧文件(RTF 壳)
 # 端点实测(2026-10-23,Task 8):本机 env.rtf 的 key 在官方中国域 api.minimaxi.com
 # 与 api.minimax.chat 均鉴权通过;计划简报所写国际域 api.minimax.io 返回 401
 # invalid api key(密钥属中国控制台)。默认取 minimaxi.com(minimax.chat 的新域名),
@@ -36,25 +39,42 @@ FUSE_AFTER = 5          # 连续 refine 失败次数达到即熔断(成功复位
 MAX_TOKENS_FLOOR = 1536
 
 _KEY_RE = re.compile(r'sk-[A-Za-z0-9_-]{20,}')
+
+
+def _err_name(e):
+    """异常类名归一:socket.timeout 在 Python 3.10+ 就是 TimeoutError(类名变了),
+    统一记 'timeout',与既有日志与测试口径一致。"""
+    import socket
+    if isinstance(e, (TimeoutError, socket.timeout)):
+        return 'timeout'
+    return type(e).__name__
 _RTF_CTRL_WORD = re.compile(r'\\[a-zA-Z]+-?[0-9]* ?')   # \fs24 \pard1440 等(含尾随空格定界)
 _RTF_CTRL_HEX = re.compile(r"\\'[0-9a-fA-F]{2}")        # \'hh 十六进制转义
 _RTF_SYMBOL = re.compile(r'\\.')                        # \{ \} \\ \~ 等符号转义
 _RTF_BRACES = re.compile(r'[{}]')
 
-_LANG_NAME = {'zh': '简体中文', 'en': '英语'}
+_LANG_NAME = {'zh': '简体中文', 'en': '英语', 'ja': '日本語'}
 
 
 class _BadReply(Exception):
     """响应形状错误(非 JSON、缺字段)——非传输问题,不重试。"""
 
 
-def parse_key(path=ENV_RTF):
-    """从 env.rtf(RTF 壳或 TextEdit 重存的纯文本)提取首个 sk- 开头密钥;无则 None。
+def parse_key(path=None):
+    """从 .env(优先,KEY=value 或裸密钥)或 env.rtf(兼容 RTF 壳/纯文本重存)提取
+    首个 sk- 开头密钥;两者皆无则 None。
 
-    剥壳策略:丢弃反斜杠控制字、十六进制转义、符号转义与花括号后按正则找 sk- 串。
-    以 latin-1 读文件(逐字节保序):key 全 ASCII,RTF 内 GBK 中文注解不影响命中。
-    文件不存在或不可读 → None(此时 Pass3 整层禁用,Pass1/2 不受影响)。
+    剥壳策略:丢弃反斜杠控制字、十六进制转义、符号转义与花括号后按正则找 sk- 串
+    (对纯文本/.env 无副作用)。以 latin-1 读文件(逐字节保序):key 全 ASCII,
+    RTF 内 GBK 中文注解不影响命中。文件不存在或不可读 → None(此时 Pass3 整层
+    禁用,Pass1/2 不受影响)。
     """
+    if path is None:
+        for cand in (ENV_DOTENV, ENV_RTF):
+            key = parse_key(cand)
+            if key:
+                return key
+        return None
     try:
         with open(path, 'r', encoding='latin-1') as f:
             s = f.read()
@@ -109,10 +129,10 @@ class LLMRefiner:
             self._fail('bad_reply')
             return None
         except OSError as e:            # URLError/HTTPError/socket.timeout 均 OSError 子类
-            self._fail(type(e).__name__)
+            self._fail(_err_name(e))
             return None
         except Exception as e:          # 兜底(评审 Important):http.client.HTTPException
-            self._fail(type(e).__name__)   # 家族(IncompleteRead 等)非 OSError,历史上曾
+            self._fail(_err_name(e))       # 家族(IncompleteRead 等)非 OSError,历史上曾
             return None                    # 穿透本层杀死 worker;任何异常都不出 refine
         out = self._parse_reply(content)
         if out is None:
@@ -124,15 +144,20 @@ class LLMRefiner:
     # ---------- 请求 ----------
 
     def _build_messages(self, text, prev_refined):
-        target = _LANG_NAME.get(self.lang_pair[1], self.lang_pair[1])
+        src, tgt = self.lang_pair
+        if src == tgt:
+            # 「不翻译」组合(spec 2026-10-24 §4.4):不请求译文,省 token 且避免同语种重复上屏
+            rule4 = '4.translation 输出空字符串 ""(源语与目标语相同,无需翻译);'
+        else:
+            rule4 = '4.translation 输出%s译文,忠实原意;' % _LANG_NAME.get(tgt, tgt)
         system = (
             '你是实时会议字幕的校对与翻译引擎,处理一段语音识别(ASR)产出的窗口文本。规则:'
             '1.只修 ASR 类错误,即同音错字、系统性错词、专有名词、标点与口语顺滑;'
             '2.不得改写意思,不得增删信息,不得合并或拆分说话人,行首的说话人编号标签必须原样保留;'
             '3.corrected 输出修正后的原文语言文本,若无错误则原样返回输入;'
-            '4.translation 输出%s译文,忠实原意;'
+            + rule4 +
             '5.只输出一个 JSON 对象,键为 corrected 与 translation,不要输出其他文字或代码栅栏;'
-            '6.术语表给出的词条优先按术语表纠正。' % target)
+            '6.术语表给出的词条优先按术语表纠正。')
         user = json.dumps({'prev_refined': prev_refined, 'text': text,
                            'glossary': self.glossary}, ensure_ascii=False)
         return system, user
@@ -169,9 +194,11 @@ class LLMRefiner:
                     raise _BadReply(str(type(e).__name__))   # 响应可读但形状不对 → 无重试价值
         raise last
 
-    @staticmethod
-    def _parse_reply(content):
-        """模型回复 → {'corrected','translation'};非 JSON 或字段缺失/空 → None。"""
+    def _parse_reply(self, content):
+        """模型回复 → {'corrected','translation'};非 JSON 或字段缺失 → None。
+
+        translation 校验按语言对:src==tgt(不翻译)时按指令返回空串,是合法值;
+        跨语种时空翻译视为坏回复(保持旧行为)。"""
         s = (content or '').strip()
         if s.startswith('```'):                    # 容错:剥 markdown 代码栅栏
             s = re.sub(r'^```[a-zA-Z]*\s*', '', s)
@@ -186,7 +213,10 @@ class LLMRefiner:
         corrected, translation = obj.get('corrected'), obj.get('translation')
         if not isinstance(corrected, str) or not corrected.strip():
             return None
-        if not isinstance(translation, str) or not translation.strip():
+        no_translate = self.lang_pair[0] == self.lang_pair[1]
+        if not isinstance(translation, str):
+            return None
+        if not no_translate and not translation.strip():
             return None
         return {'corrected': corrected.strip(), 'translation': translation.strip()}
 

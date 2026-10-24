@@ -7,10 +7,16 @@ live-captions 的 Pass1:Task 4 的 WebSocket 会话只调 feed() 喂 float32 PCM
 均取音频时间轴)与 Task 1 bench(models/bench/bench_streaming_asr.py)完全一致,
 该脚本已在本目录实测通过。
 
+模型文件名按目录内容解析(spec 2026-10-24 §4.2):不同来源的流式模型 epoch 命名
+不同(中英双语是 *-epoch-99-avg-1,多语言日文是别的编号),glob 匹配
+encoder/decoder/joiner-*.onnx(排除 int8),无匹配回落硬编码名——兼容既有目录。
+
 注意:sherpa-onnx 1.13.8 的 OnlineRecognizer 没有 is_ready_retrieve,解码取词的
 时机按 bench 实测路径:is_ready → decode_stream → get_result_as_json_string。
 """
+import glob
 import json
+import os
 import queue
 import sys
 import threading
@@ -23,6 +29,16 @@ RULE1 = 2.4   # rule1_min_trailing_silence(spec §6.1,与 Task 1 一致)
 RULE2 = 0.6   # rule2_min_trailing_silence
 RULE3 = 1.0   # rule3_min_utterance_length
 NUM_THREADS = 2
+
+
+def _model_file(model_dir, kind, fallback):
+    """目录里找 <kind>-*.onnx,字典序首个;优先非 int8,目录里只有 int8 时取 int8
+    (多语言日文发布包 encoder/joiner 仅 int8);完全无匹配回落硬编码名。"""
+    hits = sorted(glob.glob(os.path.join(model_dir, kind + '-*.onnx')))
+    full = [p for p in hits if not p.endswith('.int8.onnx')]
+    pick = (full or hits)
+    return pick[0] if pick else os.path.join(model_dir, fallback)
+
 
 _EOF = object()   # 停止哨兵(区别于任何音频数据)
 
@@ -42,10 +58,10 @@ class Pass1Engine:
         self.on_partial = on_partial
         self.on_final = on_final
         self._rec = OnlineRecognizer.from_transducer(
-            tokens=f'{model_dir}/tokens.txt',
-            encoder=f'{model_dir}/encoder-epoch-99-avg-1.onnx',
-            decoder=f'{model_dir}/decoder-epoch-99-avg-1.onnx',
-            joiner=f'{model_dir}/joiner-epoch-99-avg-1.onnx',
+            tokens=os.path.join(model_dir, 'tokens.txt'),
+            encoder=_model_file(model_dir, 'encoder', 'encoder-epoch-99-avg-1.onnx'),
+            decoder=_model_file(model_dir, 'decoder', 'decoder-epoch-99-avg-1.onnx'),
+            joiner=_model_file(model_dir, 'joiner', 'joiner-epoch-99-avg-1.onnx'),
             num_threads=NUM_THREADS,
             enable_endpoint_detection=True,
             rule1_min_trailing_silence=RULE1,

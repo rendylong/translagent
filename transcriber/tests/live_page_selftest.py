@@ -40,6 +40,7 @@ CHUNK = 3200            # 200ms @16k 单声道 16bit(与 live.js CHUNK_SAMPLES �
 FEED_SEC = 30
 LIVE_HTML = BASE / 'static' / 'live.html'
 LIVE_JS = BASE / 'static' / 'live.js'
+INDEX_HTML = BASE / 'static' / 'index.html'   # 主界面(实时字幕入口钉子用)
 
 
 def port_busy():
@@ -139,6 +140,77 @@ class StaticCheck(unittest.TestCase):
         self.assertNotIn('当前版本不参与识别', self.html, '语言对文案失实(实际参与 Pass2/LLM)')
         self.assertIn('翻译目标', self.html)
         self.assertNotIn('Task 9 接入', self.js, 'stopped 无 job_id 的过期注释应删')
+
+    def test_stop_deep_link(self):
+        """停止后的完整转录记录:结束卡深链到工作台对应任务(hash 路由),
+        悬浮窗内点击时聚焦主窗而非在小窗内导航。"""
+        self.assertIn("'/#' + ev.job_id", self.js)
+        self.assertIn('openMainJob', self.js)
+
+    def test_stale_auto_resume_falls_back_to_setup(self):
+        """打开页面自动恢复死会话(服务重启过)不得死路报错卡:
+        清陈旧记录、回开始表单并提示,可直接开新会话。"""
+        self.assertIn('autoResume', self.js)
+        self.assertIn('上次会话已因服务重启结束', self.js)
+        self.assertIn('resumeNote', self.html)
+        self.assertIn('会话不存在', self.js)
+
+    def test_ja_and_target_language_selects(self):
+        """spec 2026-10-24:识别语言与翻译目标拆成两个下拉(日文可选),
+        「不翻译」序列化为 tgt==src,仍是 'src>tgt' 对字符串。"""
+        self.assertIn('id="fSrc"', self.html)
+        self.assertIn('id="fTgt"', self.html)
+        self.assertIn('<option value="ja">日文</option>', self.html)
+        self.assertIn('不翻译', self.html)
+        self.assertIn('currentLangSpec', self.js)
+        self.assertIn("src + '>' + tgt", self.js)
+
+    def test_end_card_close_and_llm_notice(self):
+        """2026-10-24 修复:结束卡可关闭(桌面隐藏悬浮窗/网页回工作台),打开文稿后
+        悬浮窗隐藏;started 无 llm 密钥且选了翻译目标时显式提示(不再静默无翻译)。"""
+        self.assertIn('id="endClose"', self.html)
+        self.assertIn('closeLiveCaption', self.js)
+        lwjs = (BASE / 'desktop' / 'live-window.js').read_text(encoding='utf-8')
+        self.assertIn("ipcMain.handle('hide-live'", lwjs)
+        pre = (BASE / 'desktop' / 'preload.js').read_text(encoding='utf-8')
+        self.assertIn('closeLiveCaption', pre)
+        self.assertIn('未配置翻译密钥', self.js)
+        self.assertIn('ev.llm === false', self.js)
+        app_py = (BASE / 'app.py').read_text(encoding='utf-8')
+        self.assertIn("'llm': bool(getattr(session, 'llm_enabled'", app_py)
+
+    def test_bar_log_history(self):
+        """2026-10-24 交互修复:字幕条带可滚动历史区(.blog),与面板列表同源维护
+        (bel 镜像),当前主行在历史区隐藏避免同句重复。"""
+        self.assertIn('id="barLog"', self.html)
+        self.assertIn('.blog', self.html)
+        self.assertIn('entry.bel', self.js)
+        self.assertIn('syncBarLog', self.js)
+        self.assertIn("autoScroll($('barLog')", self.js)
+
+    def test_floating_window_injection(self):
+        """2026-10-24 交互修复(desktop/live-window.js 注入):
+        表单/结束卡有拖动区;字幕条铺满窗口且按钮常显在条内;手柄拖拽对
+        setPointerCapture 容错(document 级兜底)。"""
+        lwjs = (BASE / 'desktop' / 'live-window.js').read_text(encoding='utf-8')
+        self.assertIn('.card{-webkit-app-region:drag}', lwjs)
+        self.assertIn('.ecard{-webkit-app-region:drag}', lwjs)
+        self.assertIn('#bar{left:6px', lwjs)
+        self.assertIn('#barLog{flex:1 1 auto', lwjs)
+        self.assertIn('#barActions{top:5px', lwjs)
+        self.assertIn('opacity:1 !important', lwjs)
+        self.assertIn('try{ grip.setPointerCapture', lwjs)
+        self.assertIn("document.addEventListener('pointermove', move, true)", lwjs)
+
+    def test_workbench_live_entry(self):
+        """主界面实时字幕入口:三 Tab 之一 + 拉起逻辑(桌面悬浮窗/网页新标签页);
+        历史列表对 live 转正任务显示「实时」徽标。"""
+        idx = INDEX_HTML.read_text(encoding='utf-8')
+        self.assertIn('id="tab-live"', idx)
+        self.assertIn('id="pane-live"', idx)
+        self.assertIn('openLiveCaption', idx)
+        self.assertIn("window.open('/live?mode=panel'", idx)
+        self.assertIn('pill live', idx)
 
 
 @unittest.skipIf(port_busy(), '端口 8765 已被占用(服务可能正在跑),跳过协议段')

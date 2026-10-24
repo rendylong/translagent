@@ -3,7 +3,7 @@ const {app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeImage, sessio
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const {spawn} = require('child_process');
+const {spawn, spawnSync} = require('child_process');
 const {installDockMenu} = require('./live-window');
 
 const SERVER_URL = 'http://127.0.0.1:8765';
@@ -28,6 +28,7 @@ app.commandLine.appendSwitch('enable-features',
 const PHASES = ['waiting-server', 'ready', 'running', 'offline'];
 let phase = 'waiting-server';
 let win = null;
+let mainRecording = false;   // 主窗录音状态(rec-state 广播维护),深链跳转时防打断
 let booting = false;
 
 function setPhase(next){
@@ -323,6 +324,18 @@ async function productFlowTest(){
   return out;
 }
 
+// 裸 executeJavaScript 的超时护栏:getDisplayMedia 可能因 TCC 待授权无限悬置
+// (重打包换 ad-hoc 身份后权限失效即触发),与 runPageTest 同款保护
+function evalWithTimeout(promise, ms, tag){
+  let timer = null;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(tag + ' 超时 ' + ms + 'ms(可能在等系统授权)')), ms);
+    })
+  ]).finally(() => clearTimeout(timer));
+}
+
 async function runSelfTest(){
   const report = {
     serverReachable: false,
@@ -378,7 +391,7 @@ async function runSelfTest(){
     report.userActivation = await win.webContents.executeJavaScript(
       'navigator.userActivation ? navigator.userActivation.isActive : "unavailable"', true);
     // 纯音频 display capture:只碰「系统声音录制」(CATap)权限,不碰屏幕录制
-    report.audioOnly = await win.webContents.executeJavaScript(`(async () => {
+    report.audioOnly = await evalWithTimeout(win.webContents.executeJavaScript(`(async () => {
       try{
         const s = await navigator.mediaDevices.getDisplayMedia({audio: true, video: false});
         const at = s.getAudioTracks();
@@ -404,8 +417,8 @@ async function runSelfTest(){
       }catch(e){
         return {ok: false, name: e.name, message: String(e.message || '').slice(0, 200)};
       }
-    })()`, true).catch(e => ({ok: false, name: 'eval-failed', message: String(e && e.message || e)}));
-    report.rawDisplayMedia = await win.webContents.executeJavaScript(`(async () => {
+    })()`, true), 30000, 'audioOnly').catch(e => ({ok: false, name: 'eval-failed', message: String(e && e.message || e)}));
+    report.rawDisplayMedia = await evalWithTimeout(win.webContents.executeJavaScript(`(async () => {
       try{
         const s = await navigator.mediaDevices.getDisplayMedia({audio: true, video: true});
         const n = {ok: true, audio: s.getAudioTracks().length, video: s.getVideoTracks().length,
@@ -415,7 +428,7 @@ async function runSelfTest(){
       }catch(e){
         return {ok: false, name: e.name, message: String(e.message || '').slice(0, 200)};
       }
-    })()`, true).catch(e => ({ok: false, name: 'eval-failed', message: String(e && e.message || e)}));
+    })()`, true), 30000, 'rawDisplayMedia').catch(e => ({ok: false, name: 'eval-failed', message: String(e && e.message || e)}));
     syntheticClick();
     Object.assign(report.systemAudio, await runPageTest('system', 3000, 20000));
     Object.assign(report.mic, await runPageTest('mic', 2000, 15000));
@@ -435,10 +448,27 @@ function serverAppPath(){
   const root = appRoot();
   const candidates = [
     path.join(root, '..', 'transcriber', 'app.py'),
-    path.join(root, '..', '..', 'transcriber', 'app.py'),
-    '/Users/rendy/财务知识/transcriber/app.py'
+    path.join(root, '..', '..', 'transcriber', 'app.py')
   ];
   return candidates.find(p => fs.existsSync(p)) || null;
+}
+
+function pickPython(){
+  // 从 Finder/Dock 启动时 launchd 的 PATH 只含系统目录,bare python3 会解析到
+  // 没装 flask/sherpa_onnx 的系统解释器。按优先级探测能 import flask 的解释器。
+  const candidates = [
+    process.env.TRANSLAGENT_PYTHON,
+    '/usr/local/bin/python3',
+    '/opt/homebrew/bin/python3',
+    'python3'
+  ].filter(Boolean);
+  for(const py of candidates){
+    try{
+      const r = spawnSync(py, ['-c', 'import flask'], {encoding: 'utf8', timeout: 15000});
+      if(r.status === 0) return py;
+    }catch(e){ /* 试下一个 */ }
+  }
+  return 'python3';
 }
 
 async function ensureServer(){
@@ -449,7 +479,7 @@ async function ensureServer(){
     return false;
   }
   console.log('[desktop] 拉起转写服务', py);
-  const child = spawn('python3', [py], {cwd: path.dirname(py), detached: true, stdio: 'ignore'});
+  const child = spawn(pickPython(), [py], {cwd: path.dirname(py), detached: true, stdio: 'ignore'});
   child.unref();
   return true;
 }
@@ -503,8 +533,8 @@ function registerIpc(){
   ipcMain.handle('rec-diag', (ev, msg) => {
     log('renderer:', String(msg).slice(0, 300));
     // 渲染页录音状态广播 → Dock 角标
-    if(msg === 'rec-state:1') setDockRecording(true);
-    else if(msg === 'rec-state:0') setDockRecording(false);
+    if(msg === 'rec-state:1'){ mainRecording = true; setDockRecording(true); }
+    else if(msg === 'rec-state:0'){ mainRecording = false; setDockRecording(false); }
     return true;
   });
   ipcMain.handle('open-permission-guide', () => { log('open-permission-guide(引导被唤起)'); openPermissionGuide(); return true; });
@@ -520,6 +550,22 @@ function registerIpc(){
   });
   ipcMain.handle('open-app-folder', () => {
     shell.openPath(appRoot());
+    return true;
+  });
+  // 主界面「实时字幕」入口:拉起/聚焦悬浮窗(区别于 Dock 菜单的 toggle,已开只聚焦)
+  ipcMain.handle('open-live-caption', () => {
+    const {ensureLiveCaptionWindow} = require('./live-window');
+    ensureLiveCaptionWindow(SERVER_URL, win);
+    return true;
+  });
+  // 悬浮窗结束卡「打开文稿」:聚焦主窗并深链到对应任务(主窗在录音时只聚焦防打断)
+  ipcMain.handle('open-main-job', (ev, jobId) => {
+    if(!win || win.isDestroyed()) return false;
+    if(win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    const id = String(jobId || '').replace(/[^\w-]/g, '');
+    if(id && !mainRecording) win.webContents.loadURL(SERVER_URL + '/#' + id);
     return true;
   });
 }

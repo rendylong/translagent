@@ -10,6 +10,6 @@ if ! lsof -nP -iTCP:8765 -sTCP:LISTEN >/dev/null 2>&1; then
 fi
 
 # 客户端自己会轮询等服务就绪(最多 30 秒),这里不必等待
-nohup /Users/rendy/财务知识/.tools/electron/Electron.app/Contents/MacOS/Electron "$(pwd)/desktop" >/dev/null 2>&1 &
+nohup "$(dirname "$(pwd)")/.tools/electron/Electron.app/Contents/MacOS/Electron" "$(pwd)/desktop" >/dev/null 2>&1 &
 
 exit 0

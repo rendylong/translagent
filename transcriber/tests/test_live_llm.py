@@ -83,6 +83,25 @@ class ParseKeyTest(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_parse_key_dotenv(self):
+        """.env 格式(2026-10-24 起优先):KEY=value 与裸密钥都能命中;
+        缺省路径级联(.env → env.rtf)不抛异常。"""
+        path = _tmp_file('# MiniMax\nMINIMAX_API_KEY=%s\n' % FAKE_KEY)
+        try:
+            self.assertEqual(parse_key(path), FAKE_KEY)
+        finally:
+            os.unlink(path)
+        path2 = _tmp_file(FAKE_KEY)
+        try:
+            self.assertEqual(parse_key(path2), FAKE_KEY)
+        finally:
+            os.unlink(path2)
+        # 缺省参调用走级联(两文件都不存在的极端情形也不抛)
+        import live_llm as ll
+        with unittest.mock.patch.object(ll, 'ENV_DOTENV', '/nonexistent/.env'), \
+             unittest.mock.patch.object(ll, 'ENV_RTF', '/nonexistent/env.rtf'):
+            self.assertIsNone(parse_key())
+
     def test_parse_key_none(self):
         """无 sk- 串(纯 RTF 壳)与文件不存在都返回 None,不抛异常。"""
         path = _tmp_file(RTF_SHELL % '没有密钥的说明文字')
@@ -97,6 +116,29 @@ class RefinerTest(unittest.TestCase):
 
     def _refiner(self):
         return LLMRefiner(FAKE_KEY, timeout_s=1, retry_backoff_s=0)
+
+    def test_no_translate_and_ja_prompt(self):
+        """spec 2026-10-24 §4.4:src==tgt(不翻译)时 rule4 指示 translation 输出空串,
+        不再请求译文;跨语种 prompt 含目标语言名(ja → 日本語)。"""
+        r = LLMRefiner(FAKE_KEY, lang_pair=('ja', 'ja'), timeout_s=1)
+        no_tr = r._build_messages('テスト', '')[0]
+        self.assertIn('空字符串', no_tr)
+        self.assertNotIn('译文', no_tr)
+        r2 = LLMRefiner(FAKE_KEY, lang_pair=('zh', 'ja'), timeout_s=1)
+        self.assertIn('日本語', r2._build_messages('テスト', '')[0])
+        r3 = LLMRefiner(FAKE_KEY, lang_pair=('ja', 'zh'), timeout_s=1)
+        self.assertIn('简体中文', r3._build_messages('テスト', '')[0])
+
+    def test_parse_reply_translation_by_pair(self):
+        """translation 校验按语言对(2026-10-24 修复):src==tgt 时空串合法
+        (LLM 按不翻译指令返回空,不得当坏回复丢弃 corrected);跨语种空串仍拒绝。"""
+        r = LLMRefiner(FAKE_KEY, lang_pair=('zh', 'zh'), timeout_s=1)
+        self.assertEqual(r._parse_reply('{"corrected":"修正","translation":""}'),
+                         {'corrected': '修正', 'translation': ''})
+        r2 = LLMRefiner(FAKE_KEY, lang_pair=('zh', 'en'), timeout_s=1)
+        self.assertIsNone(r2._parse_reply('{"corrected":"修正","translation":""}'))
+        self.assertEqual(r2._parse_reply('{"corrected":"x","translation":"y"}'),
+                         {'corrected': 'x', 'translation': 'y'})
 
     def test_timeout_returns_none(self):
         """传输层异常(含超时)→ None、未熔断;重试 1 次后仍失败算 1 次窗口失败。"""

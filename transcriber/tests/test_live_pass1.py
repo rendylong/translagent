@@ -32,6 +32,32 @@ def load_feed_audio():
     return audio[:FEED_SAMPLES]
 
 
+class ModelFileResolutionTest(unittest.TestCase):
+    """_model_file 目录解析(spec 2026-10-24 §4.2):优先非 int8,仅 int8 时取 int8,
+    无匹配回落硬编码名;既有中英目录解析结果与原硬编码路径一致(零行为变化)。"""
+
+    def test_resolution(self):
+        import os
+        import tempfile
+        import live_pass1
+        with tempfile.TemporaryDirectory() as d:
+            for name in ('encoder-epoch-75-avg-11-chunk-16-left-128.int8.onnx',
+                         'decoder-epoch-99-avg-1.onnx',
+                         'decoder-epoch-99-avg-1.int8.onnx'):
+                open(os.path.join(d, name), 'w').close()
+            self.assertTrue(live_pass1._model_file(d, 'encoder', 'fb.onnx').endswith(
+                'encoder-epoch-75-avg-11-chunk-16-left-128.int8.onnx'),
+                '目录只有 int8 时应取 int8')
+            self.assertTrue(live_pass1._model_file(d, 'decoder', 'fb.onnx').endswith(
+                'decoder-epoch-99-avg-1.onnx'), '有全量版本时不取 int8')
+            self.assertTrue(live_pass1._model_file(d, 'joiner', 'fb.onnx').endswith(
+                'fb.onnx'), '无匹配回落硬编码名')
+        self.assertEqual(
+            live_pass1._model_file(MODEL_DIR, 'encoder', 'encoder-epoch-99-avg-1.onnx'),
+            os.path.join(MODEL_DIR, 'encoder-epoch-99-avg-1.onnx'),
+            '中英目录解析结果与原硬编码路径一致')
+
+
 class Pass1EngineTest(unittest.TestCase):
     def test_partial_then_final(self):
         """喂完后 5s 内收到 ≥1 次 partial 与 ≥1 次 final;final 满足 t1_ms > t0_ms ≥ 0,且回调在工作线程触发。"""

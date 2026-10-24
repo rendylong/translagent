@@ -5,7 +5,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 VARIANT="${1:-A}"
-ROOT="/Users/rendy/财务知识"
+ROOT="$(cd ../.. && pwd)"
 SRC_ELECTRON="$ROOT/.tools/electron/Electron.app"
 APP="$ROOT/会议录制工作台.app"
 

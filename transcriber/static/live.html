@@ -56,7 +56,7 @@
   .hint{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);
     font-size:11.5px;color:rgba(233,235,239,.28);pointer-events:none;white-space:nowrap}
 
-  /* 字幕条形态:深色半透明、圆角 12px、白字 */
+  /* 字幕条形态:深色半透明、圆角 12px、白字;flex 列,可含滚动历史区(.blog) */
   .bar{
     position:fixed;width:min(760px,92vw);border-radius:12px;
     background:rgba(12,14,18,.60);backdrop-filter:blur(16px) saturate(1.25);
@@ -64,8 +64,19 @@
     border:1px solid rgba(255,255,255,.09);color:#fff;
     padding:12px 18px 13px;box-shadow:0 14px 44px rgba(0,0,0,.42);
     transition:box-shadow .15s;
+    display:flex;flex-direction:column;
   }
   .bar:hover{box-shadow:0 18px 54px rgba(0,0,0,.55)}
+  /* 历史区:网页叠加态限高 ~3 行;悬浮窗内被注入 CSS 释放为 flex 主区(随窗口高) */
+  .blog{overflow-y:auto;min-height:0;max-height:66px;scrollbar-width:thin;
+    margin:0 0 4px;padding:0 2px;-webkit-mask-image:linear-gradient(transparent 0,#000 10px)}
+  .blog[hidden]{display:none}
+  .blog .e{margin:2px 0;padding:0}
+  .blog .e .txt{font-size:13px;line-height:1.5}
+  .blog .e .who{font-size:11px}
+  .blog .e .tr{font-size:11.5px;padding-left:17px}
+  .blog .e .dot{width:7px;height:7px}
+  .blog .e.skip .skiptxt{font-size:11px}
   .bar .grab{
     position:absolute;left:50%;top:3px;transform:translateX(-50%);
     width:44px;height:5px;border-radius:3px;background:rgba(255,255,255,.34);
@@ -212,6 +223,11 @@
     background:#e9ebef;color:#14171c;font-size:14px;font-weight:650;cursor:pointer;
   }
   .ecard .ego:hover{background:#fff}
+  .ecard .ego.ghost{
+    background:transparent;color:rgba(233,235,239,.6);font-weight:500;
+    border:1px solid rgba(255,255,255,.14);margin-top:10px;min-width:120px;height:32px;
+  }
+  .ecard .ego.ghost:hover{color:#e9ebef;background:rgba(255,255,255,.06)}
 </style>
 </head>
 <body>
@@ -236,16 +252,25 @@
       </select>
     </div>
     <div class="fld">
-      <label for="fLang">语言对(左为识别语言,右为翻译目标;全程仅在本机使用)</label>
-      <select id="fLang">
-        <option value="zh>en" selected>中文 → 英文</option>
-        <option value="en>zh">英文 → 中文</option>
-        <option value="zh>zh">中文(不翻译)</option>
-        <option value="en>en">英文(不翻译)</option>
+      <label for="fSrc">识别语言</label>
+      <select id="fSrc">
+        <option value="zh" selected>中文</option>
+        <option value="en">英文</option>
+        <option value="ja">日文</option>
       </select>
-      <p class="note">识别与说话人分离即时可用;修正与翻译事件到达时自动上屏。</p>
+    </div>
+    <div class="fld">
+      <label for="fTgt">翻译目标</label>
+      <select id="fTgt">
+        <option value="">不翻译</option>
+        <option value="zh">中文</option>
+        <option value="en" selected>英文</option>
+        <option value="ja">日文</option>
+      </select>
+      <p class="note">识别与说话人分离即时可用;修正与翻译事件到达时自动上屏;全程仅在本机使用。</p>
     </div>
     <button class="go" id="goBtn" type="submit"><i></i>开始实时字幕</button>
+    <p class="note" id="resumeNote" hidden></p>
     <p class="err" id="setupErr" hidden></p>
   </form>
 </section>
@@ -259,6 +284,7 @@
       <button type="button" id="barPause" title="暂停显示(后台继续记录)">暂停显示</button>
       <button type="button" id="barStop" class="danger" title="停止">■ 停止</button>
     </div>
+    <div class="blog" id="barLog" hidden></div>
     <div class="bline bmain" id="barMain">
       <i class="dot" id="barDot"></i><b class="who" id="barWho"></b><span class="txt" id="barText">等待语音…</span>
     </div>
@@ -312,6 +338,7 @@
     <p class="esub" id="endSub">完整文稿生成后可在转录工作台查看。</p>
     <a class="elink" id="endLink" hidden href="/">打开文稿</a>
     <button class="ego" id="endNew" type="button">开始新会话</button>
+    <button class="ego ghost" id="endClose" type="button">关闭</button>
   </div>
 </div>
 

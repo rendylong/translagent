@@ -76,15 +76,18 @@ def find_session(session_id):
 
 
 def _parse_lang(spec):
-    """前端语言对 'zh>en' → (whisper 语言码, LLM 目标语);非法回落 ('zh','en')。"""
+    """前端语言对 'src>tgt'(如 'ja>zh')→ (whisper 语言码, LLM 目标语);非法回落 ('zh','en')。
+
+    src/tgt 合法集均为 {zh, en, ja}(spec 2026-10-24);「不翻译」由前端序列化为
+    tgt==src,服务端不特判——LLMRefiner 按 src==tgt 走不翻译分支。"""
     src = tgt = ''
     if isinstance(spec, str) and '>' in spec:
         parts = [p.strip() for p in spec.split('>', 1)]
         if len(parts) == 2:
             src, tgt = parts
-    if src not in ('zh', 'en'):
+    if src not in ('zh', 'en', 'ja'):
         src = 'zh'
-    if tgt not in ('zh', 'en'):
+    if tgt not in ('zh', 'en', 'ja'):
         tgt = 'en'
     return src, tgt
 
@@ -235,6 +238,7 @@ class LiveSession:
                                        daemon=True)
         self._pass2.start()
         key = parse_key()                  # env.rtf;无 key → Pass3 整层禁用
+        self.llm_enabled = bool(key)       # ws_live 透传给前端:无 key 且选了翻译目标时提示
         if key:
             self._refiner = LLMRefiner(key, lang_pair=(whisper_lang, tgt))
             self._llm = threading.Thread(

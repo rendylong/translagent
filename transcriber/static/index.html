@@ -42,7 +42,7 @@
   .brand .bs{font-size:11.5px;color:var(--faint);line-height:1.4}
   .sec{padding:14px 20px 6px;font-size:12.5px;color:var(--faint)}
   .pane-wrap{padding:0 14px 6px;position:relative}
-  .tabs{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border);
+  .tabs{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid var(--border);
     border-radius:8px;overflow:hidden;background:var(--surface)}
   .tabs button{height:36px;border:0;background:none;cursor:pointer;font-size:13.5px;
     color:var(--muted);display:flex;align-items:center;justify-content:center;gap:7px}
@@ -132,6 +132,8 @@
   .bar i{display:block;height:100%;background:var(--primary);width:0;transition:width .8s}
   .pill{font-size:11px;padding:1px 7px;border-radius:4px;white-space:nowrap;flex:none}
   .pill.err{color:var(--pill-neg-ink);background:var(--pill-neg-bg)}
+  .pill.live{color:var(--sp0-ink);background:var(--sp0-bg)}
+  .live-entry .live-desc{font-size:13px;color:var(--muted);line-height:1.6;margin:2px 0 2px}
   .jdel{position:absolute;right:6px;top:8px;border:0;background:none;color:var(--faint);cursor:pointer;
     opacity:0;padding:3px;border-radius:5px;display:flex}
   .job:hover .jdel,.jdel:focus-visible{opacity:1}
@@ -349,6 +351,9 @@
         <button id="tab-rec" role="tab" aria-selected="false" aria-controls="pane-record" type="button">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="5.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M3 8a5 5 0 0 0 10 0M8 13v1.5"/></svg>
           现场录制</button>
+        <button id="tab-live" role="tab" aria-selected="false" aria-controls="pane-live" type="button">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M4 8h2.5M9 8h3M4 10.5h7"/></svg>
+          实时字幕</button>
       </div>
 
       <!-- 上传面板 -->
@@ -412,6 +417,16 @@
             <button class="rec-stop" id="rec-stop" type="button"><i aria-hidden="true"></i>停止并转录</button>
             <button class="rec-discard" id="rec-discard" type="button">丢弃</button>
           </div>
+        </div>
+      </div>
+
+      <!-- 实时字幕入口面板 -->
+      <div class="pane" id="pane-live" role="tabpanel" aria-labelledby="tab-live" hidden>
+        <div class="live-entry">
+          <p class="live-desc">会议现场逐句上屏:识别、说话人、修正与翻译即时显示,边开会边看字幕。</p>
+          <button class="go live-go" id="live-go" type="button">开始实时字幕</button>
+          <div class="setrow">停止后自动生成<b>完整文稿</b>,存入下方历史记录(带「实时」标记)。</div>
+          <div class="hint">桌面端以置顶悬浮窗显示,可拖右下角调整大小;网页端在新标签页打开。全程本机处理。</div>
         </div>
       </div>
     </div>
@@ -520,18 +535,32 @@ syncSettingsUI();
 
 /* ---------- 入口 Tab ---------- */
 const isDesktop = !!(window.desk && window.desk.isDesktop);
+const TAB_LIST = [['up','upload'], ['rec','record'], ['live','live']];
 function setTab(which){
-  const up = which === 'upload';
-  $('#tab-up').classList.toggle('on', up);
-  $('#tab-rec').classList.toggle('on', !up);
-  $('#tab-up').setAttribute('aria-selected', up);
-  $('#tab-rec').setAttribute('aria-selected', !up);
-  $('#pane-upload').hidden = !up;
-  $('#pane-record').hidden = up;
+  for(const [key, pane] of TAB_LIST){
+    const on = pane === which;
+    $('#tab-' + key).classList.toggle('on', on);
+    $('#tab-' + key).setAttribute('aria-selected', on);
+    $('#pane-' + pane).hidden = !on;
+  }
 }
 $('#tab-up').onclick = () => setTab('upload');
 $('#tab-rec').onclick = () => setTab('record');
+$('#tab-live').onclick = () => setTab('live');
 if(isDesktop) setTab('record');   // 桌面客户端以录制为主任务
+
+/* 实时字幕入口:桌面端拉起/聚焦悬浮窗,网页端新标签页打开独立页 */
+$('#live-go').onclick = () => {
+  if(isDesktop){
+    if(window.desk.openLiveCaption){
+      try{ window.desk.openLiveCaption(); }catch(e){ toast('拉起悬浮窗失败:' + e.message, 'err'); }
+      return;
+    }
+    toast('客户端版本过旧,请退出并重新打开「会议录制工作台」以使用实时字幕', 'err');
+    return;
+  }
+  window.open('/live?mode=panel', '_blank');
+};
 
 /* ---------- 上传 ---------- */
 const drop = $('#drop'), fileEl = $('#file');
@@ -763,7 +792,8 @@ async function refresh(){
     }
     // 终态才可删除;进行中由详情页「放弃」处理
     const deletable = j.status === 'done' || j.status === 'error';
-    d.innerHTML = '<div class="t"></div><div class="s"><span class="sub num">' + esc(sub) + '</span>' + extra + '</div>' +
+    const liveTag = j.is_live ? '<span class="pill live">实时</span>' : '';
+    d.innerHTML = '<div class="t"></div><div class="s">' + liveTag + '<span class="sub num">' + esc(sub) + '</span>' + extra + '</div>' +
       (deletable ? '<button class="jdel" title="删除任务" aria-label="删除任务">' +
         '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2.5 4h11M6 4V2.8h4V4M4 4l.7 9h6.6L12 4M6.5 6.8v4M9.5 6.8v4"/></svg></button>' : '');
     d.querySelector('.t').textContent = j.title;

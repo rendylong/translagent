@@ -21,7 +21,13 @@
 
 **声纹跨会议匹配(2026-10-23)**:全局说话人库 `transcriber/speakers/speakers.json`(每人 gid、名字、192 维质心、每场会的簇签名锚点);任务完成后落盘 `dsegs.json` 与 `embeddings.json`,并写 `meta.json` 的 `speaker_map`(`{簇号: {gid, sim, status}}`,status ∈ auto≥0.65 / suspect 0.50~0.65 待确认 / new / confirmed)。名字解析优先级:任务级 `speaker_names` 覆盖 > 全局库名 > 「说话人N」。相关 API:`GET/PATCH/DELETE /api/speakers`、`POST /api/jobs/<id>/speaker_map`(confirm/separate)、`POST /api/jobs/<id>/cancel|retry`。匹配阈值 0.65/0.50 来自 bench 实测(同人跨会议 0.751,异人最高 0.557),宁新建勿误并。旧任务(2026-10-23 前)无 embeddings,只有重跑才能入声纹库。TitaNet extractor 的两个坑(已防御):超长输入段会崩,须切成 ≤12s;whisper 尾部时间戳可能漂移出音频时长,越界切片要跳过。
 
-界面(2026-10-23 重构,spec 见 `transcriber/界面重设计-spec.md`):侧栏「上传文件 / 现场录制」双 Tab 平级入口(桌面默认录制,web 默认上传);转录设置(语言/说话人数/声纹开关)是全局二级设置,存 localStorage,唯一编辑入口在上传 Tab;录制开始即快照并锁定设置,停止与丢弃分离;toast + 行内二次确认,无 alert/confirm;历史按 处理中/今天/更早 分组;文稿页标题可点击编辑、说话人 chips 带声纹置信徽标。桌面端录音中关窗会拦截确认(`main.js` 读 `body.recording`),Dock 角标经 `desk.diag('rec-state:1/0')` 广播。
+界面(2026-10-23 重构,spec 见 `transcriber/界面重设计-spec.md`):侧栏「上传文件 / 现场录制 / 实时字幕」三 Tab 平级入口(桌面默认录制,web 默认上传;2026-10-24 增实时字幕 Tab——桌面端经 desk.openLiveCaption 拉起/聚焦悬浮窗,web 端新标签页开 /live?mode=panel);转录设置(语言/说话人数/声纹开关)是全局二级设置,存 localStorage,唯一编辑入口在上传 Tab;录制开始即快照并锁定设置,停止与丢弃分离;toast + 行内二次确认,无 alert/confirm;历史按 处理中/今天/更早 分组,live 转正任务带「实时」徽标(app.job_public 的 is_live);文稿页标题可点击编辑、说话人 chips 带声纹置信徽标。桌面端录音中关窗会拦截确认(`main.js` 读 `body.recording`),Dock 角标经 `desk.diag('rec-state:1/0')` 广播。
+
+**实时字幕悬浮窗可缩放与交互修复(2026-10-24)**:macOS 对 `transparent:true` 窗口禁用原生边缘缩放(Electron 官方限制),`live-window.js` 注入自绘右下手柄(#nativeResizeGrip,pointer 拖动经 preload 的 `desk.resizeLive(w,h)` → 主进程 setSize;move/up 同时挂手柄与 document 兜底,setPointerCapture 容错),尺寸按阶段记忆在 `live-window.json` 的 `sizes`,各阶段有最小尺寸钳制(PHASE_MIN)。悬浮窗内:字幕条铺满窗口(inset 6px,拖高即见更多历史)、表单卡/结束卡也是拖动区(`.card`/`.ecard` drag,交互控件 no-drag)、三个操作按钮常显于条内右上角(网页叠加态仍 hover 显示);字幕条新增可滚动历史区 `#barLog`(live.js 里 entry.bel 与面板 entry.el 同源维护,当前主行在 log 中隐藏,syncBarLog)。**停止后的完整转录记录**:live.js 结束卡「打开文稿」深链 `/#<job_id>`(工作台启动读 hash 定位任务);桌面端悬浮窗内点击走 `desk.openMainJob` 聚焦主窗跳转(主窗录音中只聚焦防打断,状态由 rec-state 广播的 mainRecording 维护)。**陈旧会话自愈(2026-10-24)**:打开 /live 时自动恢复撞上死会话(服务重启过,WS 回「会话不存在或已失效」)不再死路错误卡——清掉内存与 localStorage 的 session、断开 WS、回到开始表单并出「上次会话已因服务重启结束」提示(state.autoResume 标记区分「页面自动恢复」与「用户会话中断」两类;onclose 在 idle/ended 阶段不重连,否则 idle 重连会误发 start 开出无人供音的幽灵会话)。
+
+**实时字幕语言(2026-10-24)**:识别语言 zh/en/ja 与翻译目标(不翻译/中/英/日)独立选择(live 表单两个下拉,序列化仍是 `'src>tgt'`,不翻译=tgt==src,LLM 对同语种指示 translation 输出空串);ja 的 pass1 用多语言流式模型 `models/streaming-zipformer-ja`(8 语种,encoder/joiner 仅 int8),按 `start.language` 的 src 在 ws_live 选目录;pass1 模型文件名按目录 glob 解析(优先非 int8→int8→回落硬编码);whisper(-l ja)与 LLM(_LANG_NAME 含 ja)天然支持。spec 见 `docs/2026-10-24-live-captions-ja-and-target-language-spec.md`。
+
+**结束卡与翻译可用性提示(2026-10-24)**:结束卡新增「关闭」按钮(desktop 经 `desk.closeLiveCaption` → `hide-live` IPC 隐藏悬浮窗,web 回工作台);「打开文稿」跳主窗后悬浮窗自动隐藏。`started` 事件携带 `llm: bool`(LiveSession.llm_enabled,来自 env.rtf 是否有 key):前端在选了翻译目标但 `llm===false` 时出「未配置翻译密钥」提示,不再静默无翻译。`_parse_reply` 按 lang_pair 校验 translation:src==tgt(不翻译)时空串合法,跨语种空串仍拒——修复不翻译组合下修正文本被当坏回复丢弃。
 
 实测耗时(2026-10,86 分钟双说话人录音):whisper 5 分钟(GPU),说话人识别约 12 分钟(CPU,约 0.13 倍速)。单 worker 串行处理任务。
 
@@ -85,6 +91,6 @@ whisper 转中文口语音频会稳定错一批词。清理时优先检查:
 
 ## 约定
 
-- 音频、声纹数据不出本机。例外(2026-10-23 用户明示授权):实时字幕 Pass3 可将**转录文本的窗口级片段**(仅窗口文本+有限上下文,不含音频/路径/说话人姓名)送 MiniMax API 做修正与翻译;key 在根目录 `env.rtf`(已 gitignore,运行时解析,不入库不打印)。除此之外不调用任何外部转录或上传服务。注意:本仓库 git 历史含早期已删文件的记录(声纹库 speakers.json 曾被跟踪,现已 `git rm --cached`);若将来要 push/外发仓库,先做历史审查。
+- 音频、声纹数据不出本机。例外(2026-10-23 用户明示授权):实时字幕 Pass3 可将**转录文本的窗口级片段**(仅窗口文本+有限上下文,不含音频/路径/说话人姓名)送 MiniMax API 做修正与翻译;key 在根目录 `.env`(`MINIMAX_API_KEY=sk-…`,2026-10-24 起优先;旧 `env.rtf` 仍兼容,`parse_key` 级联 .env → env.rtf;两者均已 gitignore,运行时解析,不入库不打印)。除此之外不调用任何外部转录或上传服务。注意:本仓库 git 历史含早期已删文件的记录(声纹库 speakers.json 曾被跟踪,现已 `git rm --cached`);若将来要 push/外发仓库,先做历史审查。
 - 交付文档用中文。纪要中的时间节点、数字、人名须提醒用户对照原声核实。
 - 项目记忆里有本目录的工具链笔记(`meeting-transcription-pipeline`),与本文件互补,先读其一即可。
