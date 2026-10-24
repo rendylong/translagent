@@ -7,7 +7,16 @@
 <title>实时字幕</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2022%2022'%3E%3Cg%20fill='%23e9ebef'%3E%3Crect%20x='0'%20y='8'%20width='2.6'%20height='6'%20rx='1.3'/%3E%3Crect%20x='4.8'%20y='4.8'%20width='2.6'%20height='12.4'%20rx='1.3'/%3E%3Crect%20x='9.7'%20y='1.5'%20width='2.6'%20height='19'%20rx='1.3'/%3E%3Crect%20x='14.6'%20y='6'%20width='2.6'%20height='10'%20rx='1.3'/%3E%3Crect%20x='19.4'%20y='8.8'%20width='2.6'%20height='4.4'%20rx='1.3'/%3E%3C/g%3E%3Ccircle%20cx='19'%20cy='4'%20r='2.4'%20fill='%23ff453a'/%3E%3C/svg%3E">
 <style>
-  :root{ color-scheme: light dark; }
+  /* 账本色板(--lc-*):句行灰度分层集中于此,避免 rgba 散落;
+     alpha 为最不利背景(纯白网页垫底)下的可读性验收值,改动须重验对比度 */
+  :root{
+    color-scheme: light dark;
+    --lc-txt:#fff;                            /* 定稿句 ≈8.1:1 */
+    --lc-f1:rgba(255,255,255,.48);            /* pass1 待修正,过渡态有意更暗 ≈3.2:1 */
+    --lc-partial:rgba(255,255,255,.68);       /* 正在说 ≈4.8:1,与 f1 拉开 20pp 瞥读可分 */
+    --lc-tr:rgba(255,255,255,.62);            /* 跟句译文 ≈4.3:1(次级注释,接受) */
+    --lc-faint:rgba(255,255,255,.35);         /* 静音分隔等最弱层 */
+  }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{
@@ -56,10 +65,11 @@
   .hint{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);
     font-size:11.5px;color:rgba(233,235,239,.28);pointer-events:none;white-space:nowrap}
 
-  /* 字幕条形态:深色半透明、圆角 12px、白字;flex 列,可含滚动历史区(.blog) */
+  /* 字幕条形态:深色半透明、圆角 12px、白字;flex 列,主区即句子账本(.blog)。
+     底 .72:纯白网页垫底的最不利背景下白字仍可读(半透明覆盖层,blur 不变) */
   .bar{
     position:fixed;width:min(760px,92vw);border-radius:12px;
-    background:rgba(12,14,18,.60);backdrop-filter:blur(16px) saturate(1.25);
+    background:rgba(12,14,18,.72);backdrop-filter:blur(16px) saturate(1.25);
     -webkit-backdrop-filter:blur(16px) saturate(1.25);
     border:1px solid rgba(255,255,255,.09);color:#fff;
     padding:12px 18px 13px;box-shadow:0 14px 44px rgba(0,0,0,.42);
@@ -67,16 +77,32 @@
     display:flex;flex-direction:column;
   }
   .bar:hover{box-shadow:0 18px 54px rgba(0,0,0,.55)}
-  /* 历史区:网页叠加态限高 ~3 行;悬浮窗内被注入 CSS 释放为 flex 主区(随窗口高) */
-  .blog{overflow-y:auto;min-height:0;max-height:66px;scrollbar-width:thin;
-    margin:0 0 4px;padding:0 2px;-webkit-mask-image:linear-gradient(transparent 0,#000 10px)}
-  .blog[hidden]{display:none}
-  .blog .e{margin:2px 0;padding:0}
-  .blog .e .txt{font-size:13px;line-height:1.5}
-  .blog .e .who{font-size:11px}
-  .blog .e .tr{font-size:11.5px;padding-left:17px}
-  .blog .e .dot{width:7px;height:7px}
-  .blog .e.skip .skiptxt{font-size:11px}
+  /* 句子账本:一句一行,自底向上生长;bspace 把短内容压向底部、空白在上,
+     溢出时收缩为 0 正常滚动。网页叠加态限高 ~6 句行;悬浮窗内被注入 CSS 释放为 flex 主区 */
+  .blog{
+    display:flex;flex-direction:column;min-height:0;overflow-y:auto;
+    max-height:132px;scrollbar-width:thin;margin:0 0 4px;padding:0 2px;
+    -webkit-mask-image:linear-gradient(transparent 0,#000 10px);
+  }
+  .blog .bspace{flex:1 1 0;min-height:0;-webkit-app-region:drag}   /* 悬浮窗早期空窗整块可拖动摆放 */
+  .blog .e{animation:lc-in .18s ease}                               /* 仅新增条目入场淡入 */
+  .blog .e.no-anim{animation:none}                                  /* 重建路径不眨眼 */
+  @keyframes lc-in{from{opacity:0}to{opacity:1}}
+  .blog .srow{display:grid;grid-template-columns:10px 1fr;column-gap:8px;
+    margin:3px 0;font-size:13.5px;line-height:1.6}
+  .blog .sdot{width:7px;height:7px;border-radius:50%;align-self:start;margin-top:6px}
+  .blog .sdot.sdot-none{background:transparent}    /* 非切换句透明占位,正文缩进不跳 */
+  .blog .swho{font-size:11px;color:rgba(255,255,255,.62);font-weight:600}
+  .blog .stx{min-width:0;overflow-wrap:break-word} /* 词内不硬断(anywhere 已弃用) */
+  .blog .srow.f1 .stx{color:var(--lc-f1)}
+  .blog .srow.p2 .stx,.blog .srow.llm .stx{color:var(--lc-txt)}
+  .blog .str{display:block;font-size:11.5px;color:var(--lc-tr)}    /* 句数对齐时的跟句译文 */
+  .blog .trblk{font-size:11.5px;color:rgba(255,255,255,.5);padding-left:18px;
+    overflow-wrap:break-word}                       /* 句数不等时的整窗译文回落 */
+  .blog .skipline{font-size:10.5px;color:var(--lc-faint);text-align:center;
+    margin:3px 0}
+  .blog .prow{color:var(--lc-partial);overflow-wrap:break-word}    /* partial 行常驻最底 */
+  .blog .srow.empty{color:var(--lc-f1)}             /* 空态「等待语音…」 */
   .bar .grab{
     position:absolute;left:50%;top:3px;transform:translateX(-50%);
     width:44px;height:5px;border-radius:3px;background:rgba(255,255,255,.34);
@@ -96,20 +122,14 @@
   }
   .bar .actions button:hover{background:rgba(38,42,50,.9)}
   .bar .actions .danger{color:#ff8a80}
-  .bar .bline{min-height:1.5em}
-  .bar .bmain{display:flex;align-items:baseline;gap:8px;font-size:15.5px;line-height:1.55}
-  .bar .bmain .dot{flex:none;width:9px;height:9px;border-radius:50%;background:#98a2b3;
-    align-self:center}
-  .bar .bmain .who{flex:none;font-size:12px;color:rgba(255,255,255,.62);font-weight:600}
-  .bar .bmain .txt{min-width:0;overflow-wrap:anywhere}
-  .bar .bmain.fallback .txt{color:rgba(255,255,255,.6)}
-  .bar .btrans{margin-top:3px;padding-left:17px;font-size:12.5px;color:rgba(255,255,255,.72);
-    line-height:1.5;overflow-wrap:anywhere}
-  .bar .bpartial{margin-top:5px;padding-left:17px;font-size:14px;
-    color:rgba(255,255,255,.55);overflow-wrap:anywhere}
   .caret{display:inline-block;width:2px;height:1.05em;margin-left:2px;vertical-align:-2px;
     background:currentColor;animation:blink 1.1s steps(2,start) infinite}
   @keyframes blink{50%{opacity:0}}
+  /* 系统减弱动效:入场淡入与 caret 闪烁全部停用(caret 恒显,partial 静态) */
+  @media (prefers-reduced-motion: reduce){
+    .blog .e{animation:none}
+    .caret{animation:none}
+  }
   .chip{
     display:inline-flex;align-items:center;font-size:11.5px;padding:2px 9px;border-radius:999px;
     background:rgba(255,179,46,.16);color:#ffc46b;border:1px solid rgba(255,179,46,.32);
@@ -284,12 +304,12 @@
       <button type="button" id="barPause" title="暂停显示(后台继续记录)">暂停显示</button>
       <button type="button" id="barStop" class="danger" title="停止">■ 停止</button>
     </div>
-    <div class="blog" id="barLog" hidden></div>
-    <div class="bline bmain" id="barMain">
-      <i class="dot" id="barDot"></i><b class="who" id="barWho"></b><span class="txt" id="barText">等待语音…</span>
+    <div class="blog" id="barLog">
+      <!-- 句子账本:静态骨架(bspace/空态/partial 行)常驻,条目 bel 只插在 #barEmpty 之前 -->
+      <div class="bspace"></div>
+      <div class="srow empty" id="barEmpty" hidden>等待语音…</div>
+      <div class="srow prow" id="barPartialRow"><span id="barPartial"></span><i class="caret"></i></div>
     </div>
-    <div class="bline btrans" id="barTrans" hidden></div>
-    <div class="bline bpartial" id="barPartialLine"><span id="barPartial"></span><i class="caret"></i></div>
     <div class="statebar" id="barState"></div>
   </div>
 

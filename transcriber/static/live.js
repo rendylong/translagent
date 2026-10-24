@@ -172,7 +172,7 @@ function handleEvent(ev){
     case 'partial':
       state.partial = ev.text || '';
       badge('bdgAsr');
-      renderActive(); renderBar();
+      renderActive();
       break;
     case 'pass1_final':
       insertEntry({kind: 'f1', t0: ev.t0_ms, t1: ev.t1_ms, text: ev.text || ''});
@@ -478,7 +478,8 @@ function stopCapture(){
   try { c.ctx.close(); } catch (e){}
 }
 
-/* ---------- 三级渲染:partial 覆盖活动行 / pass1_final 追加 / pass2 整窗替换染色 ---------- */
+/* ---------- 三级渲染:partial 覆盖活动行 / pass1_final 追加 / pass2 整窗替换染色 ----------
+   字幕条侧 bel 是「句子账本」:一句一行、译文跟句、partial 灰行常驻最底(面板 el 维持窗口条目式)。 */
 
 function speakerColor(speaker){
   return SPEAKER_COLORS[speaker != null && speaker < SPEAKER_COLORS.length - 1 ? speaker
@@ -489,6 +490,40 @@ function speakerName(speaker){
 }
 
 function intersects(e, t0, t1){ return e.kind !== 'skip' && e.t0 < t1 && e.t1 > t0; }
+
+/* 断句:原文与译文共用。协议里没有句边界,只能客户端按终符切;原则是宁长勿错——
+   小数、缩写、小写续写都不切(切错比不切伤害大),超长无终句靠 CSS 换行兜底。 */
+function splitSentences(text){
+  text = String(text == null ? '' : text)
+    .replace(/[ \t\r　]+/g, ' ')            // 空白串折叠为单空格(\n 是终符,留待切分)
+    .replace(/^\s+|\s+$/g, '');
+  if (!text) return [];
+  var END = '。.!!??…;;\n';                 // 中日文句读(全角)+ ASCII .!?; + 换行
+  var ABBR = {Mr:1, Dr:1, Ms:1, Mrs:1, Jr:1, Sr:1, vs:1, etc:1,
+              'e.g':1, 'i.e':1, Inc:1, Ltd:1};
+  var out = [], start = 0;
+  for (var i = 0; i < text.length; i++){
+    var ch = text.charAt(i);
+    if (END.indexOf(ch) < 0) continue;
+    if (ch === '.'){                          // ASCII 句点三重守卫:命中则当普通字符继续累积
+      var prev = text.charAt(i - 1), next = text.charAt(i + 1);
+      if (prev >= '0' && prev <= '9' && next >= '0' && next <= '9') continue;   // 3.2 / 12.50
+      var stem = /([A-Za-z.]+)$/.exec(text.slice(0, i));
+      if (stem && ABBR[stem[1]]) continue;    // Mr. / e.g. 等缩写词尾
+      if (next >= 'a' && next <= 'z') continue;   // vs. the:句点后小写续写多半非句界
+    }
+    var j = i;                                // 连续终符(好!!!/。。。/……)并入前一句,不产孤标点行
+    while (j + 1 < text.length && END.indexOf(text.charAt(j + 1)) >= 0) j++;
+    var sen = text.slice(start, j + 1).replace(/^\s+|\s+$/g, '');
+    if (sen) out.push(sen);
+    i = j; start = j + 1;
+  }
+  if (start < text.length){
+    var tail = text.slice(start).replace(/^\s+|\s+$/g, '');   // 无终符尾巴自成一行(pass1 裸文本即此类)
+    if (tail) out.push(tail);
+  }
+  return out;
+}
 
 function insertEntry(entry){
   if (entry.kind === 'f1'){                       // 已被 pass2/llm 覆盖的窗口不再收留旧 final
@@ -506,10 +541,10 @@ function insertEntry(entry){
     var next = state.doc[i + 1];
     $('plist').insertBefore(entry.el, next && next.el ? next.el : $('activeLine'));
     $('plistEmpty').hidden = true;
-    entry.bel = makeEntryEl(entry);               // 字幕条历史区的同源条目(紧凑样式由 .blog 作用域)
-    $('barLog').insertBefore(entry.bel, next && next.bel ? next.bel : null);
-    $('barLog').hidden = false;
-    renderBar(); autoScroll($('plist')); autoScroll($('barLog'));
+    entry.bel = makeBarEl(entry);               // 账本条目同源镜像(一句一行,样式由 .blog 作用域)
+    $('barLog').insertBefore(entry.bel, next && next.bel ? next.bel : $('barEmpty'));
+    $('barEmpty').hidden = true;                // 首个 entry 到达,空态退场(partial 到达在 renderActive 里退)
+    autoScroll($('plist')); autoScroll($('barLog'));
   }
 }
 
@@ -532,9 +567,12 @@ function llmReplace(t0, t1, text, translation){   // 软替换:替换文本并�
     var e = victims[0];
     e.kind = 'llm'; e.text = text; e.translation = translation;
     if (e.el){ var fresh = makeEntryEl(e); e.el.replaceWith(fresh); e.el = fresh; }
-    if (e.bel){ var bfresh = makeEntryEl(e); e.bel.replaceWith(bfresh); e.bel = bfresh; }
+    if (e.bel){
+      var bfresh = makeBarEl(e);               // 句数/译文变化自然重排
+      bfresh.classList.add('no-anim');         // 重建不眨眼:历史句行不集体重播入场动画
+      e.bel.replaceWith(bfresh); e.bel = bfresh;
+    }
     autoScroll($('plist')); autoScroll($('barLog'));
-    renderBar();
     return;
   }
   victims.forEach(removeEntry);
@@ -570,7 +608,71 @@ function makeEntryEl(entry){
   return div;
 }
 
-function renderActive(){                          // partial 覆盖活动行(灰字+光标)
+/* 账本条目的说话人标记:仅切换首句出圆点+名。pass1 无 speaker 从不标记;
+   参照是紧邻前条——遇 skip 即重置(下一窗口必出点),无前驱视为切换(会话第一条)。 */
+function barSpeakerMark(entry){
+  if (entry.speaker == null) return false;
+  var i = state.doc.indexOf(entry);
+  while (i-- > 0){
+    var d = state.doc[i];
+    if (d.kind === 'skip') return true;
+    return d.speaker !== entry.speaker;
+  }
+  return true;
+}
+
+function makeBarEl(entry){                       // 字幕条侧条目容器:句行(srow)+ 整块译文/静音行
+  var div = document.createElement('div');
+  div.className = 'e ' + entry.kind;
+  if (entry.kind === 'skip'){
+    var sk = document.createElement('div');
+    sk.className = 'skipline';
+    sk.textContent = '· 静音段已略过 ·';
+    div.appendChild(sk);
+    return div;
+  }
+  var sents = splitSentences(entry.text);
+  if (!sents.length) sents = [''];               // 空文本条目保一行,容器在位重排才稳定
+  var trs = entry.translation ? splitSentences(entry.translation) : [];
+  var per = sents.length > 0 && trs.length === sents.length;   // 句数一致才逐句跟,不猜对齐
+  var mark = barSpeakerMark(entry);
+  var color = speakerColor(entry.speaker);
+  for (var i = 0; i < sents.length; i++){
+    var row = document.createElement('div');
+    row.className = 'srow ' + entry.kind;
+    var dot = document.createElement('i');
+    if (i === 0 && mark){ dot.className = 'sdot'; dot.style.background = color; }
+    else { dot.className = 'sdot sdot-none'; }  // 其余句透明占位,正文缩进不跳
+    row.appendChild(dot);
+    var stx = document.createElement('div');
+    stx.className = 'stx';
+    if (i === 0 && mark){
+      var who = document.createElement('b');     // 名字与圆点同条件同现
+      who.className = 'swho';
+      who.textContent = speakerName(entry.speaker);
+      stx.appendChild(who);
+      stx.appendChild(document.createTextNode(' '));
+    }
+    stx.appendChild(document.createTextNode(sents[i]));
+    if (per){
+      var str = document.createElement('span');  // 跟句小字译文
+      str.className = 'str';
+      str.textContent = trs[i];
+      stx.appendChild(str);
+    }
+    row.appendChild(stx);
+    div.appendChild(row);
+  }
+  if (!per && trs.length){                       // 句数不等:整窗译文整块回落(混排两形态是预期行为)
+    var blk = document.createElement('div');
+    blk.className = 'trblk';
+    blk.textContent = entry.translation;
+    div.appendChild(blk);
+  }
+  return div;
+}
+
+function renderActive(){                          // partial 行(面板灰字 + 账本常驻最底灰行)+ 空态显隐
   if (state.paused) return;
   var has = !!state.partial;
   $('activeLine').hidden = !has;
@@ -578,47 +680,9 @@ function renderActive(){                          // partial 覆盖活动行(灰
     $('activeText').textContent = state.partial;
     $('plistEmpty').hidden = true;
   }
-  autoScroll();
-}
-
-function renderBar(){                             // 字幕条 = 最近 1 条定稿 + 译文 + partial 灰行
-  if (state.paused) return;
-  var main = null, i = state.doc.length;
-  while (i-- > 0){
-    var k = state.doc[i].kind;
-    if (k === 'p2' || k === 'llm'){ main = state.doc[i]; break; }
-  }
-  var fallback = null;
-  if (!main) for (i = 0; i < state.doc.length; i++)
-    if (state.doc[i].kind === 'f1') fallback = state.doc[i];
-  var show = main || fallback;
-  var bmain = $('barMain');
-  bmain.classList.toggle('fallback', !main && !!fallback);
-  if (show){
-    $('barText').textContent = show.text || '…';
-    var sp = main ? show.speaker : null;
-    $('barDot').style.background = speakerColor(sp);
-    var n = speakerName(sp);
-    $('barWho').textContent = n; $('barWho').hidden = !n;
-    var tr = show.translation;
-    $('barTrans').textContent = tr || '';
-    $('barTrans').hidden = !tr;
-  } else {
-    $('barText').textContent = '等待语音…';
-    $('barDot').style.background = speakerColor(null);
-    $('barWho').hidden = true;
-    $('barTrans').hidden = true;
-  }
-  $('barPartial').textContent = state.partial;
-  syncBarLog(show);                               // 历史区不重复展示当前主行
-}
-
-/* 历史区可见性:正在作为主行展示的条目在 log 里隐藏,避免同句上下重复 */
-function syncBarLog(show){
-  for (var i = 0; i < state.doc.length; i++){
-    var e = state.doc[i];
-    if (e.bel) e.bel.style.display = (e === show) ? 'none' : '';
-  }
+  $('barPartial').textContent = state.partial;   // #barPartialRow 行常驻最底不隐藏(caret 常闪表识别进行中),只换文本
+  $('barEmpty').hidden = has || state.doc.length > 0;   // doc 与 partial 均空才显示「等待语音…」
+  autoScroll(); autoScroll($('barLog'));
 }
 
 function fullRender(){                            // 暂停恢复/形态切换时整体重建
@@ -627,12 +691,12 @@ function fullRender(){                            // 暂停恢复/形态切换�
     if (e.bel) e.bel.remove();
     e.el = makeEntryEl(e);
     $('plist').insertBefore(e.el, $('activeLine'));
-    e.bel = makeEntryEl(e);
-    $('barLog').appendChild(e.bel);
+    e.bel = makeBarEl(e);
+    e.bel.classList.add('no-anim');               // 全量重建非新增条目,不重播入场动画
+    $('barLog').insertBefore(e.bel, $('barEmpty'));   // 静态行(bspace/空态/partial)永不 remove
   });
-  $('barLog').hidden = state.doc.length === 0;
   $('plistEmpty').hidden = state.doc.length > 0;
-  renderActive(); renderBar();
+  renderActive();                                 // 空态恢复/最新 partial 文本由此补齐
   autoScroll($('plist')); autoScroll($('barLog'));
 }
 

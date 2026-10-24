@@ -180,13 +180,20 @@ class StaticCheck(unittest.TestCase):
         self.assertIn("'llm': bool(getattr(session, 'llm_enabled'", app_py)
 
     def test_bar_log_history(self):
-        """2026-10-24 交互修复:字幕条带可滚动历史区(.blog),与面板列表同源维护
-        (bel 镜像),当前主行在历史区隐藏避免同句重复。"""
+        """2026-10-24 句子账本化:字幕条主区(.blog)一句一行,条目 bel 与面板同源;
+        主行/历史双轨(renderBar/syncBarLog)删除,回归钉子防复活。"""
         self.assertIn('id="barLog"', self.html)
         self.assertIn('.blog', self.html)
         self.assertIn('entry.bel', self.js)
-        self.assertIn('syncBarLog', self.js)
         self.assertIn("autoScroll($('barLog')", self.js)
+        self.assertIn('splitSentences', self.js)
+        self.assertIn('makeBarEl', self.js)
+        self.assertIn('barPartialRow', self.js)
+        self.assertNotIn('id="barMain"', self.html)
+        self.assertIn('.blog .srow', self.html)
+        self.assertIn('bspace', self.html)
+        self.assertNotIn('syncBarLog', self.js)
+        self.assertNotIn('renderBar', self.js)
 
     def test_floating_window_injection(self):
         """2026-10-24 交互修复(desktop/live-window.js 注入):
