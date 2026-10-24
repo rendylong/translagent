@@ -68,7 +68,7 @@
 ### 4.1 断句函数 `splitSentences(text)`(live.js 新增,纯函数)
 
 1. 预处理:空白串折叠为单空格、trim;空串返回 `[]`。
-2. 终符集:`。!?!?…;;\n`(中日文句读 + ASCII `.!?;` + 换行)。
+2. 终符集(码点枚举,防同形字符事故):U+3002 。、U+002E `.`、U+0021 `!`、U+FF01 `！`、U+003F `?`、U+FF1F `？`、U+2026 `…`、U+003B `;`、U+FF1B `；`、U+000A 换行。半角与全角各在集合内(交互原型 TERM 的既有集合 + ASCII `.` 勘误补入)。
 3. ASCII `.` 的三重守卫(命中则不切,继续累积):
    - 前后都是数字:`3.2`、`12.50` 不切;
    - 句尾词命中缩写表 `Mr/Dr/Ms/Mrs/Jr/Sr/vs/etc/e.g/i.e/Inc/Ltd` 不切(`Mr.`);
@@ -164,6 +164,9 @@
   下入场动画与 caret 闪烁全部停用(caret 恒显,partial 静态)。
 - 删除 `.bmain` / `.btrans` / `.bpartial` / `fallback` 相关样式,**以及旧
   `.blog .e .txt/.who/.tr/.dot/.skiptxt` 系**(评审 F7:防死代码误导后人)。
+  注意保留 `.blog .e{margin:2px 0;padding:0}` 紧凑间距覆盖——删除清单不含它,
+  误删会让账本条目继承面板全局 `.e` 的 8px 边距(跨窗边界 26px 空隙,终审实测;
+  测试补 `.blog .e` margin 钉子)。
 - 措辞勘误:现有 `.e .txt{…overflow-wrap:anywhere}` 是全局选择器(目前同时作用于
   旧字幕条历史);新类名 `.stx` 不受其影响,面板侧不动。
 
