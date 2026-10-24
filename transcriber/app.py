@@ -60,7 +60,7 @@ app = Flask(__name__, static_folder=None)
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
 job_queue = queue.Queue()
 _speakers_lock = threading.Lock()
-GPU_LOCK = threading.Lock()   # whisper GPU 全局互斥:离线管线 run_whisper 与 live pass2(live_pass2)串行占用
+GPU_LOCK = threading.Lock()   # whisper GPU 全局互斥:离线 job 串行占用(实时管线已无 GPU 占用,spec 2026-10-24)
 
 
 # ---------- 任务存储(meta.json 即状态机) ----------
@@ -386,7 +386,7 @@ def run_whisper(job_id, wav, language):
         cmd += ['-l', language]
     if language in PROMPTS:
         cmd += ['--prompt', PROMPTS[language]]
-    GPU_LOCK.acquire()   # GPU 互斥:与 live pass2 窗口修正(live_pass2.Pass2Runner)串行
+    GPU_LOCK.acquire()   # GPU 互斥:离线 whisper 串行(实时管线已无 GPU 占用,spec 2026-10-24)
     try:
         proc = subprocess.Popen(cmd, cwd=WHISPER_DIR, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.PIPE, text=True)
@@ -995,10 +995,10 @@ def main():
     """服务入口(仅 __main__ 委托调用):worker 线程 + Flask 监听。
 
     收口成函数并让脚本态走 `import app` 是关键:`python3 app.py` 直跑时模块名是
-    __main__,而 live_pass2/live_finalize 的 `import app` 会把 app.py 再执行一遍
-    成第二个实例——两份 job_queue(live 转正的 job 进孤儿队列,worker 永远不取,
-    2026-10-23 replay 对拍实测卡 queued 15 分钟)与两份 GPU_LOCK(离线 whisper 与
-    live pass2 的互斥失效,Metal 抢占)。单实例化后两处身份恒等。"""
+    __main__,而 live_session/live_finalize 等模块的 `import app`(如 live_finalize
+    转正时)会把 app.py 再执行一遍成第二个实例——两份 job_queue(live 转正的 job
+    进孤儿队列,worker 永远不取,2026-10-23 replay 对拍实测卡 queued 15 分钟)与
+    两份 GPU_LOCK(双模块实例致锁分裂、互斥失效,Metal 抢占)。单实例化后两处身份恒等。"""
     os.makedirs(JOBS_DIR, exist_ok=True)
     recover_interrupted()
     live_recover()   # live 断电恢复:非终态会话目录自动转正建 job(Task 9)
