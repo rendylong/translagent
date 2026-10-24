@@ -254,7 +254,8 @@ class LiveSession:
         self._q.put(b[:keep])
 
     def duration_s(self):
-        """已录时长 = 累计字节 / 32000(音频时间轴唯一口径,Pass2 驱动同样用它)。"""
+        """已录时长 = 累计字节 / 32000(音频时间轴唯一口径:喂入进度、分人切片窗口
+        与停止判满都由它派生,两层管线不再有别的时钟)。"""
         return self._bytes_fed / BYTES_PER_SEC
 
     def handle_stop(self):

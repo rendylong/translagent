@@ -5,7 +5,7 @@
 预期:一致。live 的转正是硬链接 live_audio.wav 为 jobs/<new>/source.wav,afconvert
 对已是 16k 单声道 PCM 的 wav 是恒等转换,两 job 走完全相同的离线管线
 (whisper 参数逐项一致),故 segments 应逐段相同(whisper 对同一输入确定性)。
-live 期间的 pass2/llm 事件只影响实时字幕,不进终稿。
+live 期间的 partial/pass1_final/llm 事件只影响实时字幕,不进终稿。
 
 音频取 zh 锚点(jobs/20261022-130447_9bef)前 SEC 秒。真实跑两个 job:
 whisper+diarization 各约 1-3 分钟。运行:cd transcriber && python3 tests/replay_e2e.py
@@ -30,7 +30,7 @@ from live_wav import write_slice  # noqa: E402
 
 PORT = 8765
 CHUNK = 3200                       # 200ms @16k mono s16le(与 live.js 一致)
-SEC = 150                          # 对拍时长:7 个以上 pass2 窗,两个 job 各 ~2min
+SEC = 150                          # 对拍时长:两层管线下足够出多条 pass1 final,两个 job 各 ~2min
 SPEAKERS = 2
 TOL_MS = 200
 

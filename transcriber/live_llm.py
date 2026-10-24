@@ -319,7 +319,7 @@ def refine_worker(get_event, emit, refiner, stop_flag, busy_flag=None):
                 stripped = []
                 for ln in corrected.splitlines():   # 防御式:模型漏标签/行首尾加空格都不炸
                     s = ln.strip()
-                    stripped.append(s[len(lab):] if s.startswith(lab) else s)
+                    stripped.append(s[len(lab):].lstrip() if s.startswith(lab) else s)
                 text_out = '\n'.join(x for x in stripped if x)
                 ev_speaker = speakers[0]
             else:
