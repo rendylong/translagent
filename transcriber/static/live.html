@@ -101,6 +101,9 @@
     overflow-wrap:break-word}                       /* 句数不等时的整窗译文回落 */
   .blog .skipline{font-size:10.5px;color:var(--lc-faint);text-align:center;
     margin:3px 0}
+  /* 空态/partial 两行无 sdot+stx 子结构,必须退出 .srow 的 grid——否则文本落进 10px
+     固定列竖排一字一行;display:block + 18px 缩进(=10px 列+8px gap)与 .stx 左缘对齐 */
+  .blog .srow.prow,.blog .srow.empty{display:block;padding-left:18px}
   .blog .prow{color:var(--lc-partial);overflow-wrap:break-word}    /* partial 行常驻最底 */
   .blog .srow.empty{color:var(--lc-f1)}             /* 空态「等待语音…」 */
   .bar .grab{

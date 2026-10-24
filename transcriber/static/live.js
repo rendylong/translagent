@@ -498,7 +498,9 @@ function splitSentences(text){
     .replace(/[ \t\r　]+/g, ' ')            // 空白串折叠为单空格(\n 是终符,留待切分)
     .replace(/^\s+|\s+$/g, '');
   if (!text) return [];
-  var END = '。.!!??…;;\n';                 // 中日文句读(全角)+ ASCII .!?; + 换行
+  // 终符集码点:U+3002 。 U+002E . U+0021 ! U+FF01 ! U+003F ? U+FF1F ? U+2026 …
+  //             U+003B ; U+FF1B ; U+000A 换行(中日文句读与 ASCII 全半角成对,防再漏)
+  var END = '。.!！?？…;；\n';
   var ABBR = {Mr:1, Dr:1, Ms:1, Mrs:1, Jr:1, Sr:1, vs:1, etc:1,
               'e.g':1, 'i.e':1, Inc:1, Ltd:1};
   var out = [], start = 0;
@@ -634,7 +636,7 @@ function makeBarEl(entry){                       // 字幕条侧条目容器:句
   var sents = splitSentences(entry.text);
   if (!sents.length) sents = [''];               // 空文本条目保一行,容器在位重排才稳定
   var trs = entry.translation ? splitSentences(entry.translation) : [];
-  var per = sents.length > 0 && trs.length === sents.length;   // 句数一致才逐句跟,不猜对齐
+  var per = trs.length === sents.length;        // 句数一致才逐句跟,不猜对齐(sents 已兜底非空)
   var mark = barSpeakerMark(entry);
   var color = speakerColor(entry.speaker);
   for (var i = 0; i < sents.length; i++){
