@@ -128,14 +128,20 @@ def finalize_session(session_dir, speakers_hint=None, force_tail=None,
     return job_id
 
 
-def recover_all(live_root):
-    """启动扫描 live/:非终态会话全部转正(无尾窗补跑),终态残目录与空壳清理。"""
+def recover_all(live_root, exclude=frozenset()):
+    """启动扫描 live/:非终态会话全部转正(无尾窗补跑),终态残目录与空壳清理。
+
+    exclude:会话 id(目录名)集合——运行期 recover_now 传入进程内活跃会话,
+    这些目录正被 LiveSession 写入(边录边落盘),读/删/转正都是越界,整体跳过;
+    启动期不传(注册表必空)。"""
     out = []
     if not os.path.isdir(live_root):
         return out
     for name in sorted(os.listdir(live_root)):
         d = os.path.join(live_root, name)
         if not os.path.isdir(d) or name.startswith('_'):
+            continue
+        if name in exclude:
             continue
         mp = os.path.join(d, META)
         if not os.path.isfile(mp):

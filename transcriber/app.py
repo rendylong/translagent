@@ -884,13 +884,25 @@ LIVE_MODEL_DIR = os.path.join(MODEL_DIR, 'streaming-zipformer-zh-en')       # �
 LIVE_JA_MODEL_DIR = os.path.join(MODEL_DIR, 'streaming-zipformer-ja')       # 多语言流式(含日文,spec 2026-10-24)
 
 
-def live_recover():
-    """启动时扫描 live/ 未终态会话目录 → 自动转正建 job(Task 9;真身 live_finalize)。"""
+def live_recover(exclude=()):
+    """扫描 live/ 未终态会话目录 → 自动转正建 job(真身 live_finalize.recover_all)。
+
+    启动期(main())不排除;运行期 /api/live/recover_now 传 live_session 的活跃
+    会话 id 集合——正在录制的会话目录正在被写入,绝不能拿去转正。返回 [(会话, job)]。"""
     import live_finalize
-    done = live_finalize.recover_all(LIVE_ROOT)
+    done = live_finalize.recover_all(LIVE_ROOT, exclude=frozenset(exclude))
     if done:
         print('live 恢复:%d 个未完成会话已转正:%s'
               % (len(done), ', '.join('%s→%s' % (s, j) for s, j in done)))
+    return done
+
+
+@app.post('/api/live/recover_now')
+def live_recover_now():
+    """运行期安全版 live_recover(spec WP6-4):转正失败寻回不要求重启服务;
+    幂等(已终态目录沿用既有跳过/清理逻辑);活跃会话目录排除。"""
+    done = live_recover(exclude=live_domain.active_session_ids())
+    return jsonify({'recovered': [jid for _sid, jid in done]})
 
 
 @app.get('/live')
