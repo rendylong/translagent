@@ -930,7 +930,8 @@ class WP5IdentityPins(unittest.TestCase):
     def test_rename_dual_path_endpoints(self):
         """chip 改名双路径(替换旧静默 PATCH):全局走 PATCH /api/speakers/<gid>
         + toast「已全局改名,相关会议文稿已更新」+ ensureSpeakers(true);
-        本任务走 PATCH /api/jobs/<id>(speaker_names)+ names[sp]=v 不动全局。"""
+        本任务走 PATCH /api/jobs/<id>(speaker_names)+ names[sp]=v 不动全局;
+        两条任务级路径(仅此会议/非 gid)失败都须 err toast 并止写 names(评审 Minor)。"""
         fn = _js_fn(self.src, 'showRenameConfirm')
         self.assertIsNotNone(fn, '缺 showRenameConfirm(双路径确认条)')
         self.assertIn("'/api/speakers/' + encodeURIComponent(gid)", fn)
@@ -939,6 +940,8 @@ class WP5IdentityPins(unittest.TestCase):
         self.assertIn("'/api/jobs/' + j.id", fn)
         self.assertIn('speaker_names', fn)
         self.assertIn('names[sp] = v', fn)
+        self.assertEqual(self.src.count("toast('改名失败:'"), 2,
+                         '「仅此会议」与非 gid 路径的 PATCH 失败都须 err toast')
 
     def test_rename_confirm_bar_copy_no_numbers(self):
         """确认条文案「「{名}」应用到哪些会议?」+ [应用到所有会议][仅此会议] 双按钮;
@@ -953,13 +956,154 @@ class WP5IdentityPins(unittest.TestCase):
 
     def test_rename_confirm_dedup_and_dismiss(self):
         """同 chip 连续 onchange 只挂一条:showRenameConfirm 入口先拆旧条;
-        点条外(document click)即弃;空白/改回原值时撤回在途确认条
-        (条上提议须与输入框现值一致,防「条提议旧名、框显示原名」的错位)。"""
+        拆条时机用 pointerdown(触发 change 的那次按压先于监听注册,同一
+        interaction 尾随 click 冒泡绝不误拆——评审 Important);空白/改回原值时
+        撤回在途确认条(条上提议须与输入框现值一致)。"""
         fn = _js_fn(self.src, 'showRenameConfirm')
         self.assertIn('dismissRenameBar()', fn)
-        self.assertIn("addEventListener('click'", fn)
+        self.assertIn("addEventListener('pointerdown'", fn,
+                      '拆条监听须挂 pointerdown(click 会被触发 change 的同一次点击秒拆)')
+        self.assertNotIn("addEventListener('click'", fn)
         self.assertIsNotNone(re.search(r'function dismissRenameBar\s*\(', self.src))
         self.assertIn('inp.value = cur; dismissRenameBar();', self.src)
+        fn_d = _js_fn(self.src, 'dismissRenameBar')
+        self.assertIn('t(false)', fn_d,
+                      '常规拆条不得还原输入框(再改名字换条时输入框持新 raw,'
+                      '还原会吃掉用户输入);还原仅由条外 pointerdown 的 tear(true) 负责')
+
+
+WP5_RENAME_VECTOR_MJS = r'''
+import { readFileSync } from 'node:fs';
+const html = readFileSync(process.argv[2], 'utf8');
+const sm = html.match(/<script>([\s\S]*?)<\/script>/);
+if (!sm) throw new Error('inline script missing');
+const src = sm[1];
+function fn(name){
+  const m = src.match(new RegExp('function ' + name + '\\s*\\('));
+  if (!m) throw new Error(name + ' missing');
+  const start = src.indexOf('{', m.index);
+  let depth = 0;
+  for (let i = start; i < src.length; i++){
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}'){ depth--; if (!depth) return src.slice(m.index, i + 1); }
+  }
+  throw new Error(name + ' braces');
+}
+// 桩面:document 只实现 createElement/addEventListener/removeEventListener/dispatch;
+// inp 档 .spkrow;displayName 恒回「老王」(当前显示名);fetch/toast/draw 全记录。
+const created = [];
+const makeEl = tag => ({ tag, className: '', innerHTML: '', removed: false, qs: {},
+  remove(){ this.removed = true; },
+  after(){}, contains(){ return false; },
+  querySelector(sel){ return this.qs[sel] || (this.qs[sel] = makeEl('button')); } });
+const DOC = {
+  listeners: {},
+  createElement(tag){ const el = makeEl(tag); created.push(el); return el; },
+  addEventListener(type, fn){ (this.listeners[type] || (this.listeners[type] = [])).push(fn); },
+  removeEventListener(type, fn){ const l = this.listeners[type] || [];
+    const i = l.indexOf(fn); if (i >= 0) l.splice(i, 1); },
+  dispatch(type, ev){ for (const fn of (this.listeners[type] || []).slice()) fn(ev); },
+};
+const INP = { value: '张三',
+  closest(sel){ return sel === '.spkrow' ? { parentNode: {}, after(){} } : null; } };
+const toasts = []; const fetches = []; const names = {};
+const counters = { draws: 0 };
+const fetchBox = { impl: async () => ({ ok: true, json: async () => ({}) }) };
+const bundle = ['var renameBar = null, renameBarTear = null;',
+  'var document = DOC;',
+  'var esc = s => String(s == null ? "" : s);',
+  'var displayName = () => "老王";',
+  'var toast = (m, k) => toasts.push({ m, k });',
+  'var ensureSpeakers = async () => ({});',
+  'var draw = () => { counters.draws++; };',
+  'var $ = () => ({ value: "" });',
+  'var fetch = async (u, o) => { fetches.push({ u, o }); return await fetchBox.impl(u, o); };',
+  fn('dismissRenameBar'), fn('showRenameConfirm'),
+  'let fail = 0;',
+  'const ok = (cond, what) => { if (!cond){ console.error("FAIL " + what); fail++; } };',
+  'const tick = () => new Promise(r => setTimeout(r, 10));',
+  // 事件序 1:输入框打字后点别处——按压(其 pointerdown 先于监听注册)→ blur→change
+  // 挂条 → 同一 interaction 的尾随 click 冒泡到 document。评审 Important:旧码挂
+  // click,条被这次点击秒拆,新名滞留输入框零落盘。
+  'showRenameConfirm({ id: "job1" }, INP, "gid1", "0", "张三");',
+  'const bar = created[created.length - 1];',
+  'const types = Object.keys(DOC.listeners).filter(t => DOC.listeners[t].length);',
+  'ok(types.length === 1 && types[0] === "pointerdown",',
+  '  "拆条监听只许挂 pointerdown 一条,got [" + types.join(",") + "]");',
+  'DOC.dispatch("click", { target: { id: "outside" } });',
+  'ok(!bar.removed, "尾随 click 不得拆确认条(点别处提交改名被秒拆=静默丢失)");',
+  'ok(INP.value === "张三", "尾随 click 不得改动输入框");',
+  // 事件序 2:条外 pointerdown → 拆条 + 输入框还原当前显示名(不留未落盘假值)
+  'DOC.dispatch("pointerdown", { target: { id: "outside" } });',
+  'ok(bar.removed, "条外 pointerdown 拆条");',
+  'ok(INP.value === "老王", "拆条还原输入框为当前显示名");',
+  'ok(Object.keys(DOC.listeners).every(t => DOC.listeners[t].length === 0), "监听随拆条移除");',
+  // [应用到所有会议]:拆条不还原输入框(持新名待落盘)+ 端点/toast/重绘
+  'created.length = 0;',
+  'showRenameConfirm({ id: "job1" }, INP, "gid1", "0", "张三");',
+  'const barAll = created[created.length - 1];',
+  'INP.value = "张三";',
+  'barAll.qs["[data-ra=\\"all\\"]"].onclick();',
+  'await tick();',
+  'ok(barAll.removed, "全局应用拆条");',
+  'ok(INP.value === "张三", "应用路径不还原输入框(持新名待落盘)");',
+  'ok(fetches.some(f => f.u === "/api/speakers/gid1" && f.o.method === "PATCH"), "全局端点");',
+  'ok(toasts.some(t => t.m === "已全局改名,相关会议文稿已更新"), "全局 toast 字面");',
+  'ok(counters.draws >= 1, "全局应用后重绘");',
+  // [仅此会议]:失败出 err toast + 还原 + 止写 names(评审 Minor);成功写 names + 重绘
+  'created.length = 0; toasts.length = 0; fetches.length = 0; counters.draws = 0;',
+  'showRenameConfirm({ id: "job1" }, INP, "gid1", "0", "张三");',
+  'const barHere = created[created.length - 1];',
+  'INP.value = "张三";',
+  'fetchBox.impl = async () => ({ ok: false, status: 500, json: async () => ({}) });',
+  'barHere.qs["[data-ra=\\"here\\"]"].onclick();',
+  'await tick();',
+  'ok(INP.value === "老王", "仅此会议失败:输入框还原当前显示名");',
+  'ok(toasts.some(t => t.k === "err"), "仅此会议失败出 err toast");',
+  'ok(!("0" in names), "仅此会议失败不得写 names");',
+  'ok(counters.draws === 0, "仅此会议失败不重绘");',
+  'fetchBox.impl = async () => ({ ok: true, json: async () => ({}) });',
+  'barHere.qs["[data-ra=\\"here\\"]"].onclick();',
+  'await tick();',
+  'ok(fetches.some(f => f.u === "/api/jobs/job1" && f.o.method === "PATCH" &&',
+  '  f.o.body.indexOf("speaker_names") >= 0), "本任务端点+speaker_names");',
+  'ok(names["0"] === "张三", "成功写 names[sp]");',
+  'ok(counters.draws >= 1, "本任务应用后重绘");',
+  'return fail;'].join('\n');
+// await 不能出现在普通 Function 体:用 AsyncFunction 构造器(WP6 向量同款协议)
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+const fail = await new AsyncFunction(
+  'DOC', 'INP', 'toasts', 'fetches', 'names', 'counters', 'fetchBox', 'created',
+  bundle)(DOC, INP, toasts, fetches, names, counters, fetchBox, created);
+console.log(fail === 0 ? 'WP5_RENAME_VECTOR_OK' : fail + ' FAILED');
+process.exit(fail === 0 ? 0 : 1);
+'''
+
+
+@unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
+class WP5RenameConfirmVector(unittest.TestCase):
+    """评审 Important 行为向量:确认条事件序真跑——「点别处提交改名」的
+    mousedown→blur→change→click 序列不得秒拆刚挂的确认条(拆条监听必须
+    pointerdown:触发 change 的按压先于注册),条外 pointerdown 拆条并还原
+    输入框;双按钮端点/toast/失败止写照断。静态钉只看得见监听类型字面,
+    事件序归属必须执行才知道(与 WP3/WP6 向量同款协议)。"""
+
+    def test_vector_green(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile('w', suffix='.mjs', delete=False,
+                                         encoding='utf-8') as f:
+            f.write(WP5_RENAME_VECTOR_MJS)
+            vec = f.name
+        try:
+            env = dict(os.environ, ELECTRON_RUN_AS_NODE='1')
+            proc = subprocess.run([str(ELECTRON), vec, str(INDEX)], env=env,
+                                  capture_output=True, timeout=60, cwd=str(BASE))
+            self.assertEqual(proc.returncode, 0, 'WP5 确认条事件序向量未全绿:%s%s'
+                             % (proc.stdout.decode('utf-8', 'replace'),
+                                proc.stderr.decode('utf-8', 'replace')[:600]))
+            self.assertIn('WP5_RENAME_VECTOR_OK', proc.stdout.decode('utf-8', 'replace'))
+        finally:
+            os.unlink(vec)
 
 
 WP5_COLOR_VECTOR_MJS = r'''

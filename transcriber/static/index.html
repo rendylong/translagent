@@ -1115,8 +1115,9 @@ async function load(quiet){
       }
       const v = raw || ('说话人' + (+sp + 1));
       inp.value = v;
-      await fetch('/api/jobs/' + j.id, {method:'PATCH',
+      const r = await fetch('/api/jobs/' + j.id, {method:'PATCH',
         headers:{'Content-Type':'application/json'}, body:JSON.stringify({speaker_names:{[sp]:v}})});
+      if(!r.ok){ inp.value = displayName(sp); toast('改名失败:' + ((await r.json()).error || r.status), 'err'); return; }
       names[sp] = v;
       draw($('#q').value.trim());
     };
@@ -1159,10 +1160,18 @@ function displayName(sp, n){
 }
 
 /* WP5 chip 改名双路径:gid 说话人的改动跨会议,应用范围不能静默决定。
-   同时刻全页至多一条确认条(再次 onchange 先拆旧条,防重复弹出);点条外即弃。 */
-let renameBar = null;
+   同时刻全页至多一条确认条(再次 onchange 先拆旧条,防重复弹出)。
+   拆条时机用 pointerdown:监听在 blur→change 里注册,而触发本次 change 的
+   那次按压的 pointerdown 已经发生——同一 interaction 尾随的 click 冒泡
+   不会再有新 pointerdown,绝不误拆刚挂上的确认条(评审 Important 修复;
+   旧版挂 click,「点别处提交改名」时条被同一次点击秒拆,新名滞留输入框零落盘,
+   下次 load 即回退)。 */
+let renameBarTear = null;
 function dismissRenameBar(){
-  if(renameBar){ renameBar.remove(); renameBar = null; }
+  const t = renameBarTear;
+  renameBarTear = null;
+  if(t) t(false);   // 常规拆条不碰输入框:再改名字换条时输入框持着新 raw,还原会吃掉用户输入;
+                    // 还原当前显示名仅由条外 pointerdown 的 tear(true) 负责
 }
 function showRenameConfirm(j, inp, gid, sp, v){
   /* 行内确认条复用库页 .suggest 样式族(不新建组件),挂在 .spkrow 之后;
@@ -1170,21 +1179,27 @@ function showRenameConfirm(j, inp, gid, sp, v){
   dismissRenameBar();
   const row = inp.closest('.spkrow');
   if(!row || !row.parentNode) return;          // 视图已被重绘(切任务/出库),确认失去对象
+  const cur = displayName(sp);
   const bar = document.createElement('div');
   bar.className = 'suggest';
   bar.innerHTML = '<div class="cap">「' + esc(v) + '」应用到哪些会议?</div>' +
     '<div class="acts"><button class="qbtn primary" data-ra="all">应用到所有会议</button>' +
     '<button class="qbtn" data-ra="here">仅此会议</button></div>';
   row.after(bar);
-  renameBar = bar;
-  const tear = () => { dismissRenameBar(); document.removeEventListener('click', onDoc); };
-  const onDoc = e => {
-    if(bar.contains(e.target) || e.target === inp) return;  // 条内点击交按钮;输入框再编辑走 onchange 换新条
-    tear();
+  const tear = restore => {
+    renameBarTear = null;
+    bar.remove();
+    document.removeEventListener('pointerdown', onDoc);
+    if(restore) inp.value = cur;               // 应用路径传 false:输入框保留新名待落盘
   };
-  document.addEventListener('click', onDoc);
+  const onDoc = e => {
+    if(bar.contains(e.target) || e.target === inp) return;  // 条内按压交按钮;输入框再编辑走 onchange 换新条
+    tear(true);
+  };
+  document.addEventListener('pointerdown', onDoc);
+  renameBarTear = tear;
   bar.querySelector('[data-ra="all"]').onclick = async () => {
-    tear();
+    tear(false);
     const r = await fetch('/api/speakers/' + encodeURIComponent(gid), {method:'PATCH',
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:v})});
     if(!r.ok){ toast('全局改名失败:' + ((await r.json()).error || r.status), 'err'); return; }
@@ -1193,9 +1208,10 @@ function showRenameConfirm(j, inp, gid, sp, v){
     draw($('#q').value.trim());
   };
   bar.querySelector('[data-ra="here"]').onclick = async () => {
-    tear();
-    await fetch('/api/jobs/' + j.id, {method:'PATCH',
+    tear(false);
+    const r = await fetch('/api/jobs/' + j.id, {method:'PATCH',
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({speaker_names:{[sp]:v}})});
+    if(!r.ok){ inp.value = cur; toast('改名失败:' + ((await r.json()).error || r.status), 'err'); return; }
     names[sp] = v;                           // 任务级覆盖 > 全局库(既有优先级,非缺陷)
     draw($('#q').value.trim());
   };
