@@ -164,5 +164,24 @@ class CancelCommGuardTest(PipelineFixture):
         self.assertIn(['kill', '424243'], cmds, 'whisper 进程仍须被 kill')
 
 
+class RestartMessageTest(PipelineFixture):
+    """7.15:重启中断文案与「用原音频重跑」口径一致——旧文案教用户删任务,
+    与 retry API 和前端「↻ 用原音频重跑」按钮打架(spec 7.15)。"""
+
+    def test_recover_message_points_to_retry(self):
+        jid = 'j-recover'
+        _make_job(self.jobs, jid, status='transcribing')   # 无 worker_pid:不走 ps/kill
+        app.recover_interrupted()
+        meta = app.read_meta(jid)
+        self.assertEqual(meta['status'], 'error')
+        self.assertEqual(meta['error'], '服务重启导致中断,可用原音频重跑')
+
+    def test_terminal_job_untouched(self):
+        """终态任务不被 recover_interrupted 改写(幂等护边,顺带钉住)。"""
+        _make_job(self.jobs, 'j-done', status='done', error=None)
+        app.recover_interrupted()
+        self.assertEqual(app.read_meta('j-done')['status'], 'done')
+
+
 if __name__ == '__main__':
     unittest.main()

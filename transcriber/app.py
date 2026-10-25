@@ -878,7 +878,7 @@ def recover_interrupted():
             r = subprocess.run(['ps', '-p', str(pid), '-o', 'comm='], capture_output=True, text=True)
             if 'whisper' in r.stdout:
                 subprocess.run(['kill', str(pid)])
-        meta.update(status='error', stage='失败', error='服务重启导致中断,请删除后重新上传')
+        meta.update(status='error', stage='失败', error='服务重启导致中断,可用原音频重跑')
         tmp = mp + '.tmp'
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(meta, f, ensure_ascii=False, indent=1)
