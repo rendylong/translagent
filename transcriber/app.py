@@ -898,6 +898,12 @@ def live_page():
     return send_from_directory(STATIC_DIR, 'live.html')
 
 
+@app.get('/api/live/state')
+def live_state_api():
+    """侧栏动作行红点查询(spec WP2-3):有无进行中会话与开始时间;真身在 live_session。"""
+    return jsonify(live_domain.live_state())
+
+
 @app.get('/live.js')
 def live_js():
     return send_from_directory(STATIC_DIR, 'live.js')

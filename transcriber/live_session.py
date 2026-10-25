@@ -62,6 +62,7 @@ WATCHDOG_PERIOD_S = 60                    # 看门狗巡检周期(秒;测试注�
 META = 'live_meta.json'
 AUDIO = 'live_audio.wav'
 JSONL = 'live_pass1.jsonl'
+ACTIVE_STATUSES = ('listening', 'stopping')   # 动作行红点口径:转正排空期管线仍被占
 
 _STOP = object()   # 音频写线程停止哨兵(区别于任何字节串)
 
@@ -73,6 +74,30 @@ def find_session(session_id):
     """按 id 找进程内会话;已转正回收或服务重启后的会话返回 None(恢复走 live_finalize)。"""
     with _SESSIONS_LOCK:
         return _SESSIONS.get(session_id)
+
+
+def active_session_ids():
+    """进程内活跃会话 id 快照(持 _SESSIONS_LOCK):recover_now 排除正在录制的目录。"""
+    with _SESSIONS_LOCK:
+        return set(_SESSIONS)
+
+
+def live_state():
+    """全局会话状态查询(GET /api/live/state 真身,spec WP2-3):侧栏动作行红点用。
+
+    active = 存在 status ∈ ACTIVE_STATUSES 的会话(转正排空期仍占管线,不提前熄灭);
+    多个活跃会话取 started_at 最大者;无会话返回全 None。注册表读写持 _SESSIONS_LOCK,
+    字段读取亦在锁内完成(CPython 属性读原子,此处取齐快照防跨锁不一致)。"""
+    best = None
+    with _SESSIONS_LOCK:
+        for s in _SESSIONS.values():
+            if s.status in ACTIVE_STATUSES and (best is None
+                                                or (s.started_at or 0) > (best.started_at or 0)):
+                best = s
+        if best is None:
+            return {'active': False, 'status': None, 'title': None, 'started_at': None}
+        return {'active': True, 'status': best.status, 'title': best.title,
+                'started_at': best.started_at}
 
 
 def _parse_lang(spec):
@@ -180,6 +205,7 @@ class LiveSession:
         self.model_dir = model_dir
         self.id = None
         self.status = 'idle'               # idle → listening → stopping(目录随后删除)
+        self.started_at = None             # start 时的 int(time.time());live_state 取最新会话用
         self.events = queue.Queue()        # WS 层直接消费的下行事件队列
         self._last_activity = time.monotonic()   # 看门狗判活:最近一次字节喂入或事件投递
         self._watchdog_idle_s = watchdog_idle_s
@@ -212,6 +238,11 @@ class LiveSession:
         # 转正
         self._finalizer = finalizer or self._default_finalizer
         self._finalizing = None
+
+    @property
+    def title(self):
+        """会话标题(start 前 _meta 未建,返回 None)。"""
+        return (self._meta or {}).get('title')
 
     # ---------- 生命周期(调用方线程) ----------
 
@@ -247,6 +278,7 @@ class LiveSession:
                       self._refiner, self._llm_stop),
                 name='live-llm-' + self.id, daemon=True)
             self._llm.start()
+        self.started_at = int(time.time())
         self.status = 'listening'
         self._watchdog = threading.Thread(target=self._run_watchdog,
                                           name='live-watchdog-' + self.id, daemon=True)
