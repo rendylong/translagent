@@ -8,6 +8,9 @@
    - audio_flush_done 上行消息当前被服务端忽略(前向兼容,补发完毕后照发);
    - stop → stop_ack →(引擎尾部冲刷的 pass1_final)→ stopped,随后服务端主动断开;
      stopped 自 Task 9 起携带 job_id(停止即建 job,可在工作台查看完整文稿);
+     WP6 起 stopped 带 reason 分态:成功只有 job_id;reason='empty' 空会话(无音频);
+     reason='finalize_failed' 文稿生成失败(另带 error 简要)——失败态经
+     POST /api/live/recover_now 运行期寻回(返回 {recovered:[job_id,…]}),不必重启服务;
    - start 阶段失败:服务端回 {'type':'error','message':'无法开始实时会话:…'} 并断开,
      前端收到后停止自动重连、显示错误(onError),不再无限重试;
    - resume 冲突(另一窗口 resume 同一会话):服务端接管语义——旧连接先收
@@ -48,6 +51,7 @@ var state = {
   mode: 'bar',
   title: '', speakers: 0, lang: 'zh>en',
   autoResume: false,        // 正在自动恢复上次的会话(撞上死会话时回表单而非报错卡)
+  recoverBusy: false,       // WP6「立即重试转正」进行中(防连点,配合按钮 disabled)
 };
 
 /* ---------- 流式降采样:16k AudioContext 构造失败时按实际捕获率逐块线性重采样 ---------- */
@@ -350,22 +354,95 @@ function onStopped(ev){
   $('stopChip').hidden = true;
   $('connChip').hidden = true;
   barChip(null);
-  $('endTitle').textContent = '录音已保存 · 正在生成完整文稿';
-  $('endSub').textContent = '完整文稿生成后会出现在工作台历史记录中(带「实时」标记)。';
-  if (ev.job_id){                                 // Task 9 起停止即建 job,可回工作台看完整文稿
-    $('endLink').hidden = false;
-    $('endLink').href = '/#' + ev.job_id;         // hash 深链:工作台启动读 hash 直接打开该任务
-    $('endLink').onclick = function(e){           // 悬浮窗内:聚焦主窗跳转并隐藏悬浮窗(使命已完成)
-      if (window.desk && window.desk.openMainJob){
-        e.preventDefault();
-        window.desk.openMainJob(ev.job_id);
-        if (window.desk.closeLiveCaption) window.desk.closeLiveCaption();
-      }
-    };
-  } else {
+  /* WP6 三分态:成功带 job_id(无 reason);空会话 reason='empty';其余(含
+     finalize_failed)落失败态。旧服务端 stopped 无 reason 字段、两键皆无——
+     保守按失败态渲染给寻回文案,绝不误报「没有录到语音」。 */
+  if (ev.job_id){
+    showEndSuccess(ev.job_id);
+  } else if (ev.reason === 'empty'){
+    $('endRetry').hidden = true;
+    $('endRetryNote').hidden = true;
+    $('endTitle').textContent = '本場没有录到语音';
+    $('endSub').textContent = '会话已结束,未生成文稿。';
     $('endLink').hidden = true;
+    $('endwrap').hidden = false;
+  } else {
+    showEndFailure(ev.error);
   }
+}
+
+function showEndSuccess(jobId){
+  /* 成功态(onStopped 成功分支与「立即重试转正」寻回成功共用,WP6):标题「文稿已生成」,
+     endLink 升主按钮(.elink.primary,复用 .ego 主按钮视觉),「开始新会话」降 ghost。
+     深链:web 开新标签(本页停在结束卡,/live 内导航会开出双工作台);桌面悬浮窗内
+     聚焦主窗跳转并隐藏悬浮窗(路径不变)。 */
+  $('endRetry').hidden = true;
+  $('endRetryNote').hidden = true;
+  $('endTitle').textContent = '文稿已生成';
+  $('endSub').textContent = '文稿已存入工作台历史记录(带「实时」标记)。';
+  var link = $('endLink');
+  link.hidden = false;
+  link.classList.add('primary');
+  link.href = '/#' + jobId;
+  link.onclick = function(e){
+    e.preventDefault();
+    if (window.desk && window.desk.openMainJob){    // 悬浮窗内:聚焦主窗跳转(使命已完成)
+      window.desk.openMainJob(jobId);
+      if (window.desk.closeLiveCaption) window.desk.closeLiveCaption();
+      return;
+    }
+    window.open('/#' + jobId, '_blank');            // web:新标签打开工作台文稿
+  };
+  $('endNew').classList.add('ghost');
   $('endwrap').hidden = false;
+}
+
+function showEndFailure(errorBrief){
+  /* 失败态(finalize_failed,或旧服务端无 reason 无 job_id 的兜底):error 为服务端
+     打码简要,缺省只给寻回文案。「立即重试转正」在此态亮出,详见 retryFinalize。 */
+  $('endRetry').hidden = false;
+  $('endRetry').disabled = false;
+  $('endRetry').textContent = '立即重试转正';
+  $('endRetryNote').hidden = true;
+  $('endTitle').textContent = '文稿生成失败,录音已保留';
+  $('endSub').textContent = (errorBrief ? '原因:' + errorBrief + '。' : '')
+    + '录音仍在服务端,重启转写服务后会自动转为任务(历史记录带「实时」标记)。';
+  $('endLink').hidden = true;
+  $('endwrap').hidden = false;
+}
+
+function retryFinalize(){
+  /* 「立即重试转正」(WP6-4):运行期调 /api/live/recover_now 寻回失败录音,不必
+     重启服务。有新 job → 原位转成功态(showEndSuccess,深链可用);空数组/请求失败
+     → 就地提示(endRetryNote),保持失败态,不弹整卡错误。recoverBusy + disabled
+     双保险防连点(recover_now 会扫全部死目录,连点必然重复等待)。 */
+  if (state.recoverBusy) return;
+  state.recoverBusy = true;
+  var btn = $('endRetry');
+  btn.disabled = true;
+  btn.textContent = '正在寻回…';
+  $('endRetryNote').hidden = true;
+  fetch('/api/live/recover_now', {method: 'POST'}).then(function(r){
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(data){
+    var ids = (data && data.recovered) || [];
+    if (!ids.length){
+      var err = new Error('暂未寻回到可转为任务的录音,可稍后重试或重启转写服务。');
+      err.plain = true;                             // 可读话术直接上屏,不加「重试失败:」前缀
+      throw err;
+    }
+    showEndSuccess(ids[0]);
+  }).catch(function(e){
+    btn.disabled = false;                           // 保持失败态,按钮还原可再点
+    btn.textContent = '立即重试转正';
+    $('endRetryNote').textContent = (e && e.plain)
+      ? e.message
+      : '重试失败:' + ((e && e.message) || '未知错误');
+    $('endRetryNote').hidden = false;
+  }).then(function(){
+    state.recoverBusy = false;                      // 成功/失败都清旗标(catch 后必经)
+  });
 }
 
 function onTakenOver(){
@@ -1210,6 +1287,7 @@ function init(){
     pop.hidden = !pop.hidden;
   });
   $('endNew').addEventListener('click', function(){ location.href = location.pathname; });
+  $('endRetry').addEventListener('click', retryFinalize);   // WP6 失败态寻回(态机见 retryFinalize)
   // 关闭:桌面端隐藏悬浮窗(会话已结束,重开入口仍在主界面/Dock);网页端回工作台
   $('endClose').addEventListener('click', function(){
     if (window.desk && window.desk.closeLiveCaption){

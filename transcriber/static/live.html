@@ -247,6 +247,15 @@
     padding:7px 18px;
   }
   .ecard .elink:hover{background:rgba(138,180,248,.1)}
+  /* WP6 成功态:endLink 升主按钮——复用 .ego 的主按钮视觉(浅底深字 650,块级大按钮)。
+     a 元素没有按钮的默认居中,用 flex 居中;primary 类由 JS 在成功分支添加 */
+  .ecard .elink.primary{
+    display:flex;align-items:center;justify-content:center;
+    margin:18px auto 0;height:38px;min-width:180px;padding:0 18px;
+    border:0;border-radius:9px;background:#e9ebef;color:#14171c;
+    font-size:14px;font-weight:650;text-decoration:none;
+  }
+  .ecard .elink.primary:hover{background:#fff;color:#14171c}
   .ecard .ego{
     display:block;margin:18px auto 0;height:38px;min-width:180px;border:0;border-radius:9px;
     background:#e9ebef;color:#14171c;font-size:14px;font-weight:650;cursor:pointer;
@@ -363,11 +372,16 @@
       <svg width="22" height="22" viewBox="0 0 22 22"><path d="M4.5 11.5l4.2 4.2 8.8-9.4" fill="none"
         stroke="#34c759" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
-    <div class="etitle" id="endTitle">录音已保存 · 正在生成完整文稿</div>
-    <p class="esub" id="endSub">完整文稿生成后可在转录工作台查看。</p>
+    <!-- WP6 三分态:标题/副文案/按钮显隐由 onStopped 三分支渲染(showEndSuccess/
+         showEndFailure),此处只放占位(每次亮卡前必被覆写);#endRetry/#endRetryNote
+         仅失败态亮出,寻回态机见 live.js retryFinalize -->
+    <div class="etitle" id="endTitle">会话已结束</div>
+    <p class="esub" id="endSub"></p>
     <a class="elink" id="endLink" hidden href="/">打开文稿</a>
     <button class="ego" id="endNew" type="button">开始新会话</button>
+    <button class="ego ghost" id="endRetry" type="button" hidden>立即重试转正</button>
     <button class="ego ghost" id="endClose" type="button">关闭</button>
+    <p class="err" id="endRetryNote" hidden></p>
   </div>
 </div>
 
