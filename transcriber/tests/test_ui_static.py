@@ -1472,9 +1472,139 @@ class WP7LiveFastFixPins(unittest.TestCase):
         self.assertIsNone(pattern.search(self.html), 'live.html </b> 后不得紧跟逗号/句号')
         self.assertIsNone(pattern.search(self.js), 'live.js </b> 后不得紧跟逗号/句号')
 
+    # ---- 评审追加:页内重开的跨场账本残留 ----
+    def test_begin_session_resets_ledger_before_lock(self):
+        """beginSession 须在锁闸之前调 resetLedger()(与 reconnectTries/disarm 同族的
+        页内重开残留复位):onStopped/onTakenOver 都不清 doc/partial,而 goBtn 不刷新
+        直接重开是受支持路径——不清则上一场 partial 连呼吸 caret 与旧 doc 条目经
+        beginSession→enterLiveUI→setMode→fullRender 带进新会话开场。"""
+        body = _js_fn(self.js, 'beginSession')
+        self.assertIsNotNone(body, 'beginSession 缺失')
+        self.assertIn('resetLedger()', body, 'beginSession 缺账本复位')
+        self.assertLess(body.index('resetLedger()'), body.index('acquireLiveLock()'),
+                        '账本复位须在锁闸之前(占用路径同样不得携带旧账本)')
+        fn = _js_fn(self.js, 'resetLedger')
+        self.assertIsNotNone(fn, 'resetLedger 缺失')
+        # 摘 DOM 在清数组之前(fullRender 只遍历 doc:清了数组不摘 el/bel,旧行照样滞留)
+        self.assertLess(fn.index('e.el.remove()'), fn.index('state.doc = []'),
+                        '须先逐条摘 el/bel 再清数组')
+        self.assertIn('state.partial', fn, 'partial 须复位(旧文本连呼吸 caret 不得带进新场)')
+        self.assertIn('state.entryId', fn, '账本计数器须归零(每场从 0 起)')
+        self.assertIn('state.paused', fn, 'paused 须复位:它门控 setMode→fullRender 与 '
+                      'renderActive,不复位则本次全部复位被跳过(暂停中被接管的路径)')
+
+
+WP7_REOPEN_LEDGER_VECTOR_MJS = r'''
+import { readFileSync } from 'node:fs';
+const src = readFileSync(process.argv[2], 'utf8');
+function fn(name){
+  const m = src.match(new RegExp('function ' + name + '\\s*\\('));
+  if (!m) throw new Error(name + ' missing');
+  const start = src.indexOf('{', m.index);
+  let depth = 0;
+  for (let i = start; i < src.length; i++){
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}'){ depth--; if (!depth) return src.slice(m.index, i + 1); }
+  }
+  throw new Error(name + ' braces');
+}
+// 桩面(与 WP3TakenOverReopenVector 同族):真跑 beginSession→enterLiveUI→setMode→
+// fullRender→renderActive 全链,锁/采集/连接/setPhase/startTimer/disarm 桩掉;
+// $ 按 id 缓存,classList 带真 toggle(7.9 .typing 断言要靠它)。
+// 预置「上一场最恶劣残留」:两条带 el/bel 的旧 doc 条目、旧 partial、entryId=5、
+// 暂停中(paused=true + pauseChip 在场 + 按钮文案「恢复显示」)。
+const els = {};
+const removed = [];
+const makeEl = id => ({ id, hidden: false, textContent: '', value: '', disabled: false,
+  scrollHeight: 100, scrollTop: 0, clientHeight: 100,
+  remove(){ this.removed = true; removed.push(id); },
+  insertBefore(){}, appendChild(){},
+  classList: { _s: new Set(), add(c){ this._s.add(c); }, remove(c){ this._s.delete(c); },
+    contains(c){ return this._s.has(c); },
+    toggle(c, f){ if (f) this._s.add(c); else this._s.delete(c); } } });
+const $ = id => (els[id] || (els[id] = makeEl(id)));
+const store = {};
+const LS = { getItem: k => (k in store ? store[k] : null),
+  setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
+// 上一场残留
+const stale = { el: makeEl('stale.el'), bel: makeEl('stale.bel') };
+els['pauseChip'] = makeEl('pauseChip');
+$('barPause').textContent = '恢复显示';
+// 上一场渲染态预置(防空真通过):空态已藏、partial 已写、typing 已挂(7.9 呼吸中)
+$('barEmpty').hidden = true; $('plistEmpty').hidden = true;
+$('barPartial').textContent = '上一场partial';
+$('barPartialRow').classList.add('typing'); $('activeLine').classList.add('typing');
+const bundle = ['var state = {phase:"idle", autoResume:false, sessionId:null, lastSeq:0,',
+  '  userStop:false, reconnectTries:9, reconnectTimer:0, reconnectFinal:true, lock:null,',
+  '  doc:[{el:stale.el, bel:stale.bel},{el:stale.el, bel:stale.bel}], partial:"上一场partial",',
+  '  entryId:5, paused:true, title:"", speakers:0, lang:"zh>zh", startedAt:0, mode:"bar",',
+  '  capture:null, pending:[], pendingBytes:0, droppedSec:0, batch:[], batchN:0};',
+  'var removedBox = removed;',
+  'var acquireLiveLock = () => Promise.resolve({release(){}});',
+  'var startCapture = () => Promise.resolve();',
+  'var connect = () => {};',
+  'var setPhase = function(p){ state.phase = p; };',
+  'var disarmReconnectChip = function(){};',
+  'var startTimer = function(){}; var stopTimer = function(){};',
+  fn('currentLangSpec'), fn('autoScroll'), fn('renderActive'), fn('fullRender'),
+  fn('setMode'), fn('enterLiveUI'), fn('resetLedger'), fn('beginSession'),
+  '$("fTitle").value = "新一场"; $("fSpeakers").value = "2";',
+  '$("fSrc").value = "zh"; $("fTgt").value = "";',
+  'beginSession();',
+  'await new Promise(r => setTimeout(r, 20));',   // 锁 promise → startCapture promise 两拍放行
+  'return state;'].join('\n');
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+const endState = await new AsyncFunction('els', 'removed', 'localStorage', 'stale', '$',
+  bundle)(els, removed, LS, stale, $);
+let fail = 0;
+const ok = (cond, what) => { if (!cond){ console.error('FAIL ' + what); fail++; } };
+ok(stale.el.removed && stale.bel.removed, '旧场条目的 el/bel 未摘除(清数组不摘 DOM,旧行滞留账本)');
+ok(endState.doc.length === 0, 'doc 未清空:旧条目带进新场(insertEntry 排序/去重全按每场 t0,跨场必错)');
+ok(endState.partial === '', 'partial 未清空:旧文本连呼吸 caret 带进新会话开场');
+ok(endState.entryId === 0, 'entryId 未归零');
+ok(endState.paused === false, 'paused 未复位:它门控 setMode→fullRender,本次全部复位会被跳过');
+ok(els['pauseChip'].removed, 'pauseChip 滞留 barState');
+ok(els['barPause'].textContent === '暂停显示', '暂停按钮文案未还原');
+ok(els['barPartial'].textContent === '', '新场开场 renderActive 未把 partial 行写空');
+ok(!els['barPartialRow'].classList.contains('typing') && !els['activeLine'].classList.contains('typing'),
+  '.typing 未随空 partial 摘除(7.9 呼吸 caret 会在新场开场空转)');
+ok(els['barEmpty'].hidden === false, '空态「等待语音…」未回归');
+ok(els['plistEmpty'].hidden === false, '面板空态未回归');
+ok(els['activeLine'].hidden === true, '面板 partial 行未隐藏');
+ok(els['panelTitle'].textContent === '新一场', '新场标题未上面板');
+ok(endState.phase === 'connecting' && endState.reconnectTries === 0,
+  'beginSession 既有残留复位(reconnectTries)不得回退');
+console.log(fail === 0 ? 'WP7_REOPEN_LEDGER_VECTOR_OK' : fail + ' FAILED');
+process.exit(fail === 0 ? 0 : 1);
+'''
+
 
 @unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
-class ApplyRouteVectors(unittest.TestCase):
+class WP7ReopenLedgerVector(unittest.TestCase):
+    """评审追加行为向量:页内重开(被接管/结束→表单→goBtn,不刷新)后账本与 partial
+    干净——beginSession→enterLiveUI→setMode→fullRender 全链真跑,断言旧场 el/bel 已摘、
+    doc/partial/entryId/paused 复位、空态回归、.typing 摘除。静态钉只看得见「调用了
+    resetLedger」,复位齐不齐(尤其摘 DOM 与 paused 门控)必须执行才知道。"""
+
+    def test_vector_green(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile('w', suffix='.mjs', delete=False,
+                                         encoding='utf-8') as f:
+            f.write(WP7_REOPEN_LEDGER_VECTOR_MJS)
+            vec = f.name
+        try:
+            env = dict(os.environ, ELECTRON_RUN_AS_NODE='1')
+            proc = subprocess.run([str(ELECTRON), vec, str(LIVE_JS)], env=env,
+                                  capture_output=True, timeout=60, cwd=str(BASE))
+            self.assertEqual(proc.returncode, 0, '页内重开账本复位向量未全绿:%s%s'
+                             % (proc.stdout.decode('utf-8', 'replace'),
+                                proc.stderr.decode('utf-8', 'replace')[:600]))
+            self.assertIn('WP7_REOPEN_LEDGER_VECTOR_OK', proc.stdout.decode('utf-8', 'replace'))
+        finally:
+            os.unlink(vec)
+
+
+
     """applyRoute 纯函数断言向量(实际向量与提取逻辑在 test_ui_route_vectors.mjs,
     与 splitSentences 先例同款:花括号配平抠函数、ELECTRON_RUN_AS_NODE 执行)。"""
 

@@ -894,6 +894,21 @@ function fullRender(){                            // 暂停恢复/形态切换�
   autoScroll($('plist')); autoScroll($('barLog'));
 }
 
+function resetLedger(){                           // 页内重开的账本复位(beginSession 调):goBtn 不
+  state.doc.forEach(function(e){                  // 刷新直接重开是受支持路径,onStopped/onTakenOver
+    if (e.el) e.el.remove();                      // 都不清账本——旧场 partial 连呼吸 caret、旧 doc
+    if (e.bel) e.bel.remove();                    // 条目会经 enterLiveUI→fullRender 带进新会话开场。
+  });                                             // 摘 DOM 必须在清数组前:fullRender 只遍历 doc,
+  state.doc = [];                                 // 清了数组旧行照样滞留,清了数组不摘 DOM 同样滞留
+  state.partial = '';
+  state.entryId = 0;                              // 账本计数器每场归零(entry.id 当前无消费者,卫生起见)
+  if (state.paused){                              // paused 门控 setMode→fullRender 与 renderActive:
+    state.paused = false;                         // 暂停中被结束/接管的页面不复位它,上面全部复位
+    var pc = $('pauseChip'); if (pc) pc.remove(); // 都会被 fullRender 跳过;chip/按钮文案一并还原
+    $('barPause').textContent = '暂停显示';
+  }
+}
+
 function autoScroll(box){                         // 距底 ≤90px 时跟随新内容;用户上滚时不打扰
   box = box || $('plist');
   if (box.scrollHeight - box.scrollTop - box.clientHeight < 90)
@@ -1181,7 +1196,8 @@ function beginSession(){
   state.lang = currentLangSpec();
   state.reconnectTries = 0;                       // 页内重开:上一场残留的重连计数/终态清零(7.14)
   disarmReconnectChip();
-  setPhase('connecting');
+  resetLedger();                                  // 页内重开:上一场账本/partial/paused 一并复位
+  setPhase('connecting');                         // (评审追加,与上面同族——锁闸前,占用路径同样不带旧账本)
   acquireLiveLock().then(function(handle){        // WP3:先过锁闸,占用路径不碰 getUserMedia
     if (!handle){
       lockBusyToForm(false);
