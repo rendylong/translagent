@@ -425,6 +425,8 @@ def run_diarization(wav, num_speakers, progress_cb):
     try:
         res = sd.process(samples, callback=progress_cb)
     except TypeError:
+        # 旧 sherpa 无 callback 参数回落到此:回调内放弃不可用,
+        # 放弃仍在阶段边界生效(process_job 里的 cancel_requested 检查)
         res = sd.process(samples)
     return [(s.start, s.end, s.speaker) for s in res.sort_by_start_time()]
 
@@ -461,7 +463,12 @@ def process_job(job_id):
             write_meta(job_id, status='diarizing', stage='说话人识别', progress=86)
 
             def on_diar_progress(done, total):
+                # sherpa-onnx 2.0.0 忽略回调返回值(eng-review 实测,docstring 失实),
+                # 回调内 raise 才是真中止:cancel_requested 置位后首次回调即抛出,
+                # 秒级传播出 sd.process,实例无损可复用
                 write_meta(job_id, progress=86 + int(done * 12 / max(total, 1)))
+                if read_meta(job_id).get('cancel_requested'):
+                    raise RuntimeError('已放弃')
                 return True
 
             dsegs = run_diarization(wav, nspeakers, on_diar_progress)
