@@ -42,7 +42,7 @@
   .brand .bs{font-size:11.5px;color:var(--faint);line-height:1.4}
   .sec{padding:14px 20px 6px;font-size:12.5px;color:var(--faint)}
   .pane-wrap{padding:0 14px 6px;position:relative}
-  .tabs{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid var(--border);
+  .tabs{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border);
     border-radius:8px;overflow:hidden;background:var(--surface)}
   .tabs button{height:36px;border:0;background:none;cursor:pointer;font-size:13.5px;
     color:var(--muted);display:flex;align-items:center;justify-content:center;gap:7px}
@@ -133,7 +133,6 @@
   .pill{font-size:11px;padding:1px 7px;border-radius:4px;white-space:nowrap;flex:none}
   .pill.err{color:var(--pill-neg-ink);background:var(--pill-neg-bg)}
   .pill.live{color:var(--sp0-ink);background:var(--sp0-bg)}
-  .live-entry .live-desc{font-size:13px;color:var(--muted);line-height:1.6;margin:2px 0 2px}
   .jdel{position:absolute;right:6px;top:8px;border:0;background:none;color:var(--faint);cursor:pointer;
     opacity:0;padding:3px;border-radius:5px;display:flex}
   .job:hover .jdel,.jdel:focus-visible{opacity:1}
@@ -146,6 +145,17 @@
   .side-foot:hover{background:#eceef0}
   .side-foot.on{background:#e4e7ea;color:var(--text);font-weight:600}
   .side-foot .cnt{margin-left:auto;font-size:11px;color:var(--faint)}
+
+  /* 实时字幕动作行(新任务卡下方):入口是动作行而非 Tab——字幕「不在本页发生」,
+     形态与行为一致;状态点空闲灰/进行中红(呼吸,复用 rec-blink),整行可点 */
+  .live-row{margin:2px 14px 0;display:flex;align-items:center;gap:8px;
+    border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;
+    padding:8px 11px;font-size:12.5px;color:var(--muted);text-align:left;width:calc(100% - 28px)}
+  .live-row:hover{border-color:#a9b0b9;background:#fafbfc}
+  .live-row .dot{width:8px;height:8px;border-radius:50%;background:#c4cad1;flex:none;transition:background .12s}
+  .live-row.on{color:var(--text)}
+  .live-row.on .dot{background:var(--negative);animation:rec-blink 1.6s ease-in-out infinite}
+  .live-row .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* ---------- 主区 ---------- */
   .main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
@@ -351,9 +361,6 @@
         <button id="tab-rec" role="tab" aria-selected="false" aria-controls="pane-record" type="button">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="5.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M3 8a5 5 0 0 0 10 0M8 13v1.5"/></svg>
           现场录制</button>
-        <button id="tab-live" role="tab" aria-selected="false" aria-controls="pane-live" type="button">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M4 8h2.5M9 8h3M4 10.5h7"/></svg>
-          实时字幕</button>
       </div>
 
       <!-- 上传面板 -->
@@ -419,17 +426,14 @@
           </div>
         </div>
       </div>
-
-      <!-- 实时字幕入口面板 -->
-      <div class="pane" id="pane-live" role="tabpanel" aria-labelledby="tab-live" hidden>
-        <div class="live-entry">
-          <p class="live-desc">会议现场逐句上屏:识别、说话人、修正与翻译即时显示,边开会边看字幕。</p>
-          <button class="go live-go" id="live-go" type="button">开始实时字幕</button>
-          <div class="setrow">停止后自动生成<b>完整文稿</b>,存入下方历史记录(带「实时」标记)。</div>
-          <div class="hint">桌面端以置顶悬浮窗显示,可拖右下角调整大小;网页端在新标签页打开。全程本机处理。</div>
-        </div>
-      </div>
     </div>
+
+    <!-- 实时字幕动作行:字幕「不在本页发生」,故为常驻动作行而非 Tab;
+         状态点与文案由 /api/live/state 驱动(独立慢定时器),整行可点 -->
+    <button class="live-row" id="liveRow" type="button" title="打开实时字幕悬浮窗或新标签页">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="txt" id="liveRowText" aria-live="polite">实时字幕 · 开悬浮窗或新标签页</span>
+    </button>
 
     <div class="sec">历史记录</div>
     <div class="hist" id="hist"></div>
@@ -538,7 +542,9 @@ syncSettingsUI();
 
 /* ---------- 入口 Tab 与侧栏激活态 ---------- */
 const isDesktop = !!(window.desk && window.desk.isDesktop);
-const TAB_LIST = [['up','upload'], ['rec','record'], ['live','live']];
+/* 实时字幕不是 Tab(WP2):字幕「不在本页发生」,入口是下方 #liveRow 动作行,
+   Tab 条只保留「往本页投喂任务」的两类 */
+const TAB_LIST = [['up','upload'], ['rec','record']];
 /* 侧栏 chrome 随视图同步:说话人库视图时 libbtn 高亮、三个 Tab 全部退出选中
    (此前 .side-foot.on 是死样式,JS 从未加过;离开库视图反向恢复 curTab) */
 function syncChrome(){
@@ -558,11 +564,11 @@ function setTab(which){
 }
 $('#tab-up').onclick = () => { setTab('upload'); if(view && view.type === 'lib') location.hash = '#'; };
 $('#tab-rec').onclick = () => { setTab('record'); if(view && view.type === 'lib') location.hash = '#'; };
-$('#tab-live').onclick = () => { setTab('live'); if(view && view.type === 'lib') location.hash = '#'; };
 if(isDesktop) setTab('record');   // 桌面客户端以录制为主任务
 
-/* 实时字幕入口:桌面端拉起/聚焦悬浮窗,网页端新标签页打开独立页 */
-$('#live-go').onclick = () => {
+/* 实时字幕动作行:桌面端拉起/聚焦悬浮窗(旧客户端降级 toast),网页端命名 target
+   开 /live?mode=panel——重复点击聚焦同一标签,防双开(第二个标签 resume 即会话劫持) */
+$('#liveRow').onclick = () => {
   if(isDesktop){
     if(window.desk.openLiveCaption){
       try{ window.desk.openLiveCaption(); }catch(e){ toast('拉起悬浮窗失败:' + e.message, 'err'); }
@@ -571,8 +577,39 @@ $('#live-go').onclick = () => {
     toast('客户端版本过旧,请退出并重新打开「会议录制工作台」以使用实时字幕', 'err');
     return;
   }
-  window.open('/live?mode=panel', '_blank');
+  window.open('/live?mode=panel', 'livePanel');
 };
+
+/* 字幕会话状态(Task 1 契约):active 涵盖 listening+stopping——转正排空期管线
+   仍被占,红点不提前熄灭。独立常驻慢定时器驱动,与任务轮询(pollTimer,仅在存在
+   running 任务时才创建)是两条路径:无会话时也照跑维持空闲态,请求失败静默保持
+   上次状态;页面不可见时暂停拉取,可见即刷。 */
+let liveState = {active:false, started_at:null};
+function liveHHMM(ts){
+  const d = new Date((ts || 0) * 1000);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function renderLiveRow(){
+  const on = !!liveState.active;
+  const txt = !on ? '实时字幕 · 开悬浮窗或新标签页'
+    : (liveState.started_at ? '字幕进行中 · 已开 ' + liveHHMM(liveState.started_at) : '字幕进行中');
+  $('#liveRow').classList.toggle('on', on);
+  const t = $('#liveRowText');
+  if(t.textContent !== txt) t.textContent = txt;   // aria-live:仅真变化才改 DOM,静默期不重复播报
+}
+async function refreshLiveState(){
+  try{
+    const r = await fetch('/api/live/state');
+    if(!r.ok) return;
+    const j = await r.json();
+    liveState = {active: !!j.active, started_at: j.started_at};
+    renderLiveRow();
+  }catch(e){ /* 服务不可达:保持上次状态 */ }
+}
+function liveTick(){ if(!document.hidden) refreshLiveState(); }
+setInterval(liveTick, 12000);
+document.addEventListener('visibilitychange', liveTick);
+refreshLiveState();   // 启动即拉一次,初始态不靠猜
 
 /* ---------- 上传 ---------- */
 const drop = $('#drop'), fileEl = $('#file');
@@ -835,6 +872,7 @@ async function refresh(){
   if(!cnt && pollTimer){ clearInterval(pollTimer); pollTimer = null; }
 }
 async function tick(){
+  refreshLiveState();   // 任务轮询期顺带刷字幕会话状态(不 await,独立轻路径;2.5s 节奏更快看到红点切换)
   await refresh();
   if(!view || view.type !== 'job') return;
   const j = jobs.find(x => x.id === view.id);
