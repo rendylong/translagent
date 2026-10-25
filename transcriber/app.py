@@ -910,13 +910,9 @@ def live_js():
 
 
 def live_start_brief(e):
-    """live start 失败的下行文案:异常类名 + 首行简述;路径与疑似密钥一律打码,
-    不得把本机信息(websocket 帧可直接读到)泄给页面。"""
-    s = str(e).strip()
-    brief = s.splitlines()[0][:100] if s else ''
-    brief = re.sub(r'(?:[A-Za-z]:)?[/\\]\S*', '[路径]', brief)
-    brief = re.sub(r'sk-[A-Za-z0-9_-]{8,}', '[密钥]', brief)
-    return '%s:%s' % (type(e).__name__, brief) if brief else type(e).__name__
+    """live start 失败的下行文案:打码规则真身在 live_session.error_brief
+    (start 失败与 finalize_failed 的 stopped.error 同源,勿在此另写正则)。"""
+    return live_domain.error_brief(e)
 
 
 @sock.route('/ws/live')

@@ -39,6 +39,7 @@ stopped / gone / 连续 send 失败任一即退出(转正异步期间对端断�
 import json
 import os
 import queue
+import re
 import threading
 import time
 import uuid
@@ -98,6 +99,17 @@ def live_state():
             return {'active': False, 'status': None, 'title': None, 'started_at': None}
         return {'active': True, 'status': best.status, 'title': best.title,
                 'started_at': best.started_at}
+
+
+def error_brief(e):
+    """异常 → 单行简要(WS 下行安全):只取首行、截 100 字符,unix/win 路径与
+    sk- 密钥一律打码——websocket 帧页面可直接读到,不得泄露本机信息。
+    app.live_start_brief(start 失败)与本模块 finalize_failed 的 stopped.error 同源。"""
+    s = str(e).strip()
+    brief = s.splitlines()[0][:100] if s else ''
+    brief = re.sub(r'(?:[A-Za-z]:)?[/\\]\S*', '[路径]', brief)
+    brief = re.sub(r'sk-[A-Za-z0-9_-]{8,}', '[密钥]', brief)
+    return '%s:%s' % (type(e).__name__, brief) if brief else type(e).__name__
 
 
 def _parse_lang(spec):
@@ -375,13 +387,15 @@ class LiveSession:
             if self._bytes_fed == 0:           # 空会话:无音频可转正,不建 job 直接清目录
                 import shutil
                 shutil.rmtree(self._dir, ignore_errors=True)
-                self._emit({'type': 'stopped'})
+                self._emit({'type': 'stopped', 'reason': 'empty'})
                 return
             job_id = self._finalizer(self._dir, speakers_hint=self._meta.get('speakers'))
             self._emit({'type': 'stopped', 'job_id': job_id})
         except Exception as e:  # noqa: BLE001 转正失败也要让客户端收尾:error 可见 + stopped(无 job_id)
             self._emit({'type': 'error', 'message': '停止转正失败:%s' % e})
-            self._emit({'type': 'stopped'})   # 无 job_id;音频留在 live/ 由重启恢复转正
+            # reason 让前端分态渲染结束卡(失败态不再报喜);error 为打码简要
+            self._emit({'type': 'stopped', 'reason': 'finalize_failed',
+                        'error': error_brief(e)})   # 无 job_id;音频留在 live/ 由重启恢复转正
         finally:
             self._reap()
 
