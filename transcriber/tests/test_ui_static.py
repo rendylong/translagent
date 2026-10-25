@@ -1249,6 +1249,58 @@ class WP7IndexFastFixPins(unittest.TestCase):
                          '两处进度条都须 600ms linear')
         self.assertNotIn('.8s', self.src, '.8s 迟滞残留')
 
+    # ---- 7.13 轮询不再全量重建 ----
+    def test_7_13_signature_fn_and_fields(self):
+        """签名函数在位,且字段覆盖行渲染的全部输入;title 必须在签名内——
+        历史项改名属结构变化走全量重建,不得被就地更新路径吞掉。"""
+        self.assertRegex(self.src, r'function jobsSignature\s*\(')
+        sig = _js_fn(self.src, 'jobSig')
+        self.assertIsNotNone(sig, 'jobSig 单行签名函数缺失')
+        for f in ('j.id', 'j.status', 'j.stage', 'j.progress', 'j.queue_pos',
+                  'j.running', 'j.title'):
+            self.assertIn(f, sig, '签名缺字段 %s' % f)
+
+    def test_7_13_refresh_no_change_early_return(self):
+        """refresh 先算签名;无变化直接 return(零 DOM 写,armConfirm 武装态与
+        滚动位置天然保住);仅 running 字段变化走 patchRunningRows,结构变化才 rebuildHist。"""
+        body = _js_fn(self.src, 'refresh')
+        self.assertIsNotNone(body, 'refresh 缺失')
+        i_sig = body.find('jobsSignature()')
+        i_ret = body.find('if(sig === lastJobsSig) return')
+        self.assertGreaterEqual(i_sig, 0, 'refresh 须先算任务列表签名')
+        self.assertGreaterEqual(i_ret, 0, '无变化须直接 return')
+        self.assertLess(i_sig, i_ret, '签名计算须在早退之前')
+        self.assertIn('patchRunningRows()', body, '仅 running 字段变化走就地更新')
+        self.assertIn('rebuildHist()', body, '结构变化才全量重建')
+
+    def test_7_13_data_id_anchor_and_in_place_patch(self):
+        """job 行渲染带 data-id 锚点;patchRunningRows 按 data-id 就地更新该行
+        .sub 文本与 .bar i 进度条宽,不碰其它行。"""
+        self.assertIn('d.dataset.id = j.id', self.src, 'job 行渲染须带 data-id')
+        self.assertIn(".querySelectorAll('.job[data-id]')", self.src)
+        patch = _js_fn(self.src, 'patchRunningRows')
+        self.assertIsNotNone(patch, 'patchRunningRows 缺失')
+        self.assertIn("row.querySelector('.sub')", patch)
+        self.assertIn("row.querySelector('.bar i')", patch)
+        self.assertIn('textContent', patch, '.sub 用 textContent 就地改,不重排')
+
+    def test_7_13_struct_sig_gate_keeps_rename_terminal(self):
+        """结构门:jobStructSig 覆盖 id/running/title/created_at/duration_s/error/
+        is_live,任一变化(含改名、终态到达)都拒绝就地更新改走重建。"""
+        st = _js_fn(self.src, 'jobStructSig')
+        self.assertIsNotNone(st, 'jobStructSig 结构签名缺失')
+        for f in ('j.id', 'j.running', 'j.title', 'j.created_at', 'j.duration_s',
+                  'j.error', 'j.is_live'):
+            self.assertIn(f, st, '结构签名缺字段 %s' % f)
+        self.assertIn('jobStructSig(a) !== jobStructSig(b)', self.src,
+                      '就地更新前须逐行比较结构签名')
+
+    def test_7_13_tick_live_path_untouched(self):
+        """Task 4 的 tick→refreshLiveState 顺带刷新不得回退。"""
+        tick = _js_fn(self.src, 'tick')
+        self.assertIsNotNone(tick, 'tick 缺失')
+        self.assertIn('refreshLiveState()', tick)
+
     # ---- 7.17 逗号行首残留 ----
     def test_7_17_no_comma_after_bold(self):
         """</b>,/</b>。 残留全清(逗号移进 <b> 内),窄栏侧栏不出现行首逗号。"""

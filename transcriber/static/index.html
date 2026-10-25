@@ -799,16 +799,93 @@ window.addEventListener('beforeunload', e => {
   }
 });
 
-/* ---------- 历史列表与轮询 ---------- */
+/* ---------- 历史列表与轮询 ----------
+   7.13 轮询不再全量重建:refresh 先算任务列表签名(jobSig 覆盖行渲染全部输入:
+   status/stage/progress/queue_pos/running/title/created_at/duration_s/error/is_live
+   + id 序列 + 当前视图 id),无变化直接 return——零 DOM 写,行内「确认?」武装态与
+   列表滚动位置天然保住;仅 running 任务运行期字段变化 → 按 data-id 就地更新该行
+   .sub 与进度条宽;结构变化(增删/分组迁移/终态/改名/切换视图)才全量重建。 */
 function dayKey(s){ return (s || '').slice(0, 10); }
 function todayKey(){
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+/* 行内副文本与进度条宽的唯一实现:全量重建(addJob)与就地更新(patchRunningRows)
+   共用,两路渲染不漂移 */
+function jobSubText(j){
+  if(j.status === 'done') return j.created_at + (j.duration_s ? ' · ' + fmtDur(j.duration_s) : '');
+  if(j.status === 'error') return j.created_at + (j.error ? ' · ' + errBrief(j.error) : '');
+  if(j.status === 'queued' && j.queue_pos) return '排队中 · 第 ' + j.queue_pos + ' 位';
+  return (j.stage || '') + ' · ' + j.progress + '%';
+}
+function jobBarPct(j){
+  if(j.status === 'queued' && j.queue_pos) return 0;
+  if(j.status === 'done' || j.status === 'error') return null;   // 终态无进度条
+  return j.progress;
+}
+/* 全量签名(JSON 序列化防拼接歧义):任何一项变化都必须在 UI 上有体现 */
+function jobSig(j){
+  return JSON.stringify([j.id, !!j.running, j.title || '', j.created_at || '',
+    j.duration_s ?? 0, j.error || '', !!j.is_live,
+    j.status || '', j.stage || '', j.progress ?? 0, j.queue_pos ?? 0]);
+}
+/* 结构子集:id/分组(running)/标题/创建时间/时长/错误/实时标记——变化即
+   增删/分组迁移/终态/改名级,必须全量重建;title 在内:改名不得被就地更新吞掉 */
+function jobStructSig(j){
+  return JSON.stringify([j.id, !!j.running, j.title || '', j.created_at || '',
+    j.duration_s ?? 0, j.error || '', !!j.is_live]);
+}
+function currentViewKey(){
+  return view && view.type === 'job' ? view.id : '';
+}
+function jobsSignature(){
+  return currentViewKey() + '\n' + jobs.map(jobSig).join('\n');
+}
+/* 就地更新资格:同一视图、行序与 id 一一对应、每行结构字段未变,
+   且字段有变的行都是 running 任务(终态行字段有变保守起见重建) */
+function patchableInPlace(prevJobs, prevKey){
+  if(prevKey !== currentViewKey()) return false;
+  if(!prevJobs || prevJobs.length !== jobs.length) return false;
+  for(let i = 0; i < jobs.length; i++){
+    const a = prevJobs[i], b = jobs[i];
+    if(a.id !== b.id) return false;                          // 增删/重排
+    if(jobStructSig(a) !== jobStructSig(b)) return false;    // 分组迁移/终态/改名
+    if(!b.running && jobSig(a) !== jobSig(b)) return false;  // 终态行字段有变 → 保守重建
+  }
+  return true;
+}
+/* 就地更新:只动 running 行的 .sub 文本与进度条宽,其余行一律不碰 */
+function patchRunningRows(){
+  const wrap = $('#hist');
+  const byId = {};
+  for(const el of wrap.querySelectorAll('.job[data-id]')) byId[el.dataset.id] = el;
+  for(const j of jobs){
+    if(!j.running) continue;
+    const row = byId[j.id];
+    if(!row) continue;
+    const sub = row.querySelector('.sub');
+    if(sub) sub.textContent = jobSubText(j);
+    const bar = row.querySelector('.bar i');
+    const pct = jobBarPct(j);
+    if(bar && pct != null) bar.style.width = pct + '%';
+  }
+}
+let lastJobsSig = null, lastViewKey = null, renderedJobs = null;
 async function refresh(){
   try{ jobs = await (await fetch('/api/jobs')).json(); }catch(e){ return; }
   /* lib-cnt:待确认声纹数(ensureSpeakers 带缓存,轮询期零额外请求;0 时空串隐藏) */
   ensureSpeakers().then(syncLibCnt);
+  const sig = jobsSignature();
+  if(sig === lastJobsSig) return;   // 无变化:零 DOM 写,武装态与滚动位置天然保住
+  const prev = renderedJobs, prevKey = lastViewKey;
+  lastJobsSig = sig; lastViewKey = currentViewKey(); renderedJobs = jobs;
+  if(prev && patchableInPlace(prev, prevKey)) patchRunningRows();
+  else rebuildHist();
+  const cnt = jobs.filter(j => j.running).length;
+  if(cnt && !pollTimer) pollTimer = setInterval(tick, 2500);
+  if(!cnt && pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+}
+function rebuildHist(){
   const wrap = $('#hist');
   wrap.innerHTML = '';
   if(!jobs.length){
@@ -833,21 +910,15 @@ async function refresh(){
   function addJob(j){
     const d = document.createElement('div');
     d.className = 'job' + (view && view.type === 'job' && j.id === view.id ? ' on' : '');
+    d.dataset.id = j.id;   // 7.13:就地更新按 data-id 找行
     d.setAttribute('role', 'button');
     d.setAttribute('tabindex', '0');
-    let sub = '', extra = '', del = '';
-    if(j.status === 'done'){
-      sub = j.created_at + (j.duration_s ? ' · ' + fmtDur(j.duration_s) : '');
-    }else if(j.status === 'error'){
-      sub = j.created_at;
+    const sub = jobSubText(j);
+    let extra = '';
+    if(j.status === 'error'){
       extra = '<span class="pill err">失败</span>';
-      if(j.error) sub += ' · ' + errBrief(j.error);
-    }else if(j.status === 'queued' && j.queue_pos){
-      sub = '排队中 · 第 ' + j.queue_pos + ' 位';
-      extra = '<div class="bar"><i style="width:0"></i></div>';
-    }else{
-      sub = (j.stage || '') + ' · ' + j.progress + '%';
-      extra = '<div class="bar"><i style="width:' + j.progress + '%"></i></div>';
+    }else if(j.status !== 'done'){   // 进行中才有进度条(queued 有位次时宽 0)
+      extra = '<div class="bar"><i style="width:' + jobBarPct(j) + '%"></i></div>';
     }
     // 终态才可删除;进行中由详情页「放弃」处理
     const deletable = j.status === 'done' || j.status === 'error';
@@ -875,10 +946,6 @@ async function refresh(){
   addGroup('处理中(' + running.length + ')', running);
   addGroup('今天', today);
   addGroup('更早', older);
-
-  const cnt = running.length;
-  if(cnt && !pollTimer) pollTimer = setInterval(tick, 2500);
-  if(!cnt && pollTimer){ clearInterval(pollTimer); pollTimer = null; }
 }
 async function tick(){
   refreshLiveState();   // 任务轮询期顺带刷字幕会话状态(不 await,独立轻路径;2.5s 节奏更快看到红点切换)
