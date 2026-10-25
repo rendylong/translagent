@@ -15,10 +15,11 @@ finalize_session(session_dir, speakers_hint, force_tail, jobs_dir, queue) -> job
       finalized 残目录由 recover_all 清)。
   返回 job_id。全程同步,由调用方决定在哪个线程跑(live 停止路径在转正线程)。
 
-recover_all(live_root) -> list[(session_id, job_id)]
+recover_all(live_root, exclude=frozenset()) -> list[(session_id, job_id)]
   启动扫描(app.live_recover 真身):live/ 下含 live_meta.json 的目录——
   非 finalized → 转正(无尾窗补跑);finalized 残留 → 只删目录;
   无 live_audio.wav 或 ≤44 字节的空壳 → 无可救音频,直接删。单个目录失败不阻断其余。
+  exclude:会话 id 集合,运行期 recover_now 用来跳过活跃会话的目录。
 """
 import json
 import os

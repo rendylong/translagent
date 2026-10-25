@@ -35,6 +35,8 @@ events 队列 + 环形缓存(BACKLOG_MAX,resume 按 last_seq 重放)。WS 层 pu
 EventTap 取事件:断连后快速重连时旧 pump 手里的事件锁内放回队首,不吞、不乱序
 (Task 7 实测的 stop_ack 丢失竞态在此修);pump 主循环 pump_events 同在本模块,
 stopped / gone / 连续 send 失败任一即退出(转正异步期间对端断开不活锁)。
+连接注册表(_conns,spec WP3 接管语义):resume 顶掉旧附着连接——旧连接收
+session_taken_over 后被置 gone 并关闭,任一时刻至多一条 pump 在消费队列。
 """
 import json
 import os
