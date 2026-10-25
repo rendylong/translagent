@@ -139,7 +139,7 @@ renderEmpty 含 meas、`.side-foot.on` 被 JS 使用等)。
    endLink 改 `window.open('/#' + ev.job_id, '_blank')`(桌面 openMainJob 路径不变);
    `finalize_failed` → 「文稿生成失败,录音已保留」+ error 摘要 + 「录音仍在服务端,
    重启转写服务后会自动转为任务(历史记录带「实时」标记)」+「立即重试转正」按钮;
-   `empty` → 「本場没有录到语音」+「会话已结束,未生成文稿」。
+   `empty` → 「本场没有录到语音」+「会话已结束,未生成文稿」。
 2. 「立即重试转正」调 `POST /api/live/recover_now`:成功且有新 job → 原位转成功态
    (深链可用);无/失败 → 就地提示,保持失败态。
 3. 三分支均不再出现「正在生成完整文稿」字样;三分态结构进
