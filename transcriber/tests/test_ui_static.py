@@ -129,6 +129,35 @@ class RouteStaticPins(unittest.TestCase):
         """/#<job_id> 深链是桌面端已发版契约;id 字符集正则 ^[\\w-]+$ 不得收紧或放宽。"""
         self.assertRegex(self.src, r'\^\[\\w\-\]\+\$')
 
+    def test_showlib_generation_guard(self):
+        """showLib 与 load 同款代际守卫(评审 Important):showLib 是 render 调度的
+        渲染器之一,await ensureSpeakers(true) 期间切到任务视图时,慢响应后到
+        不得把主区覆盖回库视图——守卫必须位于 await 之后、innerHTML 之前。"""
+        m = re.search(r'async function showLib\s*\(', self.src)
+        self.assertTrue(m, 'showLib 缺失')
+        start = self.src.index('{', m.end())
+        depth = 0
+        end = -1
+        for i in range(start, len(self.src)):
+            if self.src[i] == '{':
+                depth += 1
+            elif self.src[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        self.assertTrue(end > 0, 'showLib 花括号未配平')
+        body = self.src[start:end]
+        i_await = body.find('await ensureSpeakers(true)')
+        i_guard = body.find("view.type !== 'lib'")
+        i_render = body.find('main.innerHTML')
+        self.assertGreaterEqual(i_await, 0, 'showLib 应强拉库数据')
+        self.assertGreaterEqual(i_guard, 0, 'showLib 缺代际守卫(view.type !== \'lib\')')
+        self.assertIn('loadSeq', body, 'showLib 缺 loadSeq 代际比较')
+        self.assertGreaterEqual(i_render, 0)
+        self.assertLess(i_await, i_guard, '守卫必须在 await 之后')
+        self.assertLess(i_guard, i_render, '守卫必须在 innerHTML 渲染之前')
+
     def test_route_renders_via_single_render_entry(self):
         """主区渲染收口:路由处理函数进 render(view);renderEmpty/showLib/load
         三者都在 render 内被调度。"""

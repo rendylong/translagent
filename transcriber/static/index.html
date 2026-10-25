@@ -1231,7 +1231,11 @@ $('#libbtn').onclick = () => {
   else location.hash = '#speakers';
 };
 async function showLib(){
+  /* 代际守卫(与 load 同款):库在途强拉期间切到任务视图,慢响应后到
+     不得把主区覆盖回库视图——快加载的 load 先落地渲染文稿,过期 showLib 即弃 */
+  const seq = loadSeq;
   const d = await ensureSpeakers(true);
+  if(seq !== loadSeq || !view || view.type !== 'lib') return;
   syncLibCnt(d);   // 角标随库强拉即时归算(confirm/separate 后立刻见 0)
   const main = $('#main');
   const SPK_COLORS = ['var(--sp0-ink)','var(--sp1-ink)','var(--sp2-ink)','var(--sp3-ink)','var(--sp4-ink)','var(--sp5-ink)'];
