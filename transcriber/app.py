@@ -921,10 +921,16 @@ def live_start_brief(e):
 
 @sock.route('/ws/live')
 def ws_live(ws):
-    """纯转发层:二进制帧→feed_bytes;start/stop/resume→LiveSession;事件队列→下行。"""
+    """纯转发层:二进制帧→feed_bytes;start/stop/resume→LiveSession;事件队列→下行。
+
+    每条连接生成 conn_id 并在 start/resume 成功时注册进会话连接注册表;resume 到达
+    时已有其他连接附着则接管(spec WP3):旧连接先收 session_taken_over 终态通知再被
+    置 gone 并关闭(旧 pump 经 gone 有界退出,EventTap 归还语义不变),新连接重放
+    backlog 并挂 pump。接管收尾严格在锁外:锁内只从注册表取旧 ws 引用与 gone。"""
     session = None
     sender = None
     gone = threading.Event()
+    conn_id = uuid.uuid4().hex
 
     def pump(last_seq):
         """转发会话事件队列(主循环在 live_session.pump_events,便于单测):stopped
@@ -933,6 +939,20 @@ def ws_live(ws):
         def send(ev):
             ws.send(json.dumps(ev, ensure_ascii=False))
         return live_domain.pump_events(session.tap, send, gone, last_seq)
+
+    def take_over(displaced):
+        """锁外收尾被接管的旧连接:先发终态通知,再置 gone(旧 pump 随之退出)并关闭。
+        send 失败只说明旧连接已断,照常置 gone;顺序即 spec:「先通知再断」。"""
+        for c in displaced:
+            try:
+                c['ws'].send(json.dumps({'type': 'session_taken_over'}))
+            except Exception:  # noqa: BLE001 旧连接已断:通知发不出,照样收尾
+                pass
+            c['gone'].set()
+            try:
+                c['ws'].close()
+            except Exception:  # noqa: BLE001 关闭失败无碍:gone 已置位
+                pass
 
     try:
         while True:
@@ -968,6 +988,7 @@ def ws_live(ws):
                 ws.send(json.dumps({'type': 'started', 'session_id': sid,
                                     'llm': bool(getattr(session, 'llm_enabled', False))},
                                    ensure_ascii=False))
+                session.attach_conn(conn_id, ws, gone)   # 新会话无旧连接,不会顶掉谁
                 sender = threading.Thread(target=pump, args=(0,), daemon=True)
                 sender.start()
             elif mtype == 'stop' and session is not None and session.status == 'listening':
@@ -985,6 +1006,9 @@ def ws_live(ws):
                     last_seq = int(msg.get('last_seq') or 0)
                 except (TypeError, ValueError):
                     last_seq = 0
+                # 接管:注册本连接并顶掉旧附着连接(锁内取引用),锁外通知旧连接后
+                # 再做本连接的 backlog 重放与挂 pump(顺序即 spec)
+                take_over(session.attach_conn(conn_id, ws, gone))
                 replay = session.backlog_after(last_seq)
                 for ev in replay:
                     ws.send(json.dumps(ev, ensure_ascii=False))
@@ -995,6 +1019,8 @@ def ws_live(ws):
         pass
     finally:
         gone.set()
+        if session is not None:
+            session.detach_conn(conn_id)
 
 
 def main():

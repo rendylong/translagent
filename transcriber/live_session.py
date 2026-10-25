@@ -238,11 +238,33 @@ class LiveSession:
         # 转正
         self._finalizer = finalizer or self._default_finalizer
         self._finalizing = None
+        # 每会话连接注册(spec WP3 接管语义):conn_id → {'ws': ws, 'gone': Event}
+        self._conns = {}
 
     @property
     def title(self):
         """会话标题(start 前 _meta 未建,返回 None)。"""
         return (self._meta or {}).get('title')
+
+    def attach_conn(self, conn_id, ws, gone):
+        """登记一条附着连接并顶掉其他连接(接管语义,spec WP3)。
+
+        注册表读写持 _SESSIONS_LOCK;返回被顶掉的旧连接列表([{'ws','gone'},…]),
+        调用方必须在锁外对旧连接发 session_taken_over / 置 gone / close——
+        锁内绝不网络 send。已断开(gone 置位)的旧连接直接摘除,不发通知。"""
+        with _SESSIONS_LOCK:
+            displaced = []
+            for cid, c in list(self._conns.items()):
+                del self._conns[cid]
+                if c['gone'] is not gone and not c['gone'].is_set():
+                    displaced.append(c)
+            self._conns[conn_id] = {'ws': ws, 'gone': gone}
+            return displaced
+
+    def detach_conn(self, conn_id):
+        """连接收尾时摘除注册(finally 幂等调用;被接管的连接早已不在册)。"""
+        with _SESSIONS_LOCK:
+            self._conns.pop(conn_id, None)
 
     # ---------- 生命周期(调用方线程) ----------
 
