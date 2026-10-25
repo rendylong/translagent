@@ -10,6 +10,9 @@
      stopped 自 Task 9 起携带 job_id(停止即建 job,可在工作台查看完整文稿);
    - start 阶段失败:服务端回 {'type':'error','message':'无法开始实时会话:…'} 并断开,
      前端收到后停止自动重连、显示错误(onError),不再无限重试;
+   - resume 冲突(另一窗口 resume 同一会话):服务端接管语义——旧连接先收
+     {'type':'session_taken_over'} 即终态,前端停麦、清 session 存储、回表单态,
+     绝不再自动重连(与 userStop 同级,防 A/B 双页 3 秒互踢死循环);
    - pass2 / pass2_skip / llm 事件字段名是 t0 / t1(与 live_pass2.py 一致)。
 
    文案硬约束:停止按钮的文案就是「停止」二字,不用任何替代表述。 */
@@ -21,6 +24,7 @@ var CHUNK_SAMPLES = 3200;                    // 200ms/包 @16k mono s16le
 var BUFFER_MAX_SEC = 5 * 60;                 // 断线本地缓冲上限:5 分钟(超出丢最旧)
 var BUFFER_MAX_BYTES = BUFFER_MAX_SEC * TARGET_RATE * 2;
 var RECONNECT_MS = 3000;                     // 断线 3s 后自动重连 resume
+var RECONNECT_MAX_TRIES = 10;                // 7.14:自动重连额度,超过即进终态等手动重试
 var SPEAKER_COLORS = ['#4C9AFF', '#FFB02E', '#98A2B3'];   // A / B / 其余灰
 
 var $ = function(id){ return document.getElementById(id); };
@@ -31,6 +35,9 @@ var state = {
   sessionId: null, lastSeq: 0,
   userStop: false,          // 已按「停止」;断线时挂起,重连后补发 stop
   reconnectTimer: 0,
+  reconnectTries: 0,        // 7.14 自动重连计数:连接成功清零,>RECONNECT_MAX_TRIES 进终态
+  reconnectFinal: false,    // 7.14 重连终态:已停止自动重连,等 chip 手动重试
+  lock: null,               // WP3 单实例锁句柄('live-session';无 Web Locks 环境为空操作句柄)
   doc: [],                  // {id, kind:'f1'|'p2'|'llm'|'skip', t0, t1, speaker, text, translation, el}
   partial: '',
   paused: false,            // 暂停显示:仅冻结 DOM,事件照收、录音照常
@@ -95,6 +102,8 @@ function connect(){
   state.ws = ws; state.wsOpen = false;
   ws.onopen = function(){
     state.wsOpen = true;
+    state.reconnectTries = 0;                     // 7.14:连上即清零计数,重连终态一并解除
+    disarmReconnectChip();
     $('connChip').hidden = true;
     barChip(null);
     if (state.userStop){                          // 停止请求在断线期挂起:新连接 session=None,
@@ -131,21 +140,85 @@ function connect(){
 }
 
 function scheduleReconnect(){
+  state.reconnectTries++;
+  if (state.reconnectTries > RECONNECT_MAX_TRIES){   // 7.14:额度用尽,停止自动重连转终态
+    enterReconnectFinal();
+    return;
+  }
+  disarmReconnectChip();                    // 可能从终态返回(如停止补发重置计数后恢复自动重连)
   $('connChip').hidden = false;
+  $('connChip').textContent = '连接中断 · 重连中';
   barChip('连接中断 · 重连中');
   clearTimeout(state.reconnectTimer);
   state.reconnectTimer = setTimeout(connect, RECONNECT_MS);
 }
 
+function enterReconnectFinal(){
+  /* 7.14 重连终态:自动重连额度用尽(>10 次 ≈30s),停止打扰式重试,把恢复动作交给
+     用户——connChip 升级为可点按钮(role=button + 键盘可达),点击手动 connect() 并
+     清零计数;字幕条形态的 barChip 镜像同款可点(web 叠加态默认只见字幕条,不给它
+     留死路)。会话未终了:断线缓冲与 sessionId 仍在,服务恢复后点 chip 即挂回。 */
+  clearTimeout(state.reconnectTimer);
+  if (state.reconnectFinal) return;         // 幂等:onclose 与 sendFrame 失败可能先后流入
+  state.reconnectFinal = true;
+  var chip = $('connChip');
+  chip.hidden = false;
+  chip.textContent = '无法连接转写服务,请确认服务已启动 · 点击重试';
+  armChipButton(chip);
+  var bchip = barChip('连接中断 · 已停止自动重连');
+  if (bchip) armChipButton(bchip);
+}
+
+function armChipButton(el){
+  /* chip 升级按钮语义:role/tabindex + Enter/Space 激活。监听器只挂一次(__armed),
+     role/class 可重复设置(disarm 后再进终态须恢复);manualReconnect 以
+     reconnectFinal 旗标守卫,终态外点击是空操作。 */
+  el.setAttribute('role', 'button');
+  el.setAttribute('tabindex', '0');
+  el.classList.add('clickable');
+  if (el.__armed) return;
+  el.__armed = true;
+  el.addEventListener('click', manualReconnect);
+  el.addEventListener('keydown', function(e){
+    if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); manualReconnect(); }
+  });
+}
+
+function disarmReconnectChip(){
+  /* 退出重连终态:还原 chip 纯展示形态(重连成功/会话终态时调用),字幕条镜像
+     一并退场。监听器不摘——以 reconnectFinal 旗标守卫,残留监听是空操作。 */
+  state.reconnectFinal = false;
+  var ids = ['connChip', 'barChip'];
+  for (var i = 0; i < ids.length; i++){
+    var el = $(ids[i]);
+    if (!el) continue;
+    el.classList.remove('clickable');
+    el.removeAttribute('role');
+    el.removeAttribute('tabindex');
+  }
+}
+
+function manualReconnect(){
+  /* 7.14 手动重试:仅重连终态且会话未终了(ended/idle)时生效;清零计数立即重连。
+     终态后 stopped/taken_over/userStop 的收尾路径到此一律空操作(状态互斥)。 */
+  if (!state.reconnectFinal || state.phase === 'ended' || state.phase === 'idle') return;
+  state.reconnectFinal = false;
+  state.reconnectTries = 0;
+  $('connChip').textContent = '连接中断 · 重连中';   // 即时反馈:终态文案让位于重连进行时
+  barChip('连接中断 · 重连中');
+  connect();
+}
+
 function barChip(text){                       // 状态在字幕条形态下的镜像(字幕条自身无徽标区)
   var el = $('barChip');
-  if (!text){ if (el) el.remove(); return; }
+  if (!text){ if (el) el.remove(); return null; }
   if (!el){
     el = document.createElement('span');
     el.className = 'chip'; el.id = 'barChip';
     $('barState').appendChild(el);
   }
   el.textContent = text;
+  return el;
 }
 
 function handleEvent(ev){
@@ -199,6 +272,9 @@ function handleEvent(ev){
     case 'stopped':
       onStopped(ev);
       break;
+    case 'session_taken_over':                // WP3:会话被另一窗口 resume 接管,本页即终态
+      onTakenOver();
+      break;
     case 'error':
       onError(ev);
       break;
@@ -218,6 +294,7 @@ function onError(ev){
       stopCapture();
       stopTimer();
       clearSessionStorage();
+      releaseLiveLock();                           // 会话已死,锁立即放行其他窗口
       clearTimeout(state.reconnectTimer);
       $('connChip').hidden = true;
       barChip(null);
@@ -231,6 +308,7 @@ function onError(ev){
     stopCapture();
     stopTimer();
     clearSessionStorage();
+    releaseLiveLock();
     clearTimeout(state.reconnectTimer);
     $('connChip').hidden = true;
     barChip(null);
@@ -246,6 +324,7 @@ function onError(ev){
     stopTimer();
     clearTimeout(state.reconnectTimer);
     clearSessionStorage();
+    releaseLiveLock();
     $('connChip').hidden = true;
     $('stopChip').hidden = true;
     barChip(null);
@@ -265,7 +344,9 @@ function onStopped(ev){
   stopTimer();
   clearTimeout(state.reconnectTimer);
   clearSessionStorage();
+  releaseLiveLock();
   try { if (state.ws) state.ws.close(); } catch (e){}   // 正常路径服务端先断;此处兜底
+  disarmReconnectChip();
   $('stopChip').hidden = true;
   $('connChip').hidden = true;
   barChip(null);
@@ -285,6 +366,32 @@ function onStopped(ev){
     $('endLink').hidden = true;
   }
   $('endwrap').hidden = false;
+}
+
+function onTakenOver(){
+  /* WP3 终态(与 userStop 同级):本页会话已被另一窗口的 resume 接管。服务端发完
+     本消息立即关连接,onclose 随后必至——先把相位置 ended(onclose 的重连分支
+     短路),再 clearTimeout 兜底已排队的重连,杜绝 A/B 双页 3 秒互踢死循环。
+     session 存储必须清:localStorage 同源双页共享,留着只会让下次打开又去 resume
+     抢回;锁同步释放,本页与新窗口各归其位。 */
+  setPhase('ended');
+  stopCapture();
+  stopTimer();
+  clearTimeout(state.reconnectTimer);
+  clearSessionStorage();
+  releaseLiveLock();
+  try { if (state.ws) state.ws.close(); } catch (e){}   // 服务端马上会断;此处先断防中间态事件
+  disarmReconnectChip();
+  $('stopChip').hidden = true;
+  $('connChip').hidden = true;
+  barChip(null);
+  $('stage').hidden = true;
+  $('endwrap').hidden = true;
+  $('setupErr').hidden = true;
+  $('goBtn').disabled = false;                  // 回表单须可直接再开始(goBtn 在 submit 时被禁用)
+  $('setup').hidden = false;
+  $('resumeNote').textContent = '会话已在其他窗口打开。';
+  $('resumeNote').hidden = false;
 }
 
 /* ---------- 音频上行:采集 → 降采样 → 200ms 攒包 / 断线缓冲 → 补发 ---------- */
@@ -891,6 +998,11 @@ function requestStop(){
     setPhase('ended');
     stopTimer();
     clearSessionStorage();
+    releaseLiveLock();                            // 从未挂上会话:锁立即放行其他窗口
+    clearTimeout(state.reconnectTimer);           // 重连终态下按停止:终态连同 chip 一并收掉
+    disarmReconnectChip();
+    $('connChip').hidden = true;
+    barChip(null);
     $('endTitle').textContent = '已停止';
     $('endSub').textContent = '尚未建立会话,没有产生录音。';
     $('endLink').hidden = true;
@@ -906,6 +1018,7 @@ function requestStop(){
     setChip('stopChip', '已按「停止」,正在收尾…');
   } else {
     setChip('stopChip', '连接中断,将在重连后停止');
+    state.reconnectTries = 0;                     // 停止补发优先:重置计数,不被旧额度干扰(7.14 互斥)
     scheduleReconnect();
   }
 }
@@ -913,6 +1026,59 @@ function requestStop(){
 function clearSessionStorage(){
   localStorage.removeItem('live.sessionId');
   localStorage.removeItem('live.startedAt');
+}
+
+/* ---------- WP3 单实例锁:同一浏览器同时只允许一个 /live 会话页 ---------- */
+
+var LIVE_LOCK_NAME = 'live-session';
+var LOCK_BUSY_MSG = '字幕会话已在其他窗口进行';
+
+function acquireLiveLock(){
+  /* 返回 Promise:resolve 锁句柄 {release()},或 null(锁被占/请求异常)。
+     Web Locks 的 request 是回调式持锁——callback 返回的 promise settle 之前锁被
+     持有,故把 settle 权交进句柄:会话终态(ended/出错)时 release() 放锁;页面
+     隐藏、断线重连中不算结束,不放锁。'locks' in navigator 为 false 的环境降级
+     无锁(句柄为空操作;双开场景由服务端 resume 接管守卫兜底,旧页会收到
+     session_taken_over 终态)。 */
+  return new Promise(function(resolve){
+    if (!('locks' in navigator)){
+      resolve({release: function(){}});          // 降级无锁:服务端守卫兜底
+      return;
+    }
+    var granted = false;
+    navigator.locks.request(LIVE_LOCK_NAME, {ifAvailable: true}, function(){
+      granted = true;
+      return new Promise(function(holdLock){     // holdLock 调用前锁保持
+        resolve({release: function(){ holdLock(); }});
+      });
+    }).then(function(){
+      if (!granted) resolve(null);               // ifAvailable:锁被占 → callback 不执行,请求照常 resolve
+    }, function(){
+      if (!granted) resolve(null);               // request 本身异常:保守按锁不可得处理
+    });
+  });
+}
+
+function releaseLiveLock(){
+  var h = state.lock;
+  state.lock = null;                             // 先清再放:重复调用安全
+  if (h) h.release();
+}
+
+function lockBusyToForm(fromResume){
+  /* 锁不可得:回表单态提示(与 autoResume 失败提示同槽位),绝不触发 getUserMedia
+     ——麦克风不该让两页互抢。resume 侧只清本地 state.sessionId、绝不动 localStorage:
+     会话属于持锁窗口,清了存储反而让第三个窗口丢掉 resume 线索。 */
+  setPhase('idle');
+  state.autoResume = false;
+  if (fromResume){
+    state.sessionId = null;                      // 不清则表单再点「开始」会误发 resume 抢别人的会话
+    $('setup').hidden = false;
+  }
+  $('goBtn').disabled = false;
+  var note = fromResume ? $('resumeNote') : $('setupErr');
+  note.textContent = LOCK_BUSY_MSG;
+  note.hidden = false;
 }
 
 /* ---------- 启动:表单 or 自动恢复上次会话 ---------- */
@@ -936,14 +1102,22 @@ function beginSession(){
   state.startedAt = Date.now();
   localStorage.setItem('live.startedAt', String(state.startedAt));
   setPhase('connecting');
-  startCapture().then(function(){
-    enterLiveUI();
-    connect();
-  }, function(err){
-    $('setupErr').textContent = err.message || '无法开始';
-    $('setupErr').hidden = false;
-    $('goBtn').disabled = false;
-    setPhase('idle');
+  acquireLiveLock().then(function(handle){       // WP3:先过锁闸,占用路径不碰 getUserMedia
+    if (!handle){
+      lockBusyToForm(false);
+      return;
+    }
+    state.lock = handle;
+    startCapture().then(function(){
+      enterLiveUI();
+      connect();
+    }, function(err){
+      releaseLiveLock();                         // 采集失败会话未成立:立即放锁,页内重试不被自己挡
+      $('setupErr').textContent = err.message || '无法开始';
+      $('setupErr').hidden = false;
+      $('goBtn').disabled = false;
+      setPhase('idle');
+    });
   });
 }
 
@@ -964,15 +1138,23 @@ function tryAutoResume(){
   // 曾选翻译的维持灰→白渐进(原始 llm 状态未持久化,backlog 重放也不携带,无从恢复)
   applyLlmOff(langPairIsNoTranslate(state.lang));
   setPhase('connecting');
-  startCapture().then(function(){
-    enterLiveUI();
-    connect();                          // resume:重放 backlog(last_seq=0 → 全量重建历史)
-  }, function(err){
-    clearSessionStorage();
-    $('setup').hidden = false;
-    $('setupErr').textContent = '恢复上次会话失败:' + (err.message || '无法采集麦克风');
-    $('setupErr').hidden = false;
-    setPhase('idle');
+  acquireLiveLock().then(function(handle){       // WP3:另一窗口恢复/直播中 → 提示回表单
+    if (!handle){
+      lockBusyToForm(true);
+      return;
+    }
+    state.lock = handle;
+    startCapture().then(function(){
+      enterLiveUI();
+      connect();                          // resume:重放 backlog(last_seq=0 → 全量重建历史)
+    }, function(err){
+      releaseLiveLock();
+      clearSessionStorage();
+      $('setup').hidden = false;
+      $('setupErr').textContent = '恢复上次会话失败:' + (err.message || '无法采集麦克风');
+      $('setupErr').hidden = false;
+      setPhase('idle');
+    });
   });
   return true;
 }
@@ -1026,6 +1208,15 @@ function init(){
       try{ window.desk.closeLiveCaption(); return; }catch(e){}
     }
     location.href = '/';
+  });
+
+  // 7.3:进行中(含连接中/收尾中)关标签页须确认;ended/idle 不拦。桌面悬浮窗形态
+  //(window.desk)跳过——主进程已有关窗拦截,双拦会弹两次原生确认。
+  window.addEventListener('beforeunload', function(e){
+    if (window.desk) return;
+    if (state.phase !== 'connecting' && state.phase !== 'live' && state.phase !== 'stopping') return;
+    e.preventDefault();
+    e.returnValue = '';
   });
 
   // 先判 resume 再恢复表单:tryAutoResume 必须在表单路径迁移之前拿到 live.lang 原始值
