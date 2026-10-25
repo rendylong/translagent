@@ -35,6 +35,12 @@
 
 **Pass2 摘除(2026-10-24)**:whisper 窗口重转与 GPU 争用移除(实时管线 GPU 零占用,GPU_LOCK 只剩离线 job 互斥),字幕条两级化(识别 → 翻译,修正徽标已删),`live_pass2.py` 仅剩 `read_wav_slice`(分人切片用),终稿仍走离线全量管线零变化。spec 见 `transcriber/docs/2026-10-24-live-captions-drop-pass2-and-segmentation-spec.md`。
 
+**静音幻觉防护(2026-10-25)**:whisper 对结尾空白会逐段复述同一句幻觉(实测 20261025-105702_4426:97s 音频尾部 41s 静音生成 26 段重复;live 转正任务人先停话后按停止,几乎必然中招)。两道防线在 `app.py`:① `trim_wav_tail`——afconvert 后、whisper 前就地裁尾(0.5s 窗 RMS,阈自适应 max(-42dB, 本底 10 分位+6dB),末窗后留 0.75s 余量;可裁量 <1s 或全程无声不裁,宁漏勿误切;裁量写 `meta.tail_trimmed_s`);只动尾部不动头部,时间戳不受影响。② `collapse_repeat_loops`——whisper 解析后折叠幻觉循环(连续段归一化文本只含 ≤2 种变体且其一出现 ≥4 次时各留首个;归一化后 <4 字符不折叠,保住真实「对/嗯」连发;`whisper.json` 仍存原始分段供查证)。端到端实测:裁 40.8s,34 段 → 7 段全真,duration_s 随之修正。测试 `transcriber/tests/test_hallucination.py`。
+
+**会议标题自动生成(2026-10-25)**:`process_job` 在 `status='done'` 之前调 `auto_title`(app.py)——转录纯文本按时间序拼接(speaker 为簇号,不经 resolve_names,无姓名/路径)送 `live_llm.generate_title`(MiniMax,复用实时层同 key 与 `_chat` 请求底座;出境上限 `TITLE_INPUT_MAX=2000` 字符单点强制),与终态原子落盘。覆盖策略:非 live 任务的文件名占位标题与 live 未填写的默认「实时会议」可覆盖(保留「实时 」前缀),live 表单用户填写的标题不动;无 key/任何失败静默保留原名,绝不让任务失败(调用点在 done 前,异常穿透会被外层 except 误标 error——auto_title 内整体兜底)。标题语言跟随转录主要语言,≤80 字符。测试 `transcriber/tests/test_auto_title.py` 与 `test_live_llm.TitleGenTest`。
+
+**LLM 层延迟优化(2026-10-25)**:`live_llm.py` 三项改动,连续语音翻译滞后(句尾→译文上屏)中位 7.2s→2.6s、最差 10.3s→3.6s 且不再积压(17 句仿真实测,spec §8 记的 7.3s 口径随之改善):① `_chat` 请求体固定 `reasoning_effort: 'medium'`——M3.1-Flash 思考**无法关闭**(服务端强制 adaptive thinking,`thinking disabled`/`effort none` 均 400),且省略该参数默认 max 档(最慢);实测 low 档多行批 5/5 把说话人标签泄进译文不可用,medium 思考 token 减半以上(call 中位 3.7s→1.6s、尾部 8.5s→2.7s,8s 超时风险消失),refine 与 generate_title 共用。② 传输从 urllib 每次新建连接改为每线程复用 `http.client.HTTPSConnection`(`_get_conn`/`_roundtrip`/`_drop_conn`,省每次 TCP+TLS 握手 0.3~1s;复用连接被服务端空闲关闭时首发 RemoteDisconnected 占用唯一一次重试额度属正常路径);非 200 仍抛 HTTPError 走传输重试,口径与 urllib 时代一致。③ `MERGE_WAIT_S` 1.5→0.5:连续语音下相邻 final 间隔总 >1.5s,旧值从不真正并批、纯加延迟(真正并批发生在积压时,队列非空零等待抽取不受影响)。测试:`test_live_llm.py` 传输层 mock 统一迁至 `_roundtrip` seam,新增 `ConnReuseTest`(复用/超时重建/死连接重试/will_close 主动弃/非 200 重试)。
+
 实测耗时(2026-10,86 分钟双说话人录音):whisper 5 分钟(GPU),说话人识别约 12 分钟(CPU,约 0.13 倍速)。单 worker 串行处理任务。
 
 ## 录音(web + 桌面客户端)
@@ -97,6 +103,6 @@ whisper 转中文口语音频会稳定错一批词。清理时优先检查:
 
 ## 约定
 
-- 音频、声纹数据不出本机。例外(2026-10-23 用户明示授权):实时字幕的 LLM 层可将**转录文本的窗口级片段**(仅窗口文本+有限上下文,不含音频/路径/说话人姓名)送 MiniMax API 做修正与翻译;key 在根目录 `.env`(`MINIMAX_API_KEY=sk-…`,2026-10-24 起优先;旧 `env.rtf` 仍兼容,`parse_key` 级联 .env → env.rtf;两者均已 gitignore,运行时解析,不入库不打印)。除此之外不调用任何外部转录或上传服务。注意:本仓库 git 历史含早期已删文件的记录(声纹库 speakers.json 曾被跟踪,现已 `git rm --cached`);若将来要 push/外发仓库,先做历史审查。
+- 音频、声纹数据不出本机。例外(2026-10-23 用户明示授权):实时字幕的 LLM 层可将**转录文本的窗口级片段**(仅窗口文本+有限上下文,不含音频/路径/说话人姓名)送 MiniMax API 做修正与翻译;离线任务完成时亦可将**转录纯文本前 2000 字符**(2026-10-25,会议标题生成;无说话人标签/姓名/路径)送同一 API 拟标题,失败静默。key 在根目录 `.env`(`MINIMAX_API_KEY=sk-…`,2026-10-24 起优先;旧 `env.rtf` 仍兼容,`parse_key` 级联 .env → env.rtf;两者均已 gitignore,运行时解析,不入库不打印)。除此之外不调用任何外部转录或上传服务。注意:本仓库 git 历史含早期已删文件的记录(声纹库 speakers.json 曾被跟踪,现已 `git rm --cached`);若将来要 push/外发仓库,先做历史审查。
 - 交付文档用中文。纪要中的时间节点、数字、人名须提醒用户对照原声核实。
 - 项目记忆里有本目录的工具链笔记(`meeting-transcription-pipeline`),与本文件互补,先读其一即可。

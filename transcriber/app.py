@@ -17,6 +17,8 @@ meta.json 关键字段:
   speaker_map    {"簇号": {gid, sim, status}};status ∈ auto(≥0.65)/suspect(0.50~0.65)/
                  confirmed(人工确认)/new(本场新登记);gid 指向全局说话人库
   voiceprint     是否启用声纹跨会议匹配(转录设置里可关)
+  title          文件名或 live 表单占位;完成后 auto_title 用 LLM 拟题覆盖占位值
+                 (live 用户填写的标题不动),失败静默保留原名
 
 全局说话人库 speakers/speakers.json:
   {model, dim, speakers: [{id, name, created_at, updated_at, centroid[192], n_anchors,
@@ -37,6 +39,8 @@ from collections import deque
 
 import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory, abort
+
+import live_llm  # MiniMax 客户端(标题生成;纯 stdlib 无本地依赖,顶层导入无循环)
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 JOBS_DIR = os.path.join(BASE, 'jobs')
@@ -60,6 +64,11 @@ SIM_AUTO, SIM_SUSPECT = 0.65, 0.50   # bench 实测:同人跨会议 0.751,异人
 SIM_ANCHOR = 0.70    # 加锚点(写库学习)门槛:踩线 auto 只认领不学习,防误匹配固化进质心
 MIN_ANCHOR_N = 3     # 簇证据段数下限(弱证据门):不足只认领已有说话人,不新建条目不加锚
 MERGE_INTRA = 0.65   # 场内拆簇合并阈:实测同人拆簇互似 0.72-0.79、异人 ≤0.557,取谷中
+
+TAIL_WIN_S = 0.5      # 尾部静音判定的能量窗长
+TAIL_MARGIN_S = 0.75  # 裁剪点在最后一个有声窗之后保留的余量
+LOOP_MIN_RUN = 4      # 连续重复段数达到该值才认定静音幻觉循环
+LOOP_MAX_VARIANTS = 2  # 幻觉循环内允许的文本变体种数(同一句复述 / 带连接词的两种形态交替)
 
 app = Flask(__name__, static_folder=None)
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
@@ -441,6 +450,97 @@ def render_transcript(meta, segments, fmt):
     return '\n'.join(lines), 'text/markdown; charset=utf-8'
 
 
+# ---------- 静音幻觉防护(2026-10-25) ----------
+
+def trim_wav_tail(path, win_s=TAIL_WIN_S, margin_s=TAIL_MARGIN_S, floor_db=-42.0, sr=16000):
+    """就地裁掉 16k 单声道 wav 的尾部静音,返回裁掉的秒数;未裁返回 None。
+    whisper 对结尾空白会逐段复述同一句幻觉(2026-10-25 实测:97s 音频尾部 41s 静音
+    生成 26 段重复,live 转正任务人先停话后按停止,尾静音几乎必然存在)。阈值自适应
+    max(floor_db, 本底+6dB):按 win_s 窗算 RMS,本底取所有窗的 10 分位;整段无声
+    或可裁量不足 1s 时不裁。只动尾部不动头部,whisper/diar 时间戳不受影响。"""
+    import struct
+    with open(path, 'rb') as f:
+        data = f.read()
+    if data[:4] != b'RIFF' or data[8:12] != b'WAVE':
+        return None
+    pos = 12
+    data_off = data_size = None
+    while pos + 8 <= len(data):
+        cid = data[pos:pos + 4]
+        sz = struct.unpack('<I', data[pos + 4:pos + 8])[0]
+        if cid == b'data':
+            data_off, data_size = pos + 8, sz
+            break
+        pos += 8 + sz + (sz % 2)
+    if data_off is None:
+        return None
+    n_samples = (data_size - data_size % 2) // 2
+    x = np.frombuffer(data[data_off:data_off + 2 * n_samples],
+                      dtype='<i2').astype(np.float32) / 32768.0
+    win = int(win_s * sr)
+    if n_samples < win:
+        return None
+    nwin = n_samples // win
+    rms = np.sqrt((x[:nwin * win].reshape(nwin, win) ** 2).mean(axis=1))
+    db = 20 * np.log10(rms + 1e-12)
+    thresh = max(floor_db, float(np.percentile(db, 10)) + 6)
+    loud = np.nonzero(db > thresh)[0]
+    if not len(loud):
+        return None
+    keep = min(n_samples, (int(loud[-1]) + 1) * win + int(margin_s * sr))
+    if n_samples - keep < sr:
+        return None
+    with open(path, 'r+b') as f:
+        f.seek(4)
+        f.write(struct.pack('<I', data_off + 2 * keep - 8))   # RIFF 尺寸 = 文件长-8
+        f.seek(data_off - 4)
+        f.write(struct.pack('<I', 2 * keep))
+        f.truncate(data_off + 2 * keep)
+    return (n_samples - keep) / sr
+
+
+def _norm_text(t):
+    """折叠比较用:去标点/空白并小写,保留字母数字与中日韩字符。"""
+    return re.sub(r'[^\w\u4e00-\u9fff]+', '', t.lower())
+
+
+def collapse_repeat_loops(segs, min_run=LOOP_MIN_RUN, max_variants=LOOP_MAX_VARIANTS):
+    """折叠 whisper 静音幻觉循环,返回新列表:连续段的归一化文本只由 ≤max_variants
+    种变体构成、且其中一种出现 ≥min_run 次时,每种变体只留首个(实测形态:同一句
+    逐段复述 AAAA,或带 And/So 等连接词的两种变体 ABAB 交替)。归一化后 <4 字符的段
+    不参与折叠,保住真实的「对/嗯/好」短应答连发。真实会议里同一句一字不差连发 4 段
+    以上几乎不存在。"""
+    norms = [_norm_text(s['text']) for s in segs]
+    n = len(segs)
+    keep = [False] * n
+    i = 0
+    while i < n:
+        variants = {}   # norm -> 本轮首个下标
+        j = i
+        while j < n:
+            t = norms[j]
+            if t in variants or (len(variants) < max_variants and len(t) >= 4):
+                variants.setdefault(t, j)
+                j += 1
+            else:
+                break
+        if j == i:      # 短文本段自成一段,放行
+            keep[i] = True
+            i += 1
+            continue
+        counts = {}
+        for k in range(i, j):
+            counts[norms[k]] = counts.get(norms[k], 0) + 1
+        if max(counts.values()) >= min_run:
+            for k in variants.values():
+                keep[k] = True
+        else:
+            for k in range(i, j):
+                keep[k] = True
+        i = j
+    return [s for s, k in zip(segs, keep) if k]
+
+
 # ---------- 管线 worker(串行,whisper 占 GPU) ----------
 
 def run_whisper(job_id, wav, language):
@@ -470,6 +570,7 @@ def run_whisper(job_id, wav, language):
         data = json.load(f)
     segs = [{'start_ms': t['offsets']['from'], 'end_ms': t['offsets']['to'], 'text': t['text'].strip()}
             for t in data.get('transcription', []) if t.get('text', '').strip()]
+    segs = collapse_repeat_loops(segs)   # 静音幻觉循环折叠(whisper.json 保留原始分段供查证)
     duration = segs[-1]['end_ms'] / 1000 if segs else 0
     return duration, segs
 
@@ -493,6 +594,33 @@ def run_diarization(wav, num_speakers, progress_cb):
     return [(s.start, s.end, s.speaker) for s in res.sort_by_start_time()]
 
 
+def auto_title(meta, segments):
+    """转录完成后用 LLM 拟会议标题(process_job 在 status='done' 前调用;2026-10-25)。
+
+    覆盖策略:非 live 任务的文件名占位标题与 live 未填写的默认「实时会议」可覆盖
+    (保留「实时 」前缀约定);用户在 live 表单填写的标题不动。出境内容仅纯转录
+    文本——speaker 是簇号、不经 resolve_names,无姓名无路径,字符上限由
+    live_llm.generate_title 单点强制(2000)。任何异常返回 None:调用点在 done
+    之前,穿透会被 process_job 外层 except 把任务误标 error。
+    """
+    try:
+        is_live = bool(meta.get('live_session'))
+        if is_live and (meta.get('title') or '') != '实时会议':
+            return None
+        text = '\n'.join((s.get('text') or '').strip() for s in segments).strip()
+        if not text:
+            return None
+        key = live_llm.parse_key()
+        if not key:
+            return None
+        title = live_llm.generate_title(text, key)
+        if not title:
+            return None
+        return ('实时 ' + title)[:80] if is_live else title
+    except Exception:   # noqa: BLE001 兜底:标题是锦上添花,绝不让任务失败
+        return None
+
+
 def process_job(job_id):
     try:
         if read_meta(job_id).get('cancel_requested'):
@@ -505,6 +633,11 @@ def process_job(job_id):
                            capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError('音频转码失败(afconvert):' + r.stderr.strip()[:300])
+
+        # 尾部静音先裁再转录:whisper 对结尾空白会幻觉复述(live 转正尤其必然)
+        trimmed_s = trim_wav_tail(wav)
+        if trimmed_s:
+            write_meta(job_id, tail_trimmed_s=round(trimmed_s, 1))
 
         if read_meta(job_id).get('cancel_requested'):
             raise RuntimeError('已放弃')
@@ -559,8 +692,14 @@ def process_job(job_id):
                    speaker_map=speaker_map)
         with open(os.path.join(job_dir(job_id), 'transcript.json'), 'w', encoding='utf-8') as f:
             json.dump({'segments': wsegs}, f, ensure_ascii=False)
-        write_meta(job_id, status='done', stage='完成', progress=100,
-                   duration_s=round(duration, 1), num_speakers_detected=detected)
+        # LLM 拟标题在 done 前调用:标题与终态原子落盘(前端轮询在全部完成后即停,
+        # done 后补写会滞留旧标题;patch_job 又只接受 done 任务,先调可免覆盖竞态)
+        new_title = auto_title(meta, wsegs)
+        done_fields = {'status': 'done', 'stage': '完成', 'progress': 100,
+                       'duration_s': round(duration, 1), 'num_speakers_detected': detected}
+        if new_title:
+            done_fields['title'] = new_title
+        write_meta(job_id, **done_fields)
         write_md(job_id)
     except Exception as e:  # noqa: BLE001 边界捕获,写回状态机
         try:

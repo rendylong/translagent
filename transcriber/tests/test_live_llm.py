@@ -3,13 +3,17 @@
 
 三块:
   - ParseKeyTest:env.rtf 的 RTF 壳剥取/纯文本/无 key 三态(不触真文件,迷你壳用 tempfile);
-  - RefinerTest:monkeypatch urllib.request.urlopen,测 超时→None、坏 JSON→None、
-    连续 5 次失败熔断(成功复位)、请求契约(temperature=0、白名单字段、补标点指令、
-    无音频/路径/说话人姓名);
+  - RefinerTest:monkeypatch live_llm._roundtrip(HTTP 往返替身),测 超时→None、坏 JSON→None、
+    连续 5 次失败熔断(成功复位)、请求契约(temperature=0、reasoning_effort=medium、
+    白名单字段、补标点指令、无音频/路径/说话人姓名);
   - RefineWorkerTest:假队列 + 假 emit 测 worker 语义(消费 pass1_final → 合并批 →
     refine → emit llm、跳过非目标事件、stop_flag 退出、熔断或 refine 失败不 emit);
   - MergeBatchTest:合并批边界(间隔阈值/条数上限/等待窗有界/种子接续)与标签剥离;
-  - DrainBusyTest:busy_flag 在飞标志与停止不被掐(busy_flag=None 向后兼容)。
+  - DrainBusyTest:busy_flag 在飞标志与停止不被掐(busy_flag=None 向后兼容);
+  - TitleGenTest:离线任务标题生成 generate_title(2026-10-25)——请求契约、
+    2000 字符出境上限、容错解析(栅栏/前缀/引号/首非空行/截 80)与降级口径;
+  - ConnReuseTest:HTTPS 连接复用(2026-10-25)——同线程复用一条连接、超时参数
+    变化重建、死连接重试重建、will_close 主动弃、非 200 抛 HTTPError 走传输重试。
 
 真调用用例(RealCallTest)仅在 env.rtf 可解析出真 key 时运行,输出只含 corrected/translation。
 """
@@ -48,25 +52,53 @@ def _tmp_file(content):
     return path
 
 
-class _FakeResp:
-    """urlopen 返回值替身:上下文管理器 + read()。"""
+def _reply(content):
+    """构造 OpenAI 兼容的成功响应体(content 为模型回复字符串)。"""
+    return json.dumps({'choices': [{'message': {'content': content}}]}).encode('utf-8')
 
-    def __init__(self, payload):
-        self._payload = payload
+
+def _rt(content):
+    """_roundtrip 成功替身:(200, OK, 响应体 bytes)。"""
+    return (200, 'OK', _reply(content))
+
+
+class _FakeHTTPResp:
+    """http.client 响应替身:_roundtrip 消费的字段面(status/reason/read/will_close)。"""
+
+    def __init__(self, status, payload, will_close=False):
+        self.status, self.reason = status, 'OK'
+        self._payload, self.will_close = payload, will_close
 
     def read(self):
         return self._payload
 
-    def __enter__(self):
-        return self
 
-    def __exit__(self, *a):
-        return False
+class _FakeHTTPSConn:
+    """HTTPSConnection 替身:script 队列逐次弹出驱动 getresponse——元素为
+    (status, body, will_close) 元组(成功)或异常实例(传输失败);request
+    全量记录供断言。all 收集每次实例化(数连接数)。"""
 
+    all = []
+    script = []
 
-def _reply(content):
-    """构造 OpenAI 兼容的成功响应体(content 为模型回复字符串)。"""
-    return json.dumps({'choices': [{'message': {'content': content}}]}).encode('utf-8')
+    def __init__(self, host, timeout=None):
+        self.host, self.timeout = host, timeout
+        self.requests = []          # (method, path, body, headers)
+        self.closed = False
+        _FakeHTTPSConn.all.append(self)
+
+    def request(self, method, path, body=None, headers=None):
+        self.requests.append((method, path, body, headers))
+
+    def getresponse(self):
+        act = _FakeHTTPSConn.script.pop(0)
+        if isinstance(act, Exception):
+            raise act
+        status, payload, will_close = act
+        return _FakeHTTPResp(status, payload, will_close)
+
+    def close(self):
+        self.closed = True
 
 
 class ParseKeyTest(unittest.TestCase):
@@ -147,7 +179,7 @@ class RefinerTest(unittest.TestCase):
     def test_timeout_returns_none(self):
         """传输层异常(含超时)→ None、未熔断;重试 1 次后仍失败算 1 次窗口失败。"""
         r = self._refiner()
-        with unittest.mock.patch.object(live_llm.urllib.request, 'urlopen',
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
                                         side_effect=socket.timeout('timed out')) as m:
             self.assertIsNone(r.refine('测试文本'))
             self.assertEqual(m.call_count, 2)      # 首发 + 重试 1 次
@@ -160,7 +192,7 @@ class RefinerTest(unittest.TestCase):
         import http.client
         r = self._refiner()
         with unittest.mock.patch.object(
-                live_llm.urllib.request, 'urlopen',
+                live_llm, '_roundtrip',
                 side_effect=http.client.IncompleteRead(b'{"choices')) as m:
             self.assertIsNone(r.refine('测试文本'))
             self.assertEqual(m.call_count, 2)      # 传输层类:首发 + 重试
@@ -170,8 +202,8 @@ class RefinerTest(unittest.TestCase):
     def test_bad_json_returns_none(self):
         """HTTP 200 但回复不是可解析 JSON → None(不重试,响应格式问题重试无益)。"""
         r = self._refiner()
-        with unittest.mock.patch.object(live_llm.urllib.request, 'urlopen',
-                                        return_value=_FakeResp(_reply('我不是 JSON'))) as m:
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
+                                        return_value=_rt('我不是 JSON')) as m:
             self.assertIsNone(r.refine('测试文本'))
             self.assertEqual(m.call_count, 1)
         self.assertFalse(r.fused)
@@ -180,9 +212,9 @@ class RefinerTest(unittest.TestCase):
     def test_success_parses_reply(self):
         """标准回复(含 markdown 代码栅栏变体)→ {'corrected','translation'};成功复位失败计数。"""
         r = self._refiner()
-        ok = _reply('```json\n{"corrected": "这季度毛利下滑", "translation": "Gross margin fell"}\n```')
-        with unittest.mock.patch.object(live_llm.urllib.request, 'urlopen',
-                                        return_value=_FakeResp(ok)) as m:
+        ok = _rt('```json\n{"corrected": "这季度毛利下滑", "translation": "Gross margin fell"}\n```')
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
+                                        return_value=ok) as m:
             out = r.refine('这季度毛利下滑', prev_refined='上一窗')
             self.assertEqual(out, {'corrected': '这季度毛利下滑',
                                    'translation': 'Gross margin fell'})
@@ -192,8 +224,8 @@ class RefinerTest(unittest.TestCase):
     def test_fuse_after_5(self):
         """连续 5 次 refine 失败 → 熔断;熔断后再调用直接 None 且不再发请求。"""
         r = self._refiner()
-        with unittest.mock.patch.object(live_llm.urllib.request, 'urlopen',
-                                        return_value=_FakeResp(_reply('坏回复'))) as m:
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
+                                        return_value=_rt('坏回复')) as m:
             for _ in range(5):
                 self.assertIsNone(r.refine('文本'))
             self.assertTrue(r.fused)
@@ -204,11 +236,9 @@ class RefinerTest(unittest.TestCase):
     def test_fuse_reset_by_success(self):
         """失败 2 次 → 1 次成功 → 再失败 4 次:计数被成功复位,未熔断。"""
         r = self._refiner()
-        bad = _FakeResp(_reply('坏回复'))
-        good = _FakeResp(_reply('{"corrected": "好", "translation": "ok"}'))
+        bad, good = _rt('坏回复'), _rt('{"corrected": "好", "translation": "ok"}')
         side = [bad, bad, good] + [bad] * 8
-        with unittest.mock.patch.object(live_llm.urllib.request, 'urlopen',
-                                        side_effect=side):
+        with unittest.mock.patch.object(live_llm, '_roundtrip', side_effect=side):
             r.refine('a'); r.refine('a')
             self.assertEqual(r.refine('a'), {'corrected': '好', 'translation': 'ok'})
             for _ in range(4):
@@ -216,28 +246,29 @@ class RefinerTest(unittest.TestCase):
             self.assertFalse(r.fused)
 
     def test_prompt_contract(self):
-        """请求契约:temperature=0、model 正确、user 载荷白名单三字段、上下文透传、
-        不含音频/路径/说话人姓名等越权字段;Authorization 为 Bearer key。"""
+        """请求契约:temperature=0、reasoning_effort=medium(2026-10-25)、model 正确、
+        user 载荷白名单三字段、上下文透传、不含音频/路径/说话人姓名等越权字段;
+        Authorization 为 Bearer key、超时透传到传输层。"""
         r = self._refiner()
         captured = {}
 
-        def fake_urlopen(req, timeout=None):
-            captured['req'] = req
-            captured['timeout'] = timeout
-            return _FakeResp(_reply('{"corrected": "x", "translation": "y"}'))
+        def fake_roundtrip(data, headers, timeout_s):
+            captured['data'], captured['headers'] = data, headers
+            captured['timeout'] = timeout_s
+            return _rt('{"corrected": "x", "translation": "y"}')
 
-        with unittest.mock.patch.object(live_llm.urllib.request, 'urlopen',
-                                        side_effect=fake_urlopen):
+        with unittest.mock.patch.object(live_llm, '_roundtrip', side_effect=fake_roundtrip):
             r.refine('说话人1:这季度毛利下滑主要是运费和促销投放两块',
                      prev_refined='说话人1:上一窗已修正文本')
-        req = captured['req']
         self.assertEqual(captured['timeout'], r.timeout_s)
-        self.assertEqual(req.headers.get('Authorization'), 'Bearer ' + FAKE_KEY)
-        body = json.loads(req.data.decode('utf-8'))
-        # OpenAI 兼容最小面:只允许这四个顶层键
-        self.assertEqual(set(body), {'model', 'messages', 'temperature', 'max_tokens'})
+        self.assertEqual(captured['headers'].get('Authorization'), 'Bearer ' + FAKE_KEY)
+        body = json.loads(captured['data'].decode('utf-8'))
+        # OpenAI 兼容最小面:只允许这五个顶层键(2026-10-25 增 reasoning_effort)
+        self.assertEqual(set(body), {'model', 'messages', 'temperature', 'max_tokens',
+                                     'reasoning_effort'})
         self.assertEqual(body['model'], 'MiniMax-M3.1-Flash')
         self.assertEqual(body['temperature'], 0)
+        self.assertEqual(body['reasoning_effort'], 'medium')
         self.assertIsInstance(body['max_tokens'], int)
         self.assertEqual([m['role'] for m in body['messages']], ['system', 'user'])
         # 出境白名单:user 载荷只有 三个字符串字段(术语表 v1 预留)+ 模型名
@@ -247,7 +278,7 @@ class RefinerTest(unittest.TestCase):
         self.assertEqual(user['prev_refined'], '说话人1:上一窗已修正文本')
         self.assertIsNone(user['glossary'])
         # 越权内容零容忍:body 序列化后不含 路径分隔/音频字样/文件后缀(wav)/时间戳元数据
-        raw = req.data.decode('utf-8')
+        raw = captured['data'].decode('utf-8')
         for forbidden in ('/', '.wav', 'audio', 'path', 't0', 't1'):
             self.assertNotIn(forbidden, raw)
         # 系统指令含契约要点:只修 ASR 错误、不改意思、JSON 输出、保留说话人标签、补标点
@@ -409,11 +440,11 @@ class RefineWorkerTest(unittest.TestCase):
         self.assertEqual(seen, ['原文'])          # 无标签,姓名未出境
 
     def test_worker_survives_transport_exception(self):
-        """评审 Important:真 LLMRefiner + mock urlopen 抛 IncompleteRead——
+        """评审 Important:真 LLMRefiner + mock _roundtrip 抛 IncompleteRead——
         第一批 refine 失败(不 emit),worker 存活并继续消费第二批成功 emit。"""
         import http.client
         r = LLMRefiner(FAKE_KEY, retry_backoff_s=0)
-        good = _FakeResp(_reply('{"corrected": "说话人1:第二窗", "translation": "W2"}'))
+        good = _rt('{"corrected": "说话人1:第二窗", "translation": "W2"}')
         bad = http.client.IncompleteRead(b'{"choices')
         events = [{'type': 'pass1_final', 't0_ms': 0, 't1_ms': 9, 'speaker': 1, 'text': '第一窗'},
                   {'type': 'pass1_final', 't0_ms': 10000, 't1_ms': 10009, 'speaker': 1,
@@ -430,7 +461,7 @@ class RefineWorkerTest(unittest.TestCase):
             stop.set()
             raise queue.Empty()
 
-        with unittest.mock.patch.object(live_llm.urllib.request, 'urlopen',
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
                                         side_effect=[bad, bad, good]):
             refine_worker(get_event, emitted.append, r, stop)   # 不抛即存活
         self.assertEqual(len(emitted), 1)          # 只有第二窗 emit
@@ -666,20 +697,194 @@ class DrainBusyTest(unittest.TestCase):
         self.assertEqual([e['type'] for e in emitted], ['llm'])
 
 
+class TitleGenTest(unittest.TestCase):
+    """generate_title(离线任务标题生成,2026-10-25):请求契约、容错解析与降级口径。
+
+    出境面比 refine 更窄:仅 system 指令 + 截断后的转录文本两个字段,无上下文、
+    无术语表;任何失败(无 key/空文本/传输/形状)一律 None,绝不抛出——调用点在
+    process_job 的 status='done' 之前,穿透会把任务误标 error。
+    """
+
+    def _gen(self, text='这是会议开头的内容', key=FAKE_KEY):
+        return live_llm.generate_title(text, key, timeout_s=1, retry_backoff_s=0)
+
+    def test_ok_strips_prefix_and_quotes(self):
+        """正常回复:剥「标题:」前缀与首尾引号,返回单行标题。"""
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
+                                        return_value=_rt('“标题:第三季度预算评审会”')):
+            self.assertEqual(self._gen(), '第三季度预算评审会')
+
+    def test_first_nonempty_line_and_fence(self):
+        """多行/代码栅栏回复:剥栅栏后取首个非空行(模型偶发附注不进标题)。"""
+        body = '```json\n第三季度预算评审会\n(根据开场内容拟定)\n```'
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
+                                        return_value=_rt(body)):
+            self.assertEqual(self._gen(), '第三季度预算评审会')
+
+    def test_truncate_to_80(self):
+        """超长标题截 80 字符(与 meta.title 限长一致,app 两处 [:80] 同口径)。"""
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
+                                        return_value=_rt('标' * 120)):
+            self.assertEqual(self._gen(), '标' * 80)
+
+    def test_blank_reply_none(self):
+        """空回复/全空白/仅栅栏 → None(调用方保留原标题)。"""
+        for bad in ('', '   ', '\n\n', '```'):
+            with unittest.mock.patch.object(live_llm, '_roundtrip',
+                                            return_value=_rt(bad)):
+                self.assertIsNone(self._gen())
+
+    def test_no_key_or_empty_text_skips_request(self):
+        """无 key 或空文本:不发请求直接 None。"""
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
+                                        side_effect=AssertionError('不应发请求')):
+            self.assertIsNone(self._gen(key=None))
+            self.assertIsNone(self._gen(text='   '))
+
+    def test_transport_error_then_bad_json_none(self):
+        """传输层超时(重试 1 次后)与非 JSON 响应都 → None,不抛异常。"""
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
+                                        side_effect=socket.timeout('t')) as m:
+            self.assertIsNone(self._gen())
+            self.assertEqual(m.call_count, 2)      # 首发 + 重试 1 次(与 refine 同口径)
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
+                                        return_value=(200, 'OK', b'not json')) as m:
+            self.assertIsNone(self._gen())
+            self.assertEqual(m.call_count, 1)      # 响应形状错不重试
+
+    def test_request_contract_and_egress_cap(self):
+        """请求契约:出境仅 system+截断文本,user 载荷精确等于 text[:2000];
+        temperature=0、reasoning_effort=medium、Bearer key;请求体绝无路径/音频/
+        时间戳等越权字段。"""
+        captured = {}
+
+        def fake_roundtrip(data, headers, timeout_s):
+            captured['data'], captured['headers'] = data, headers
+            return _rt('标题')
+
+        with unittest.mock.patch.object(live_llm, '_roundtrip', side_effect=fake_roundtrip):
+            self.assertEqual(self._gen(text='内' * 5000), '标题')
+        self.assertEqual(captured['headers'].get('Authorization'), 'Bearer ' + FAKE_KEY)
+        body = json.loads(captured['data'].decode('utf-8'))
+        self.assertEqual(set(body), {'model', 'messages', 'temperature', 'max_tokens',
+                                     'reasoning_effort'})
+        self.assertEqual(body['model'], live_llm.MODEL)
+        self.assertEqual(body['temperature'], 0)
+        self.assertEqual(body['reasoning_effort'], 'medium')
+        self.assertEqual([m['role'] for m in body['messages']], ['system', 'user'])
+        # 出境上限(隐私白名单单点强制):user 就是截断后的纯文本,再无其他字段
+        self.assertEqual(body['messages'][1]['content'], '内' * live_llm.TITLE_INPUT_MAX)
+        raw = captured['data'].decode('utf-8')
+        for forbidden in ('/', '.wav', 'audio', 'path', 't0', 't1'):
+            self.assertNotIn(forbidden, raw)
+        sysmsg = body['messages'][0]['content']
+        for kw in ('主要语言', '不包含日期', '只输出标题'):
+            self.assertIn(kw, sysmsg)
+
+
+class ConnReuseTest(unittest.TestCase):
+    """HTTPS 连接复用(2026-10-25):_get_conn 线程本地缓存 + _roundtrip 在复用
+    连接上往返 + _chat 异常丢弃重建。打桩点:http.client.HTTPSConnection 构造。"""
+
+    def setUp(self):
+        live_llm._drop_conn()               # 隔离:清掉本线程(测试主线程)遗留连接
+
+    def tearDown(self):
+        live_llm._drop_conn()
+
+    def _reset(self, script):
+        _FakeHTTPSConn.all = []
+        _FakeHTTPSConn.script = list(script)
+
+    def test_same_thread_reuses_one_conn(self):
+        """同线程两次 _chat 只建一条连接、各发一次 POST(路径与请求体正确)。"""
+        self._reset([(200, _reply('甲'), False), (200, _reply('乙'), False)])
+        with unittest.mock.patch.object(live_llm.http.client, 'HTTPSConnection',
+                                        _FakeHTTPSConn):
+            self.assertEqual(live_llm._chat(FAKE_KEY, 's', 'u1', 1, 0), '甲')
+            self.assertEqual(live_llm._chat(FAKE_KEY, 's', 'u2', 1, 0), '乙')
+        self.assertEqual(len(_FakeHTTPSConn.all), 1, '同线程应复用一条连接')
+        conn = _FakeHTTPSConn.all[0]
+        self.assertEqual(len(conn.requests), 2)
+        self.assertFalse(conn.closed)
+        method, path, body, headers = conn.requests[0]
+        self.assertEqual(method, 'POST')
+        self.assertEqual(path, live_llm.API_PATH)
+        self.assertEqual(headers['Authorization'], 'Bearer ' + FAKE_KEY)
+        self.assertEqual(json.loads(body.decode('utf-8'))['model'], live_llm.MODEL)
+
+    def test_timeout_change_rebuilds_conn(self):
+        """超时参数变化 → 弃旧连接按新超时重建(socket 超时是连接级属性)。"""
+        self._reset([(200, _reply('甲'), False), (200, _reply('乙'), False)])
+        with unittest.mock.patch.object(live_llm.http.client, 'HTTPSConnection',
+                                        _FakeHTTPSConn):
+            live_llm._chat(FAKE_KEY, 's', 'u', 1, 0)
+            live_llm._chat(FAKE_KEY, 's', 'u', 5, 0)
+        self.assertEqual(len(_FakeHTTPSConn.all), 2)
+        self.assertTrue(_FakeHTTPSConn.all[0].closed)      # 旧连接被关闭
+        self.assertEqual(_FakeHTTPSConn.all[1].timeout, 5)
+
+    def test_stale_conn_retry_rebuilds(self):
+        """复用连接被服务端关闭(首发 RemoteDisconnected)→ 丢弃重建,重试成功。"""
+        import http.client
+        self._reset([http.client.RemoteDisconnected('服务端已关闭'),
+                     (200, _reply('好'), False)])
+        with unittest.mock.patch.object(live_llm.http.client, 'HTTPSConnection',
+                                        _FakeHTTPSConn):
+            self.assertEqual(live_llm._chat(FAKE_KEY, 's', 'u', 1, 0), '好')
+        self.assertEqual(len(_FakeHTTPSConn.all), 2, '死连接应触发重建')
+        self.assertTrue(_FakeHTTPSConn.all[0].closed)
+
+    def test_will_close_proactive_drop(self):
+        """响应声明 will_close → 成功读完也主动弃连接,下次调用新建。"""
+        self._reset([(200, _reply('甲'), True), (200, _reply('乙'), False)])
+        with unittest.mock.patch.object(live_llm.http.client, 'HTTPSConnection',
+                                        _FakeHTTPSConn):
+            live_llm._chat(FAKE_KEY, 's', 'u', 1, 0)
+            live_llm._chat(FAKE_KEY, 's', 'u', 1, 0)
+        self.assertEqual(len(_FakeHTTPSConn.all), 2, 'will_close 后应主动弃连接')
+
+    def test_non_200_is_transport_retry(self):
+        """非 200 → HTTPError(OSError 子类)走传输类重试:1 次 refine 消耗 2 次
+        往返,失败计数记 'HTTPError'(与 urllib 时代口径一致)。"""
+        r = LLMRefiner(FAKE_KEY, retry_backoff_s=0)
+        with unittest.mock.patch.object(live_llm, '_roundtrip',
+                                        return_value=(429, 'Too Many Requests',
+                                                      b'{"type":"error"}')) as m:
+            self.assertIsNone(r.refine('文本'))
+            self.assertEqual(m.call_count, 2)
+        self.assertFalse(r.fused)
+        self.assertEqual(r.last_error, 'HTTPError')
+
+
 class RealCallTest(unittest.TestCase):
     """真调用一次(仅当 env.rtf 可解析出真 key)。输出只含 corrected/translation,
     绝不打印 key 或 Authorization。"""
 
     def test_real_refine_translation(self):
-        key = parse_key(ENV_RTF)
+        # 级联解析(.env 优先,2026-10-24 起主用 .env;旧版只读 env.rtf 会假性 skip)
+        key = parse_key()
         if not key:
-            self.skipTest('env.rtf 无可用 key')
+            self.skipTest('.env/env.rtf 均无可用 key')
         r = LLMRefiner(key)
         out = r.refine('说话人1:这季度毛利下滑主要是运费和促销投放两块')
         self.assertIsNotNone(out, '真调用失败:%s' % r.last_error)
         self.assertTrue(out['translation'].strip())
         print('\n[真调用] corrected:', out['corrected'])
         print('[真调用] translation:', out['translation'])
+
+    def test_real_generate_title(self):
+        """标题生成真调用:一段财务会议风格开头 → 单行标题。"""
+        key = parse_key()
+        if not key:
+            self.skipTest('.env/env.rtf 均无可用 key')
+        text = ('咱们开始吧,今天主要过一下三季度的预算执行情况,'
+                '先看毛利率这块,下滑得比较明显,主要是运费和促销投放两块,'
+                '然后过一下四季度各部门的采购计划。')
+        title = live_llm.generate_title(text, key)
+        self.assertIsNotNone(title)
+        self.assertEqual(title, title[:80].strip())
+        print('\n[真调用] title:', title)
 
 
 if __name__ == '__main__':

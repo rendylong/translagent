@@ -14,6 +14,17 @@ docs/2026-10-24-live-captions-drop-pass2-and-segmentation-spec.md §4.3。
 摊薄调用量;批内只有一个说话人时事件文本剥掉行首标签(speaker=簇号),跨说话人
 (或任一行无合法标签)时保留行标签(speaker=None,前端通用色)。
 
+离线标题生成(2026-10-25):generate_title(text, api_key) 供 app.process_job 在
+任务 status='done' 前调用一次——前 TITLE_INPUT_MAX(2000)字符纯转录文本送
+MiniMax 拟会议标题,失败静默返回 None(调用方保留原标题);出境面比 refine 更窄,
+仅 system 指令 + 截断文本,无上下文无术语表。
+
+延迟优化(2026-10-25):请求体固定 reasoning_effort=medium、传输改每线程复用
+HTTPS 连接、攒批等待窗调至 0.5s。依据:M3.1-Flash 思考无法关闭且省略参数默认
+max 档(实测);连续语音下 1.5s 等待窗从不真正并批(相邻 final 间隔总大于窗长),
+纯加延迟。端到端实测(17 句连续语音仿真):翻译滞后中位 7.2s→2.6s、最差
+10.3s→3.6s,call 中位 3.7s→1.6s、尾部 8.5s→2.7s(8s 超时风险随之消失)。
+
 隐私白名单(写死,出境内容仅限):本窗文本(说话人以"说话人N"编号形式,绝无姓名)、
 上一窗已修正文本(滚动 ≤2 窗)、术语表字段(v1 预留)、模型名。音频任何形式、文件路径、
 时间戳之外的其他 job 内容绝不出境。key 只在运行时从 .env/env.rtf 剥壳解析,仅存内存,
@@ -24,9 +35,10 @@ import json
 import os
 import queue
 import re
+import threading
 import time
 import urllib.error
-import urllib.request
+import urllib.parse
 from collections import deque
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -37,17 +49,29 @@ ENV_RTF = os.path.join(_REPO_ROOT, 'env.rtf')     # 兼容旧文件(RTF 壳)
 # invalid api key(密钥属中国控制台)。默认取 minimaxi.com(minimax.chat 的新域名),
 # 如换国际账号改这一行即可。
 API_URL = 'https://api.minimaxi.com/v1/chat/completions'
+_API_SPLIT = urllib.parse.urlsplit(API_URL)
+API_HOST = _API_SPLIT.netloc    # 连接复用:HTTPSConnection 只需 host,路径见 API_PATH
+API_PATH = _API_SPLIT.path or '/'
 MODEL = 'MiniMax-M3.1-Flash'
+# 思考档位(2026-10-25 实测定档):M3.1-Flash 是自适应思考模型,思考无法关闭
+# (thinking disabled / effort none 服务端均 400 "requires adaptive thinking"),且
+# 省略本参数时服务端默认 max 档——省略即最深思考,延迟被思考时长吃掉。实测 low
+# 档多行批 5/5 把说话人标签泄进译文(指令遵循崩),medium 思考 token 减半以上、
+# 指令遵循完好,是质量/速度均衡点(端到端滞后 7.2s→2.6s 的主因之一)。
+REASONING_EFFORT = 'medium'
 FUSE_AFTER = 5          # 连续 refine 失败次数达到即熔断(成功复位)
 # 合并批常量(spec 2026-10-24 §4.3,摘 Pass2 后 Pass1 final 直喂本层):
 MERGE_GAP_MS = 2500     # 相邻 final 间隔 ≤ 此值并批(spec 3B)
-MERGE_WAIT_S = 1.5      # 队空攒批等待窗(与间隔阈值解耦:保住 §5.6「句尾≤5s」口径,裁决记录于 SDD ledger ruling 4)
+MERGE_WAIT_S = 0.5      # 队空攒批等待窗(2026-10-25 由 1.5 调低:连续语音下相邻
+                        # final 间隔总 >1.5s,旧值从不真正等到并批、纯加延迟;真正
+                        # 的并批发生在积压时,队列非空零等待抽取,不受本值影响)
 MERGE_MAX_ITEMS = 6     # 批条数上限(到顶即出批,防长批尾延迟)
 MERGE_MAX_SPAN_MS = 30000  # 批时间跨度上限(末句 t1 - 首句 t0,防跨话题并批)
 # max_tokens 下限:M3.1-Flash 是推理模型,思考(reasoning_content)计入 max_tokens,
 # 实测本用例思考耗 392~951 token——按 spec「输入 2 倍」封顶(≈220)时 content 被截成
 # 空(2026-10-23 实测 finish=length、content_len=0)。放大规则保留 2× 输入,下限提至 1536。
 MAX_TOKENS_FLOOR = 1536
+TITLE_INPUT_MAX = 2000   # 标题生成送出转录文本的字符上限(出境上限,调小随意、调大须审)
 
 _KEY_RE = re.compile(r'sk-[A-Za-z0-9_-]{20,}')
 
@@ -97,6 +121,90 @@ def parse_key(path=None):
     s = _RTF_BRACES.sub('', s)
     m = _KEY_RE.search(s)
     return m.group(0) if m else None
+
+
+_conn_tls = threading.local()   # 每线程一条复用连接:live-llm worker 串行调用是
+                                # 常驻消费方;auto_title 每任务一次,无复用收益也无害
+
+
+def _get_conn(timeout_s):
+    """取本线程复用的 HTTPS 连接;不存在或超时参数变了则重建。
+
+    复用省掉每次请求的 TCP+TLS 握手(实测每 call 省 0.3~1s)。线程本地即线程
+    安全:_chat 的两个调用方(refine_worker 线程、process_job 线程)各自串行,
+    绝无并发共用一条连接。"""
+    conn = getattr(_conn_tls, 'conn', None)
+    if conn is not None and getattr(_conn_tls, 'timeout', None) != timeout_s:
+        _drop_conn()
+        conn = None
+    if conn is None:
+        conn = http.client.HTTPSConnection(API_HOST, timeout=timeout_s)
+        _conn_tls.conn, _conn_tls.timeout = conn, timeout_s
+    return conn
+
+
+def _drop_conn():
+    """丢弃并关闭本线程连接(传输异常后连接状态不可信、worker 收尾时)。"""
+    conn = getattr(_conn_tls, 'conn', None)
+    _conn_tls.conn = None
+    if conn is not None:
+        try:
+            conn.close()
+        except OSError:
+            pass
+
+
+def _roundtrip(data, headers, timeout_s):
+    """单次 HTTP 往返:在复用连接上 POST、读尽响应体,返回 (status, reason,
+    body_bytes)。非 200 不在此抛,统一由 _chat 决定语义(测试的传输层替身 seam)。"""
+    conn = _get_conn(timeout_s)
+    conn.request('POST', API_PATH, body=data, headers=headers)
+    resp = conn.getresponse()
+    raw = resp.read()
+    if resp.will_close:            # 服务端要求关连接:主动弃,免下轮首发撞死连接
+        _drop_conn()
+    return resp.status, resp.reason, raw
+
+
+def _chat(api_key, system, user, timeout_s, retry_backoff_s):
+    """MiniMax(OpenAI 兼容端点)单次对话请求(传输层失败重试 1 次),返回模型
+    回复字符串。LLMRefiner._post 与 generate_title 共用。
+
+    传输走每线程复用的 HTTPS 连接(_get_conn/_roundtrip);非 200 与 urllib
+    时代同口径抛 HTTPError(OSError 子类 → 传输类,重试 1 次)。复用连接被
+    服务端空闲关闭属正常,首发撞上 RemoteDisconnected 会丢弃重建并占用唯一
+    一次重试额度。
+
+    抛 _BadReply(响应形状错,不重试)或原始传输层异常(重试后仍失败;
+    含 OSError 家族与 http.client.HTTPException 家族——截断的 200 响应
+    IncompleteRead、坏状态行等,均非 OSError,漏捕会穿透到调用方)。
+    """
+    body = {'model': MODEL,
+            'messages': [{'role': 'system', 'content': system},
+                         {'role': 'user', 'content': user}],
+            'temperature': 0,
+            'reasoning_effort': REASONING_EFFORT,
+            'max_tokens': max(MAX_TOKENS_FLOOR, 2 * len(user))}   # 按输入长度 2 倍封顶
+    data = json.dumps(body, ensure_ascii=False).encode('utf-8')
+    headers = {'Content-Type': 'application/json',
+               'Authorization': 'Bearer ' + api_key}
+    last = None
+    for attempt in (0, 1):                     # 首发 + 重试 1 次(退避 2s)
+        if attempt and retry_backoff_s > 0:
+            time.sleep(retry_backoff_s)
+        try:
+            status, reason, raw = _roundtrip(data, headers, timeout_s)
+            if status != 200:
+                raise urllib.error.HTTPError(API_URL, status, reason, None, None)
+            payload = json.loads(raw.decode('utf-8'))
+            return payload['choices'][0]['message']['content']
+        except (OSError, ValueError, KeyError, IndexError, TypeError,
+                http.client.HTTPException) as e:
+            last = e
+            _drop_conn()    # 连接状态不可信:丢弃,重试时重建
+            if not isinstance(e, (OSError, http.client.HTTPException)):
+                raise _BadReply(str(type(e).__name__))   # 响应可读但形状不对 → 无重试价值
+    raise last
 
 
 class LLMRefiner:
@@ -179,36 +287,10 @@ class LLMRefiner:
         return system, user
 
     def _post(self, text, prev_refined):
-        """发起请求(传输层失败重试 1 次),返回模型回复字符串。
-
-        抛 _BadReply(响应形状错,不重试)或原始传输层异常(重试后仍失败;
-        含 OSError 家族与 http.client.HTTPException 家族——截断的 200 响应
-        IncompleteRead、坏状态行等,均非 OSError,漏捕会穿透到调用方)。
-        """
+        """发起请求(传输层失败重试 1 次),返回模型回复字符串(实现收敛到 _chat,
+        异常口径见其 docstring)。"""
         system, user = self._build_messages(text, prev_refined)
-        body = {'model': MODEL,
-                'messages': [{'role': 'system', 'content': system},
-                             {'role': 'user', 'content': user}],
-                'temperature': 0,
-                'max_tokens': max(MAX_TOKENS_FLOOR, 2 * len(user))}   # 按输入长度 2 倍封顶
-        req = urllib.request.Request(
-            API_URL, data=json.dumps(body, ensure_ascii=False).encode('utf-8'),
-            headers={'Content-Type': 'application/json',
-                     'Authorization': 'Bearer ' + self._key})
-        last = None
-        for attempt in (0, 1):                     # 首发 + 重试 1 次(退避 2s)
-            if attempt and self.retry_backoff_s > 0:
-                time.sleep(self.retry_backoff_s)
-            try:
-                with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-                    payload = json.loads(resp.read().decode('utf-8'))
-                return payload['choices'][0]['message']['content']
-            except (OSError, ValueError, KeyError, IndexError, TypeError,
-                    http.client.HTTPException) as e:
-                last = e
-                if not isinstance(e, (OSError, http.client.HTTPException)):
-                    raise _BadReply(str(type(e).__name__))   # 响应可读但形状不对 → 无重试价值
-        raise last
+        return _chat(self._key, system, user, self.timeout_s, self.retry_backoff_s)
 
     def _parse_reply(self, content):
         """模型回复 → {'corrected','translation'};非 JSON 或字段缺失 → None。
@@ -239,6 +321,52 @@ class LLMRefiner:
     def _fail(self, reason):
         self._fails += 1
         self.last_error = reason
+
+
+# ---------- 离线任务标题生成(app.auto_title 调用,2026-10-25) ----------
+
+_TITLE_SYSTEM = (
+    '你是会议标题生成器。输入是一场会议语音转录的开头片段,可能没有标点、'
+    '含口语和识别错字。要求:1.用转录文本的主要语言为这场会议拟一个简短的标题,'
+    '中文不超过 20 字,其他语言不超过 12 个词;2.标题概括会议主题,'
+    '不包含日期、星期、时间段和说话人姓名;3.只输出标题这一行文字,'
+    '不要引号、序号、「标题:」类前缀或任何其他内容。')
+
+
+def _parse_title(content):
+    """模型回复 → 单行标题(≤80 字符,与 meta.title 限长一致);无内容 → None。
+
+    容错:剥 markdown 代码栅栏、取首个非空行、剥「标题/题目/title:」前缀与
+    首尾引号书名号——模型对「只输出一行」的遵守是概率性的,防线放在解析侧。
+    前缀可能在引号内层或外层,剥引号→剥前缀交替两轮兜住两种嵌套。
+    """
+    s = (content or '').strip()
+    if s.startswith('```'):
+        s = re.sub(r'^```[a-zA-Z]*\s*', '', s)
+        s = re.sub(r'\s*```$', '', s).strip()
+    line = next((ln.strip() for ln in s.splitlines() if ln.strip()), '')
+    for _ in range(2):
+        line = line.strip(' \t"\'“”「」『』《》')
+        line = re.sub(r'^(?:标题|题目|title)\s*[:：]\s*', '', line, flags=re.IGNORECASE)
+    return line[:80] or None
+
+
+def generate_title(text, api_key, timeout_s=8, retry_backoff_s=2.0):
+    """转录文本前 TITLE_INPUT_MAX 字符 → 会议标题;任何失败返回 None。
+
+    调用方(app.auto_title)在 process_job 的 status='done' 之前调用一次,
+    失败即保留原标题。无 key/空文本不发请求;_chat 的传输/形状异常与解析
+    缺陷全吞——离线管线里标题生成绝不影响任务成败。
+    """
+    text = (text or '').strip()
+    if not api_key or not text:
+        return None
+    try:
+        content = _chat(api_key, _TITLE_SYSTEM, text[:TITLE_INPUT_MAX],
+                        timeout_s, retry_backoff_s)
+    except Exception:                     # noqa: BLE001 尽力而为:标题是锦上添花
+        return None
+    return _parse_title(content)
 
 
 def refine_worker(get_event, emit, refiner, stop_flag, busy_flag=None):
@@ -377,3 +505,4 @@ def refine_worker(get_event, emit, refiner, stop_flag, busy_flag=None):
         finally:
             if busy_flag is not None:
                 busy_flag.clear()       # 在飞结束:排空判据可观察到(emit 后复位)
+    _drop_conn()    # 收尾:释放本线程复用的 API 连接(worker 是 _chat 的常驻调用方)
