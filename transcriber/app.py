@@ -683,7 +683,10 @@ def job_reveal(job_id):
 
 @app.post('/api/jobs/<job_id>/cancel')
 def job_cancel(job_id):
-    """放弃进行中的任务:杀掉 whisper 子进程立即生效;diarizing 阶段在下一个阶段边界放弃。"""
+    """放弃进行中的任务:kill 前先校验 pid 确属 whisper(comm 含 'whisper')再杀——
+    whisper 退出后 pid 被系统复用时,无条件 kill 会误杀无辜进程(与
+    recover_interrupted 同款闸门);diarizing 阶段由回调内 raise 秒级生效,
+    其余阶段在下一个阶段边界生效。"""
     if not re.fullmatch(r'[\w-]+', job_id) or not os.path.isfile(os.path.join(job_dir(job_id), 'meta.json')):
         abort(404)
     meta = read_meta(job_id)
@@ -691,7 +694,9 @@ def job_cancel(job_id):
         return jsonify({'error': '任务已结束,无需放弃'}), 409
     pid = meta.get('worker_pid')
     if pid:
-        subprocess.run(['kill', str(pid)], capture_output=True)
+        r = subprocess.run(['ps', '-p', str(pid), '-o', 'comm='], capture_output=True, text=True)
+        if 'whisper' in r.stdout:
+            subprocess.run(['kill', str(pid)], capture_output=True)
     write_meta(job_id, cancel_requested=True)
     return jsonify({'ok': True})
 

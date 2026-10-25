@@ -132,5 +132,37 @@ class RealModelCancelProbe(unittest.TestCase):
         self.assertTrue(seen, '正常路径回调应被调用')
 
 
+class CancelCommGuardTest(PipelineFixture):
+    """7.19:cancel 的 kill 前加与 recover_interrupted 同款 comm 校验——只杀
+    comm 含 'whisper' 的进程。whisper 退出后 pid 被系统复用时,无条件 kill
+    会误杀无辜进程;7.2 让 diarizing 放弃真正可用后该路径使用频率上升。"""
+
+    def _cancel(self, job_id, comm_stdout):
+        """POST /api/jobs/<job_id>/cancel,ps 桩返回 comm_stdout;返回全部 run 调用。"""
+        app.subprocess.run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=comm_stdout, stderr='')
+        app.app.config['TESTING'] = True
+        r = app.app.test_client().post(f'/api/jobs/{job_id}/cancel')
+        assert r.status_code == 200, r.data
+        return app.subprocess.run.call_args_list
+
+    def test_non_whisper_pid_not_killed(self):
+        """pid 的 comm 不是 whisper → 不发 kill;放弃标记仍须落盘。"""
+        _make_job(self.jobs, 'j-cancel', status='transcribing', worker_pid=424242)
+        calls = self._cancel('j-cancel', 'launchd\n')   # ps 桩:该 pid 是别的进程
+        cmds = [c.args[0] for c in calls]               # 每个调用的命令列表
+        self.assertNotIn(['kill', '424242'], cmds, '非 whisper 进程不得 kill')
+        self.assertTrue(any(c and c[0] == 'ps' for c in cmds), 'kill 前应先做 comm 校验')
+        self.assertTrue(app.read_meta('j-cancel')['cancel_requested'],
+                        '即便没 kill,放弃标记仍要落盘让阶段边界收敛')
+
+    def test_whisper_pid_killed(self):
+        """comm 含 whisper → 照旧 kill,whisper 子进程立即生效的语义不回退。"""
+        _make_job(self.jobs, 'j-cancel-w', status='transcribing', worker_pid=424243)
+        calls = self._cancel('j-cancel-w', '/Users/x/.tools/whisper.cpp/build/bin/whisper-cli\n')
+        cmds = [c.args[0] for c in calls]
+        self.assertIn(['kill', '424243'], cmds, 'whisper 进程仍须被 kill')
+
+
 if __name__ == '__main__':
     unittest.main()
