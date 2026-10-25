@@ -432,6 +432,50 @@ class WP3LiveGuardPins(unittest.TestCase):
         self.assertRegex(self.html, r'\.chip\.clickable\{[^}]*cursor:\s*pointer',
                          '可点 chip 缺指针样式')
 
+    def test_taken_over_state_reset(self):
+        """评审 Important(静态半边,行为半边见 WP3TakenOverReopenVector):onTakenOver
+        须复位页内单会话状态 sessionId/userStop/lastSeq——goBtn 已重启允许不刷新直接
+        重开,三残留任一都会让重开路径坏死(误发 resume 死会话 / 误发 resume+stop /
+        新会话小 seq 被去重全吞)。"""
+        body = _js_fn(self.js, 'onTakenOver')
+        self.assertIsNotNone(body, 'onTakenOver 缺失')
+        self.assertIn('state.sessionId = null', body)
+        self.assertIn('state.userStop = false', body)
+        self.assertIn('state.lastSeq = 0', body)
+
+    def test_begin_session_no_shared_writes_before_lock(self):
+        """评审 Minor 1+2:锁闸之前不得写共享 localStorage(占用路径污染共享键,
+        第三窗口 autoResume 会取到一次失败尝试的 startedAt);页内重开须清上一场
+        残留的重连计数与终态(Important 修复后页内重入变多)。"""
+        body = _js_fn(self.js, 'beginSession')
+        self.assertIsNotNone(body, 'beginSession 缺失')
+        self.assertLess(body.index('acquireLiveLock()'),
+                        body.index("localStorage.setItem('live.title'"),
+                        '共享键写入必须在锁到手之后(占用路径不得污染 localStorage)')
+        self.assertIn('state.reconnectTries = 0', body, '重入未清重连计数')
+        self.assertIn('disarmReconnectChip()', body, '重入未解除重连终态')
+
+    def test_reconnect_final_bar_mirror_copy(self):
+        """评审 Minor 3:barChip 终态镜像须含「点击重试」——web 叠加态默认只见
+        字幕条,面板侧文案的恢复动作提示必须在镜像侧同在。"""
+        self.assertIn('连接中断 · 已停止自动重连 · 点击重试', self.js)
+
+    def test_self_audit_fixes_pinned(self):
+        """自审轮三缺陷补钉(防回退):disarm 连字幕条镜像一并退场;armChipButton
+        属性设置先于 __armed 守卫(disarm 后可复设)、监听器只挂一次;manualReconnect
+        点击后即时切回重连中文案。"""
+        disarm = _js_fn(self.js, 'disarmReconnectChip')
+        self.assertIsNotNone(disarm)
+        self.assertIn("'barChip'", disarm, 'disarm 须连字幕条镜像一并退场')
+        arm = _js_fn(self.js, 'armChipButton')
+        self.assertIsNotNone(arm)
+        self.assertLess(arm.index("el.setAttribute('role', 'button'"),
+                        arm.index('if (el.__armed) return'),
+                        'armChipButton 属性设置须在 __armed 守卫之前(disarm 后可复设)')
+        manual = _js_fn(self.js, 'manualReconnect')
+        self.assertIsNotNone(manual)
+        self.assertIn("'连接中断 · 重连中'", manual, '手动重试后须即时切回重连中文案')
+
 
 # langFromStorage/migrateLegacyLang 行为向量:从 live.js 源码抠真实函数(花括号配平,
 # splitSentences/applyRoute 先例),桩掉 localStorage 后跑迁移语义断言。
@@ -509,6 +553,77 @@ class WP4LangMigrationVectors(unittest.TestCase):
                              % (proc.stdout.decode('utf-8', 'replace'),
                                 proc.stderr.decode('utf-8', 'replace')[:600]))
             self.assertIn('WP4_LANG_VECTORS_OK', proc.stdout.decode('utf-8', 'replace'))
+        finally:
+            os.unlink(vec)
+
+
+WP3_TAKEN_OVER_VECTOR_MJS = r'''
+import { readFileSync } from 'node:fs';
+const src = readFileSync(process.argv[2], 'utf8');
+function fn(name){
+  const m = src.match(new RegExp('function ' + name + '\\s*\\('));
+  if (!m) throw new Error(name + ' missing');
+  const start = src.indexOf('{', m.index);
+  let depth = 0;
+  for (let i = start; i < src.length; i++){
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}'){ depth--; if (!depth) return src.slice(m.index, i + 1); }
+  }
+  throw new Error(name + ' braces');
+}
+// 桩面:onTakenOver 依赖链 setPhase/stopCapture/stopTimer/clearSessionStorage/
+// releaseLiveLock/disarmReconnectChip 全部抠入;$ 桩按 id 缓存;state 初值模拟
+// 「stopping 相位被接管」最恶劣场景(userStop=true、lastSeq=42、终态旗标亮、锁在手)。
+const store = { 'live.sessionId': 'sess_old', 'live.startedAt': '123' };
+const LS = { getItem: k => (k in store ? store[k] : null),
+  setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
+const els = {};
+const $ = id => (els[id] || (els[id] = { hidden: false, textContent: '', disabled: false,
+  classList: { remove(){} }, removeAttribute(){}, remove(){} }));
+const bundle = ['var state = {phase:"live", sessionId:"sess_old", userStop:true, lastSeq:42,',
+  '  reconnectTimer:123, reconnectFinal:true, timerIv:7, capture:null, ws:{close(){}},',
+  '  lock:{released:false, release(){this.released=true;}}};',
+  fn('setPhase'), fn('stopCapture'), fn('stopTimer'), fn('clearSessionStorage'),
+  fn('releaseLiveLock'), fn('barChip'), fn('disarmReconnectChip'), fn('onTakenOver'),
+  'onTakenOver();', 'return state;'].join('\n');
+const endState = new Function('localStorage', '$', bundle)(LS, $);
+let fail = 0;
+const ok = (cond, what) => { if (!cond){ console.error('FAIL ' + what); fail++; } };
+ok(endState.sessionId === null, 'sessionId 未复位:重开会以 resume=!!sessionId 判真对死会话发 resume(落错误卡)');
+ok(endState.userStop === false, 'userStop 未复位:stopping 相位被接管后重开会误发 resume+stop');
+ok(endState.lastSeq === 0, 'lastSeq 未清零:新会话 seq 从小值起会被去重全吞、字幕静默');
+ok(!('live.sessionId' in store) && !('live.startedAt' in store), 'session 存储未清');
+ok(endState.lock === null || endState.lock.released === true, '锁未释放');
+ok(endState.reconnectFinal === false, '重连终态旗标未解除');
+ok(endState.reconnectTries === 0, '重连计数未清零');
+ok($('setup').hidden === false && $('goBtn').disabled === false, '未回可用的表单态');
+ok($('stage').hidden === true && $('endwrap').hidden === true, '舞台/结束卡未收起');
+ok($('resumeNote').textContent.indexOf('会话已在其他窗口打开') >= 0, '接管提示缺失');
+console.log(fail === 0 ? 'WP3_TAKEN_OVER_VECTOR_OK' : fail + ' FAILED');
+process.exit(fail === 0 ? 0 : 1);
+'''
+
+
+@unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
+class WP3TakenOverReopenVector(unittest.TestCase):
+    """评审 Important 行为向量:taken_over 终态后页内可干净重开。onTakenOver 必须
+    复位 sessionId/userStop/lastSeq 并清共享存储——静态钉只看得见「赋值存在」,
+    复位齐不齐(对照 autoResume 死会话分支的处理面)必须真跑。"""
+
+    def test_vector_green(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile('w', suffix='.mjs', delete=False,
+                                         encoding='utf-8') as f:
+            f.write(WP3_TAKEN_OVER_VECTOR_MJS)
+            vec = f.name
+        try:
+            env = dict(os.environ, ELECTRON_RUN_AS_NODE='1')
+            proc = subprocess.run([str(ELECTRON), vec, str(LIVE_JS)], env=env,
+                                  capture_output=True, timeout=60, cwd=str(BASE))
+            self.assertEqual(proc.returncode, 0, 'taken_over 重开向量未全绿:%s%s'
+                             % (proc.stdout.decode('utf-8', 'replace'),
+                                proc.stderr.decode('utf-8', 'replace')[:600]))
+            self.assertIn('WP3_TAKEN_OVER_VECTOR_OK', proc.stdout.decode('utf-8', 'replace'))
         finally:
             os.unlink(vec)
 

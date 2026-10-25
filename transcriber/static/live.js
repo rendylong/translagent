@@ -165,7 +165,7 @@ function enterReconnectFinal(){
   chip.hidden = false;
   chip.textContent = '无法连接转写服务,请确认服务已启动 · 点击重试';
   armChipButton(chip);
-  var bchip = barChip('连接中断 · 已停止自动重连');
+  var bchip = barChip('连接中断 · 已停止自动重连 · 点击重试');   // bar 形态镜像;同款可点(web 叠加态默认只见 bar)
   if (bchip) armChipButton(bchip);
 }
 
@@ -375,7 +375,11 @@ function onTakenOver(){
      session 存储必须清:localStorage 同源双页共享,留着只会让下次打开又去 resume
      抢回;锁同步释放,本页与新窗口各归其位。 */
   setPhase('ended');
-  stopCapture();
+  state.sessionId = null;                 // 复位页内单会话状态(对照 autoResume 死会话分支):
+  state.userStop = false;                 // goBtn 已重启允许不刷新直接重开——sessionId 残留会让
+  state.lastSeq = 0;                      // 重开误发 resume 死会话,stopping 相位被接管还叠加
+  state.reconnectTries = 0;               // 误发 resume+stop,lastSeq 不清新会话小 seq 被去重全吞;
+  stopCapture();                          // 重连状态机(计数+终态旗标)随会话一并归零
   stopTimer();
   clearTimeout(state.reconnectTimer);
   clearSessionStorage();
@@ -1096,18 +1100,22 @@ function beginSession(){
   state.title = ($('fTitle').value || '').trim();
   state.speakers = parseInt($('fSpeakers').value, 10) || 0;
   state.lang = currentLangSpec();
-  localStorage.setItem('live.title', state.title);
-  localStorage.setItem('live.speakers', String(state.speakers));
-  localStorage.setItem('live.lang', state.lang);
-  state.startedAt = Date.now();
-  localStorage.setItem('live.startedAt', String(state.startedAt));
+  state.reconnectTries = 0;                       // 页内重开:上一场残留的重连计数/终态清零(7.14)
+  disarmReconnectChip();
   setPhase('connecting');
-  acquireLiveLock().then(function(handle){       // WP3:先过锁闸,占用路径不碰 getUserMedia
+  acquireLiveLock().then(function(handle){        // WP3:先过锁闸,占用路径不碰 getUserMedia
     if (!handle){
       lockBusyToForm(false);
       return;
     }
     state.lock = handle;
+    // 共享键在锁到手后才写:占用路径不得污染 localStorage(第三窗口 autoResume
+    // 会取到一次失败尝试的 startedAt)
+    state.startedAt = Date.now();
+    localStorage.setItem('live.title', state.title);
+    localStorage.setItem('live.speakers', String(state.speakers));
+    localStorage.setItem('live.lang', state.lang);
+    localStorage.setItem('live.startedAt', String(state.startedAt));
     startCapture().then(function(){
       enterLiveUI();
       connect();
