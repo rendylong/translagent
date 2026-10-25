@@ -24,6 +24,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 INDEX = BASE / 'static' / 'index.html'
 VECTORS = BASE / 'tests' / 'test_ui_route_vectors.mjs'
+AGENTS = BASE.parent / 'AGENTS.md'
 
 
 def _find_electron():
@@ -166,6 +167,74 @@ class RouteStaticPins(unittest.TestCase):
         # 只看 render 函数之后的路由调度段是否引用三个渲染器(存在性钉子)
         for fn in ('renderEmpty', 'showLib', 'load('):
             self.assertIn(fn, body)
+
+
+class LiveActionRowPins(unittest.TestCase):
+    """WP2 实时字幕动作行静态钉子(Task 4,spec §6「静态钉子」层)。
+
+    实时字幕入口从第三 Tab 降为「新任务」卡下的常驻动作行 #liveRow:
+      - 旧入口(tab-live/pane-live/live-go 及其面板 CSS)零残留;
+      - web 分支必须用命名 target 'livePanel'(无命名 target 的 _blank 双开标签
+        是 /live 会话劫持的前端半边);
+      - 动作行状态由 GET /api/live/state 驱动:独立常驻慢定时器(页面可见时
+        10~15s 一次)+ visibilitychange 可见即刷,不动任务轮询(pollTimer)体系;
+      - 文档同步:AGENTS.md 界面节不再描述三 Tab(宽松钉:只禁「三个 Tab」字样,
+        具体措辞不钉,防脆)。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.src = INDEX.read_text(encoding='utf-8')
+        cls.agents = AGENTS.read_text(encoding='utf-8')
+
+    def test_named_window_target_livepanel(self):
+        """web 分支 window.open 必须带命名 target 'livePanel':重复点击聚焦同一
+        标签而非再开一个(第二个标签 resume 会话即劫持,spec WP2-2/WP3 前提)。"""
+        self.assertIn("window.open('/live?mode=panel', 'livePanel')", self.src)
+        self.assertNotIn("window.open('/live?mode=panel', '_blank')", self.src,
+                         '匿名 _blank 双开标签=会话劫持入口,必须命名')
+
+    def test_old_live_tab_zero_residue(self):
+        """第三 Tab 及其面板/处理器/CSS 类名全部清场:动作行取代之。"""
+        for token in ('tab-live', 'pane-live', 'live-go', 'live-entry', 'live-desc'):
+            self.assertNotIn(token, self.src, '旧实时字幕 Tab 残留:' + token)
+
+    def test_live_row_element_with_aria_live(self):
+        """动作行 DOM 在位:button(键盘免费可达)+ 行内文案 aria-live 可感知
+        (状态两态切换时屏幕阅读器播报)。"""
+        m = re.search(r'<button[^>]*id="liveRow"[^>]*>', self.src)
+        self.assertTrue(m, '缺 #liveRow 动作行')
+        window = self.src[m.start():m.start() + 700]   # 行内三个子元素都在近旁
+        self.assertIn('aria-live', window, '行内文案缺 aria-live(状态变化须可感知)')
+
+    def test_live_state_api_wired(self):
+        """GET /api/live/state(Task 1 契约)被 index.html 真实消费。"""
+        self.assertIn('/api/live/state', self.src)
+
+    def test_live_state_slow_timer_and_visibility(self):
+        """独立常驻慢定时器:页面可见时 10~15s 一拉(独立于任务轮询 pollTimer——
+        无 running 任务时 pollTimer 不存在,动作行状态不能跟着死);visibilitychange
+        可见即刷。"""
+        self.assertRegex(self.src, r'setInterval\(\s*liveTick\s*,\s*(?:10|11|12|13|14)\d{3}\s*\)')
+        self.assertIn("addEventListener('visibilitychange'", self.src)
+
+    def test_tick_bumps_live_state(self):
+        """任务轮询 tick 顺带刷新一次字幕会话状态(running 期 2.5s 节奏,比慢定时
+        更快看到红点熄灭/点亮)。"""
+        m = re.search(r'async function tick\s*\([^)]*\)\s*\{', self.src)
+        self.assertTrue(m, 'tick 缺失')
+        body = self.src[m.end():m.end() + 400]
+        self.assertIn('refreshLiveState', body, 'tick 应顺带刷新字幕会话状态')
+
+    def test_tab_list_two_entries(self):
+        """TAB_LIST 收敛为 upload/record 两项;tab-live 处理器随之绝迹(已被
+        test_old_live_tab_zero_residue 覆盖,此处钉机制本身)。"""
+        self.assertIn("const TAB_LIST = [['up','upload'], ['rec','record']];", self.src)
+
+    def test_agents_md_no_three_tab_wording(self):
+        """AGENTS.md 界面节须随动作行落地同步(宽松钉):不得再出现「三个 Tab」
+        字样;须提及动作行元素。具体措辞不钉,防文档微调即碎。"""
+        self.assertNotIn('三个 Tab', self.agents)
+        self.assertIn('liveRow', self.agents)
 
 
 @unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')

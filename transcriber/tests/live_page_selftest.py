@@ -280,13 +280,13 @@ class StaticCheck(unittest.TestCase):
         self.assertIn("document.addEventListener('pointermove', move, true)", lwjs)
 
     def test_workbench_live_entry(self):
-        """主界面实时字幕入口:三 Tab 之一 + 拉起逻辑(桌面悬浮窗/网页新标签页);
-        历史列表对 live 转正任务显示「实时」徽标。"""
+        """主界面实时字幕入口(WP2 起为「新任务」卡下动作行,不再是 Tab)+
+        拉起逻辑(桌面悬浮窗/网页命名 target 新标签页);历史列表对 live 转正
+        任务显示「实时」徽标。"""
         idx = INDEX_HTML.read_text(encoding='utf-8')
-        self.assertIn('id="tab-live"', idx)
-        self.assertIn('id="pane-live"', idx)
+        self.assertIn('id="liveRow"', idx)
         self.assertIn('openLiveCaption', idx)
-        self.assertIn("window.open('/live?mode=panel'", idx)
+        self.assertIn("window.open('/live?mode=panel', 'livePanel')", idx)
         self.assertIn('pill live', idx)
 
 
