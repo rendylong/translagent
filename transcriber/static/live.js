@@ -868,11 +868,13 @@ function renderActive(){                          // partial 行(面板灰字 + 
   if (state.paused) return;
   var has = !!state.partial;
   $('activeLine').hidden = !has;
+  $('activeLine').classList.toggle('typing', has);      // 7.9 caret 条件闪烁:partial 非空才呼吸,空则隐藏
   if (has){
     $('activeText').textContent = state.partial;
     $('plistEmpty').hidden = true;
   }
-  $('barPartial').textContent = state.partial;   // #barPartialRow 行常驻最底不隐藏(caret 常闪表识别进行中),只换文本
+  $('barPartial').textContent = state.partial;   // #barPartialRow 行常驻最底不隐藏,只换文本
+  $('barPartialRow').classList.toggle('typing', has);   // 7.9:与上一行同一更新点,空/非空都走到
   $('barEmpty').hidden = has || state.doc.length > 0;   // doc 与 partial 均空才显示「等待语音…」
   autoScroll(); autoScroll($('barLog'));
 }

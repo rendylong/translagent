@@ -1351,6 +1351,128 @@ class WP7IndexFastFixPins(unittest.TestCase):
         self.assertNotIn('preload="none"', self.src)
 
 
+class WP7LiveFastFixPins(unittest.TestCase):
+    """WP7 live 侧快修批静态钉子(Task 10,spec 表 7.9/7.10/7.11/7.17):
+    caret 条件闪烁(typing 三态)、两文件 reduced-motion 通用兜底、
+    字幕条操作按钮常显。live.html/live.js 旧行号漂移,按内容字面钉。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = LIVE_HTML.read_text(encoding='utf-8')
+        cls.js = LIVE_JS.read_text(encoding='utf-8')
+        cls.idx = INDEX.read_text(encoding='utf-8')
+
+    FALLBACK = (r'@media \(prefers-reduced-motion: reduce\)\s*\{\s*'
+                r'\*,\*::before,\*::after\{\s*'
+                r'animation-duration:\.01ms !important;\s*'
+                r'animation-iteration-count:1 !important;\s*'
+                r'transition-duration:\.01ms !important;\s*\}\s*\}')
+
+    # ---- 7.9 caret 条件闪烁 ----
+    def test_7_9_typing_class_toggled_at_single_update_point(self):
+        """renderActive 是 partial 的单一更新点(partial 事件与 fullRender 恢复都走它),
+        空/非空都须走到:两个 partial 行(#activeLine/#barPartialRow)按 has 同步
+        toggle .typing——partial 非空 caret 呼吸,空则隐藏(静默期无闪烁)。"""
+        body = _js_fn(self.js, 'renderActive')
+        self.assertIsNotNone(body, 'renderActive 缺失')
+        self.assertIn("$('activeLine').classList.toggle('typing', has)", body,
+                      '面板 partial 行未按 has 同步 .typing')
+        self.assertIn("$('barPartialRow').classList.toggle('typing', has)", body,
+                      '账本 partial 行未按 has 同步 .typing')
+        i_text = body.find("$('barPartial').textContent")
+        i_toggle_bar = body.find("$('barPartialRow').classList.toggle('typing', has)")
+        self.assertGreater(i_toggle_bar, i_text,
+                           '.typing 应挂在账本行文本写入的同一更新序列里(不另开第二条路径)')
+
+    def test_7_9_caret_default_hidden_breath_when_typing(self):
+        """.caret 默认 opacity:0 且无动画(旧恒闪绝迹);.typing .caret 才亮出并
+        平滑呼吸:keyframes 只写 50%(0%/100% 落元素指定值 opacity:1),ease 曲线,
+        不用 steps 硬切。"""
+        m = re.search(r'\.caret\{[^}]*\}', self.html)
+        self.assertTrue(m, '.caret 规则缺失')
+        self.assertIn('opacity:0', m.group(0), 'caret 默认须隐藏(静默期无闪烁)')
+        self.assertNotIn('animation', m.group(0), 'caret 默认不得带动画(旧恒闪)')
+        self.assertIn('.typing .caret{opacity:1;animation:caretBreath 1.1s ease infinite}',
+                      self.html, '.typing .caret 平滑呼吸规则缺失')
+        self.assertIn('@keyframes caretBreath{50%{opacity:.15}}', self.html,
+                      '呼吸 keyframes 缺失或被改值')
+        self.assertNotIn('steps(', self.html, 'caret 不得再用 steps 硬切')
+        self.assertNotIn('animation:blink', self.html)
+        self.assertNotIn('@keyframes blink', self.html, '旧恒闪 blink keyframes 须删')
+
+    def test_7_9_reduce_typing_caret_static_visible(self):
+        """reduced-motion 细粒度块与 7.9 语义整合:typing 时 caret 静态恒显
+        (animation:none + opacity:1),非 typing 走默认 opacity:0 隐藏——
+        旧「.caret{animation:none}」的恒显语义随 7.9 一并改写。"""
+        marker = '@media (prefers-reduced-motion: reduce){'
+        i_fine = self.html.find(marker)
+        self.assertGreaterEqual(i_fine, 0, '细粒度 reduce 块缺失')
+        # 只取首个(细粒度)块体:花括号配平,天然不含后面的通用兜底块
+        start = self.html.index('{', i_fine + len(marker) - 1)
+        depth = 0
+        end = -1
+        for i in range(start, len(self.html)):
+            if self.html[i] == '{':
+                depth += 1
+            elif self.html[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        self.assertTrue(end > 0, '细粒度 reduce 块花括号未配平')
+        body = self.html[start:end + 1]
+        self.assertNotIn('*,*::before', body, '提取到的应是细粒度块而非兜底块')
+        self.assertIn('.blog .e{animation:none}', body, '细粒度块:入场淡入停用须保留')
+        self.assertIn('.typing .caret{animation:none;opacity:1}', body,
+                      'reduce 下 typing 时 caret 须静态恒显')
+        # 旧整类恒显规则(裸 .caret{animation:none})不得回潮——默认已 opacity:0 隐藏,
+        # 整类恒显会让非 typing 的 caret 也常驻
+        self.assertNotIn('.caret{animation:none}', body)
+
+    # ---- 7.10 reduced-motion 通用兜底 ----
+    def test_7_10_fallback_block_in_both_files(self):
+        """两文件各加通用兜底:全部元素动画/过渡压到 .01ms 一次
+        (index.html 新增;live.html 保留细粒度块)。"""
+        self.assertRegex(self.html, self.FALLBACK, 'live.html 缺通用兜底块')
+        self.assertRegex(self.idx, self.FALLBACK, 'index.html 缺通用兜底块(Task 9 未做,本任务补)')
+
+    def test_7_10_fallback_after_fine_grained_block(self):
+        """live.html 兜底须排在既有细粒度块之后(注释写明兜底+细粒度例外关系):
+        兜底靠 !important 压时长,细粒度块管「哪些动画彻底关掉/静态恒显」的语义例外。"""
+        m = re.search(self.FALLBACK, self.html)
+        i_fb = m.start() if m else -1
+        i_fine = self.html.find('.blog .e{animation:none}')
+        self.assertGreaterEqual(i_fine, 0, '细粒度块缺失')
+        self.assertGreater(i_fb, i_fine, '兜底块须在细粒度块之后')
+
+    def test_7_10_index_rec_blink_present_for_fallback_to_tame(self):
+        """index.html 兜底与 rec-blink 的语义兼容前提:rec-blink 无限呼吸动画仍在位
+        (兜底把它变 1 次即静态——结束回落规则值 opacity:1,红点静态可见,正确);
+        动画若已不存在此钉即失去对象,须随实现同步重审。"""
+        self.assertEqual(self.idx.count('animation:rec-blink 1.6s ease-in-out infinite'), 2,
+                         'rec-blink 两处消费点(录制红点/live-row 状态点)须原样保留')
+
+    # ---- 7.11 字幕条操作按钮常显 ----
+    def test_7_11_bar_actions_always_visible(self):
+        """.bar .actions 删 hover 门控:块内不得再有 opacity/pointer-events 门控,
+        .bar:hover .actions 规则整条删除;按钮样式族本身原样保留。"""
+        m = re.search(r'\.bar \.actions\{[^}]*\}', self.html)
+        self.assertTrue(m, '.bar .actions 规则缺失')
+        block = m.group(0)
+        self.assertNotIn('opacity', block, '操作按钮 hover 门控(opacity:0)须删,常显')
+        self.assertNotIn('pointer-events', block, '操作按钮 pointer-events:none 须删')
+        self.assertNotRegex(self.html, r'\.bar:hover \.actions', 'hover 恢复规则须整条删除')
+        self.assertIn('.bar .actions button{', self.html, '按钮样式族须保留')
+
+    # ---- 7.17 逗号行首(live 侧) ----
+    def test_7_17_live_side_zero_hits(self):
+        """WP7LiveFastFixPins 侧独立复钉(WP7IndexFastFixPins.test_7_17 已三文件同查,
+        此处按任务书再验 live.html/live.js 零命中,防单钉失效无二道防线)。"""
+        pattern = re.compile(r'</b>\s*[,，。]')
+        self.assertIsNone(pattern.search(self.html), 'live.html </b> 后不得紧跟逗号/句号')
+        self.assertIsNone(pattern.search(self.js), 'live.js </b> 后不得紧跟逗号/句号')
+
+
 @unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
 class ApplyRouteVectors(unittest.TestCase):
     """applyRoute 纯函数断言向量(实际向量与提取逻辑在 test_ui_route_vectors.mjs,
