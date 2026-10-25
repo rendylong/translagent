@@ -220,7 +220,7 @@
   .tedit{font-size:19px;font-weight:650;font-family:inherit;border:1px solid var(--control);
     border-radius:6px;padding:2px 8px;width:min(560px,100%);background:var(--surface);color:var(--text)}
   .meta-line{color:var(--faint);font-size:12.5px;margin-top:5px}
-  audio{width:100%;margin-top:12px;height:34px}
+  audio{width:100%;margin-top:12px;height:34px;accent-color:var(--primary)}   /* 7.18 播放器控件随主题 */
   .spkrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
   .spkrow .cap{font-size:12.5px;color:var(--faint);flex:none}
   .chips{display:inline-flex;gap:8px;flex-wrap:wrap}
@@ -637,6 +637,7 @@ function resetDrop(){
   window._file = null;
   drop.classList.remove('has');
   $('#drop-text').innerHTML = '拖拽音频到此处,或点击选择<br><b>m4a / wav / mp3 / aac / flac / aiff</b>';
+  $('#title').value = '';   // 7.1:标题一并清空,上一场填过的标题不得串到下一场
   $('#go').disabled = true;
 }
 $('#go').onclick = async () => {
@@ -854,7 +855,7 @@ async function refresh(){
     if(delBtn){
       delBtn.onclick = e => {
         e.stopPropagation();
-        armConfirm(delBtn, '确认?', async () => {
+        armConfirm(delBtn, '删除后音频与文稿不可恢复,确认?', async () => {
           await fetch('/api/jobs/' + j.id, {method:'DELETE'});
           if(view && view.type === 'job' && view.id === j.id) location.hash = '#';   // 删的是当前视图 → 空态
           refresh();
@@ -1044,7 +1045,7 @@ async function load(quiet){
       '<div class="trow"><h1 id="doc-title" title="点击修改标题"></h1><span class="grow"></span>' +
         '<button class="tbtn" id="del">删除</button></div>' +
       '<div class="meta-line num">' + fmtDur(j.duration_s) + ' · ' + segments.length + ' 段 · ' + esc(j.created_at) + '</div>' +
-      '<audio id="au" controls preload="none" src="/api/jobs/' + j.id + '/audio"></audio>' +
+      '<audio id="au" controls preload="metadata" src="/api/jobs/' + j.id + '/audio"></audio>' +
       '<div class="spkrow"><span class="cap">说话人:</span><span class="chips">' + chips + '</span></div>' +
       '<div class="tools">' +
         '<input type="search" id="q" placeholder="搜索文稿…" aria-label="搜索文稿">' +
@@ -1270,9 +1271,10 @@ function draw(q){
   rowEls = new Array(segs.length).fill(null);
   const frag = document.createDocumentFragment();
   let shown = 0;
+  const ql = q ? q.toLowerCase() : '';   // 7.6:过滤与高亮同一折叠,搜小写命中大写
   segs.forEach((s, idx) => {
     const nm = displayName(s.speaker) || ('说话人' + (s.speaker + 1));
-    if(q && !(s.text.includes(q) || nm.includes(q))) return;
+    if(q && !(s.text.toLowerCase().includes(ql) || nm.toLowerCase().includes(ql))) return;
     shown++;
     const d = document.createElement('div');
     d.className = 'seg';
@@ -1304,7 +1306,7 @@ function draw(q){
 function bindDelete(j){
   const b = $('#del'); if(!b) return;
   b.onclick = () => {
-    armConfirm(b, '再点一次确认删除', async () => {
+    armConfirm(b, '删除后音频与文稿不可恢复,确认?', async () => {
       await fetch('/api/jobs/' + j.id, {method:'DELETE'});
       location.hash = '#';   // 删除即离开该任务:hash 赋值 → route → 空态
       refresh();
@@ -1403,7 +1405,8 @@ function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<
 function hl(text, q){
   const safe = esc(text);
   if(!q) return safe;
-  const re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'g');
+  /* 7.6:gi 与过滤同一折叠大小写不敏感命中;捕获组原样回填,原文大小写不被改写 */
+  const re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
   return safe.replace(re, '<mark>$1</mark>');
 }
 function fmtDur(sec){

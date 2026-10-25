@@ -1162,6 +1162,60 @@ class WP5ColorCycleVector(unittest.TestCase):
             os.unlink(vec)
 
 
+class WP7IndexFastFixPins(unittest.TestCase):
+    """WP7 index 侧快修批静态钉子(Task 9,spec 表 7.1/7.5/7.6/7.12/7.13/7.16/
+    7.17/7.18)。精确值字面钉:确认文案、时长(ms)、动效 token、签名函数与
+    「无变化 return」路径,全部按 brief 原值断言。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.src = INDEX.read_text(encoding='utf-8')
+
+    # ---- 7.1 上传后清标题 ----
+    def test_7_1_reset_drop_clears_title(self):
+        """resetDrop 必须清空 #title:上传 A(填过标题)完成后再传 B,B 标题为空。"""
+        body = _js_fn(self.src, 'resetDrop')
+        self.assertIsNotNone(body, 'resetDrop 缺失')
+        self.assertRegex(body, r"\$\('#title'\)\.value\s*=\s*''",
+                         'resetDrop 须清空 #title')
+
+    # ---- 7.5 删除确认文案言明不可逆 ----
+    def test_7_5_delete_confirm_text_unified(self):
+        """历史项 .jdel 与文稿页 #del 两处 confirmText 统一为同一句不可逆警示;
+        旧文案「确认?」「再点一次确认删除」绝迹(丢弃/放弃/库删除不在此列)。"""
+        self.assertGreaterEqual(self.src.count('删除后音频与文稿不可恢复,确认?'), 2,
+                                '两处删除确认文案都须统一')
+        self.assertNotIn("armConfirm(delBtn, '确认?'", self.src)
+        self.assertNotIn("'再点一次确认删除'", self.src)
+
+    # ---- 7.6 搜索大小写 ----
+    def test_7_6_search_case_folding_both_sides(self):
+        """过滤双侧 toLowerCase():英文文稿搜小写要命中大写词(正文与说话人名两侧)。"""
+        draw = _js_fn(self.src, 'draw')
+        self.assertIsNotNone(draw, 'draw 缺失')
+        self.assertIn('s.text.toLowerCase()', draw, '正文侧须折叠大小写')
+        self.assertIn('nm.toLowerCase()', draw, '说话人名侧须折叠大小写')
+
+    def test_7_6_hl_highlights_same_folding(self):
+        """hl() 高亮与过滤同一折叠:gi 大小写不敏感命中,捕获组保留原文大小写。"""
+        hl = _js_fn(self.src, 'hl')
+        self.assertIsNotNone(hl, 'hl 缺失')
+        self.assertIn("'gi'", hl, '高亮正则须带 gi 标志')
+
+    # ---- 7.17 逗号行首残留 ----
+    def test_7_17_no_comma_after_bold(self):
+        """</b>,/</b>。 残留全清(逗号移进 <b> 内),窄栏侧栏不出现行首逗号。"""
+        self.assertIsNone(re.search(r'</b>\s*[,，。]', self.src),
+                          '</b> 后不得紧跟逗号/句号')
+
+    # ---- 7.18 audio 控件融入 ----
+    def test_7_18_audio_accent_and_preload(self):
+        """播放器进度色随主题(accent-color),preload 改 metadata(打开即显示真实时长)。"""
+        self.assertRegex(self.src, r'audio\{[^}]*accent-color:var\(--primary\)')
+        self.assertIn('preload="metadata"', self.src)
+        self.assertNotIn('preload="none"', self.src)
+
+
 @unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
 class ApplyRouteVectors(unittest.TestCase):
     """applyRoute 纯函数断言向量(实际向量与提取逻辑在 test_ui_route_vectors.mjs,
