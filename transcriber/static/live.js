@@ -28,7 +28,7 @@ var BUFFER_MAX_SEC = 5 * 60;                 // 断线本地缓冲上限:5 分�
 var BUFFER_MAX_BYTES = BUFFER_MAX_SEC * TARGET_RATE * 2;
 var RECONNECT_MS = 3000;                     // 断线 3s 后自动重连 resume
 var RECONNECT_MAX_TRIES = 10;                // 7.14:自动重连额度,超过即进终态等手动重试
-var SPEAKER_COLORS = ['#4C9AFF', '#FFB02E', '#98A2B3'];   // A / B / 其余灰
+var SPEAKER_COLORS = ['#6db3ff', '#5ecb96', '#FFB02E', '#b79cff', '#4fc8bf', '#f27da5'];  // 与 index.html --sp*-ink 同源(亮化变体字面见 live.html --lsp0..5 注释),改动须两处同步
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -672,8 +672,8 @@ function stopCapture(){
    字幕条侧 bel 是「句子账本」:一句一行、译文跟句、partial 灰行常驻最底(面板 el 维持窗口条目式)。 */
 
 function speakerColor(speaker){
-  return SPEAKER_COLORS[speaker != null && speaker < SPEAKER_COLORS.length - 1 ? speaker
-                        : SPEAKER_COLORS.length - 1];
+  if (speaker == null) return '';              // 未知说话人:回空串,面板圆点落 CSS 默认灰(#98a2b3)——灰只属于「未知」
+  return SPEAKER_COLORS[speaker % 6];          // ≥6 人循环取色,与主台 .c0-.c5/.s0-.s5 的 % 6 对齐
 }
 function speakerName(speaker){
   return speaker == null ? '' : '说话人' + (speaker + 1);

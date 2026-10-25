@@ -869,6 +869,111 @@ class WP6StoppedBranchesVector(unittest.TestCase):
             os.unlink(vec)
 
 
+class WP5IdentityPins(unittest.TestCase):
+    """WP5 色板静态钉子(Task 8,spec §WP5):live 六色与主台 --sp*-ink
+    同色相(亮化变体 --lsp0..5)、% 6 循环、灰不再参与真人分配。"""
+
+    SP_INK = ['#1d5290', '#1f6b45', '#8f520c', '#65449f', '#14615f', '#96365a']
+
+    @classmethod
+    def setUpClass(cls):
+        cls.src = INDEX.read_text(encoding='utf-8')
+        cls.lhtml = LIVE_HTML.read_text(encoding='utf-8')
+        cls.ljs = LIVE_JS.read_text(encoding='utf-8')
+
+    def test_lsp_six_vars_with_mapping_source_comments(self):
+        """live.html :root 须有 --lsp0..5 六条,且每条注释写明映射源 hex
+        (「同一个人跨端同色相」靠注释可追溯,改色时能找到主台对应项)。"""
+        for i, ink in enumerate(self.SP_INK):
+            m = re.search(r'--lsp%d:\s*#[0-9a-fA-F]{6}\s*;[^\n]*' % i, self.lhtml)
+            self.assertTrue(m, 'live.html 缺 --lsp%d' % i)
+            self.assertIn(ink, m.group(0),
+                          '--lsp%d 注释须写映射源 %s' % (i, ink))
+
+    def test_speaker_colors_equals_lsp_values(self):
+        """live.js SPEAKER_COLORS 六值与 live.html --lsp0..5 逐一同值(同一套字面),
+        且行注释带「与 index.html --sp*-ink 同源 … 两处同步」;旧三色绝迹。"""
+        lsp = []
+        for i in range(6):
+            m = re.search(r'--lsp%d:\s*(#[0-9a-fA-F]{6})' % i, self.lhtml)
+            self.assertTrue(m, '--lsp%d 缺失' % i)
+            lsp.append(m.group(1).lower())
+        m = re.search(r'var SPEAKER_COLORS = (\[[^\]]*\])[^\n]*', self.ljs)
+        self.assertTrue(m, 'live.js 缺 SPEAKER_COLORS')
+        vals = [v.lower() for v in re.findall(r'#[0-9a-fA-F]{6}', m.group(1))]
+        self.assertEqual(vals, lsp, 'SPEAKER_COLORS 须与 --lsp0..5 同一套字面')
+        self.assertEqual(len(vals), 6)
+        line = m.group(0)
+        self.assertIn('--sp*-ink 同源', line, 'SPEAKER_COLORS 行注释缺同源声明')
+        self.assertIn('两处同步', line, 'SPEAKER_COLORS 行注释缺同步提醒')
+        self.assertNotIn('#4C9AFF', self.ljs)
+        self.assertNotIn('#98A2B3', self.ljs)
+
+    def test_speaker_color_mod6_loop(self):
+        """colorFor(speakerColor)改 % 6 循环(与主台 .c0-.c5/.s0-.s5 对齐);
+        旧「末位灰回落」(length - 1)绝迹,灰不再参与真人分配。"""
+        fn = _js_fn(self.ljs, 'speakerColor')
+        self.assertIsNotNone(fn)
+        self.assertIn('% 6', fn)
+        self.assertNotIn('length - 1', fn)
+
+
+WP5_COLOR_VECTOR_MJS = r'''
+import { readFileSync } from 'node:fs';
+const src = readFileSync(process.argv[2], 'utf8');
+const vm = src.match(/var SPEAKER_COLORS = (\[[^\]]*\])/);
+if (!vm) throw new Error('SPEAKER_COLORS missing');
+function fn(name){
+  const m = src.match(new RegExp('function ' + name + '\\s*\\('));
+  if (!m) throw new Error(name + ' missing');
+  const start = src.indexOf('{', m.index);
+  let depth = 0;
+  for (let i = start; i < src.length; i++){
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}'){ depth--; if (!depth) return src.slice(m.index, i + 1); }
+  }
+  throw new Error(name + ' braces');
+}
+const bundle = ['var SPEAKER_COLORS = ' + vm[1] + ';', fn('speakerColor'),
+  'return {speakerColor, colors: SPEAKER_COLORS};'].join('\n');
+const { speakerColor, colors } = new Function(bundle)();
+let fail = 0;
+const ok = (cond, what) => { if (!cond){ console.error('FAIL ' + what); fail++; } };
+ok(colors.length === 6, '色板须六色');
+ok(new Set(colors).size === 6, '六色须互异(≥3 人不再共享一色)');
+for (let i = 0; i <= 8; i++){
+  ok(speakerColor(i) === colors[i % 6], 'speaker ' + i + ' 应循环取色 ' + (i % 6));
+}
+ok(speakerColor(null) === '', '未知说话人(null)回空串落 CSS 默认灰,灰只属于「未知」');
+ok(speakerColor(undefined) === '', '未知说话人(undefined)同 null');
+console.log(fail === 0 ? 'WP5_COLOR_VECTOR_OK' : fail + ' FAILED');
+process.exit(fail === 0 ? 0 : 1);
+'''
+
+
+@unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
+class WP5ColorCycleVector(unittest.TestCase):
+    """WP5 行为向量:colorFor % 6 循环真跑 0..8 断言色序(静态钉只看得见「% 6」
+    字面,循环归属与未知说话人回落必须执行才知道;与 WP3/WP6 向量同款协议)。"""
+
+    def test_vector_green(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile('w', suffix='.mjs', delete=False,
+                                         encoding='utf-8') as f:
+            f.write(WP5_COLOR_VECTOR_MJS)
+            vec = f.name
+        try:
+            env = dict(os.environ, ELECTRON_RUN_AS_NODE='1')
+            proc = subprocess.run([str(ELECTRON), vec, str(LIVE_JS)], env=env,
+                                  capture_output=True, timeout=60, cwd=str(BASE))
+            self.assertEqual(proc.returncode, 0, 'WP5 色序向量未全绿:%s%s'
+                             % (proc.stdout.decode('utf-8', 'replace'),
+                                proc.stderr.decode('utf-8', 'replace')[:600]))
+            self.assertIn('WP5_COLOR_VECTOR_OK', proc.stdout.decode('utf-8', 'replace'))
+        finally:
+            os.unlink(vec)
+
+
 @unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
 class ApplyRouteVectors(unittest.TestCase):
     """applyRoute 纯函数断言向量(实际向量与提取逻辑在 test_ui_route_vectors.mjs,

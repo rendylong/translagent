@@ -16,6 +16,18 @@
     --lc-partial:rgba(255,255,255,.68);       /* 正在说 ≈4.8:1,与 f1 拉开 20pp 瞥读可分 */
     --lc-tr:rgba(255,255,255,.62);            /* 跟句译文 ≈4.3:1(次级注释,接受) */
     --lc-faint:rgba(255,255,255,.35);         /* 静音分隔等最弱层 */
+
+    /* 说话人六色(--lsp0..5):与主台 index.html --sp0-ink..--sp5-ink 六色相一一对应的
+       亮化变体——「同一个人跨端同色相」是硬要求,明度按底色分档(主台浅底用深 ink,
+       live 深底用亮化值)。选值理由:对最不利深底 #1d2026 实测对比 6.4~8.9:1,
+       远超字幕瞥读 3:1 线,与原三色档(#4C9AFF 5.7 / #FFB02E 8.9)同明度风格。
+       live.js SPEAKER_COLORS 是同一套字面,改动须三处同步(index --sp*-ink / 此处 / live.js)。 */
+    --lsp0:#6db3ff;   /* --lsp0 ↔ index --sp0-ink #1d5290 亮化(蓝),对 #1d2026 ≈7.4:1 */
+    --lsp1:#5ecb96;   /* --lsp1 ↔ index --sp1-ink #1f6b45 亮化(绿),对 #1d2026 ≈8.1:1 */
+    --lsp2:#FFB02E;   /* --lsp2 ↔ index --sp2-ink #8f520c 亮化(琥珀),对 #1d2026 ≈8.9:1;沿用原 live 琥珀 */
+    --lsp3:#b79cff;   /* --lsp3 ↔ index --sp3-ink #65449f 亮化(紫),对 #1d2026 ≈7.2:1 */
+    --lsp4:#4fc8bf;   /* --lsp4 ↔ index --sp4-ink #14615f 亮化(青),对 #1d2026 ≈8.0:1 */
+    --lsp5:#f27da5;   /* --lsp5 ↔ index --sp5-ink #96365a 亮化(玫红),对 #1d2026 ≈6.4:1 */
   }
   *{box-sizing:border-box}
   html,body{height:100%}
