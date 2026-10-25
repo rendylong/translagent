@@ -339,6 +339,20 @@
     .tools input[type=search]{width:150px}
     .lib{padding:5vh 16px 40px}
   }
+
+  /* 7.10 系统减弱动效·通用兜底:主台无细粒度 reduce 块,此兜底即全部——
+     所有动画/过渡压到 .01ms 跑一次(pop-in/toast-in/view-in 入场瞬时至、
+     .bar i 进度条宽度瞬时至)。与 rec-blink 的无限呼吸语义兼容:iteration-count:1
+     让它「跑一次即静止」,fill 默认 none、结束回落规则值 opacity:1——录制红点与
+     live-row 状态点静态可见,正是 reduce 期望(rec-blink 两处消费点不改)。
+     live.html 侧同款兜底 + 细粒度例外块,两文件同一字面 */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{
+      animation-duration:.01ms !important;
+      animation-iteration-count:1 !important;
+      transition-duration:.01ms !important;
+    }
+  }
 </style>
 </head>
 <body>
