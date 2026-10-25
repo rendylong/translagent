@@ -407,7 +407,7 @@ class LiveSession:
             job_id = self._finalizer(self._dir, speakers_hint=self._meta.get('speakers'))
             self._emit({'type': 'stopped', 'job_id': job_id})
         except Exception as e:  # noqa: BLE001 转正失败也要让客户端收尾:error 可见 + stopped(无 job_id)
-            self._emit({'type': 'error', 'message': '停止转正失败:%s' % e})
+            self._emit({'type': 'error', 'message': '停止转正失败:%s' % error_brief(e)})
             # reason 让前端分态渲染结束卡(失败态不再报喜);error 为打码简要
             self._emit({'type': 'stopped', 'reason': 'finalize_failed',
                         'error': error_brief(e)})   # 无 job_id;音频留在 live/ 由重启恢复转正

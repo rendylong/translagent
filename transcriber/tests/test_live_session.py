@@ -249,7 +249,7 @@ class StoppedReasonTest(unittest.TestCase):
 
     def test_finalize_failure_reason_with_brief(self):
         """转正失败:stopped 带 reason='finalize_failed' 与 error 简要(路径打码);
-        error 事件先行(既有行为);无 job_id。"""
+        error 事件先行且文案同源打码(先前的 %s 裸异常会带本机路径);无 job_id。"""
         def boom(session_dir, speakers_hint=None):
             raise RuntimeError('wav 头损坏: /Users/rendy/live/x/live_audio.wav')
 
@@ -264,7 +264,12 @@ class StoppedReasonTest(unittest.TestCase):
         self.assertIn('RuntimeError', stopped[0]['error'])
         self.assertIn('[路径]', stopped[0]['error'], 'error 简要须打码本机路径')
         self.assertNotIn('/Users', stopped[0]['error'])
-        self.assertTrue(any(e['type'] == 'error' for e in evs), 'error 事件仍先行可见')
+        errs = [e for e in evs if e['type'] == 'error']
+        self.assertEqual(len(errs), 1)
+        self.assertTrue(errs[0]['message'].startswith('停止转正失败:'), 'error 事件文案前缀不变')
+        self.assertIn('[路径]', errs[0]['message'], 'error 事件 message 须与 stopped.error 同源打码')
+        self.assertNotIn('/Users', errs[0]['message'], 'error 事件 message 不得泄露本机路径')
+        self.assertIn('RuntimeError', errs[0]['message'])
 
     def test_success_stopped_has_job_id_no_reason(self):
         """成功分支不变:带 job_id、无 reason 键(前端按有无 job_id 判成功)。"""
