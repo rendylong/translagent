@@ -21,7 +21,9 @@ meta.json 关键字段:
 全局说话人库 speakers/speakers.json:
   {model, dim, speakers: [{id, name, created_at, updated_at, centroid[192], n_anchors,
     anchors: [{job_id, cluster, sim, at, vec[192]}]}]}
-  匹配阈值:cosine ≥0.65 自动合并,0.50~0.65 疑似待确认,<0.50 新建。宁新建勿误并。
+  匹配阈值:cosine ≥0.65 认领(≥0.70 且簇证据 ≥3 段才加锚点写库,踩线只认不学),
+  0.50~0.65 疑似待确认,<0.50 且证据充分才新建;宁新建勿误并。匹配前先做场内拆簇规整
+  (canonicalize_clusters:互似 ≥0.65 的簇并掉,同人拆簇是跨会议双身份主因)。
 """
 import json
 import os
@@ -55,6 +57,9 @@ PROMPTS = {'zh': '以下是一场中文普通话会议的逐字记录,使用简�
 SPEAKERS_JSON = os.path.join(BASE, 'speakers', 'speakers.json')
 EMB_DIM = 192
 SIM_AUTO, SIM_SUSPECT = 0.65, 0.50   # bench 实测:同人跨会议 0.751,异人最高 0.557
+SIM_ANCHOR = 0.70    # 加锚点(写库学习)门槛:踩线 auto 只认领不学习,防误匹配固化进质心
+MIN_ANCHOR_N = 3     # 簇证据段数下限(弱证据门):不足只认领已有说话人,不新建条目不加锚
+MERGE_INTRA = 0.65   # 场内拆簇合并阈:实测同人拆簇互似 0.72-0.79、异人 ≤0.557,取谷中
 
 app = Flask(__name__, static_folder=None)
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
@@ -177,6 +182,57 @@ def extract_cluster_embeddings(wav, dsegs, min_seg=1.5, max_segs=40):
     return out
 
 
+def cluster_stats(dsegs, min_seg=1.5):
+    """每簇声纹证据量 {cluster: {n, sec}},与 extract_cluster_embeddings 同口径:
+    ≥min_seg 的段才计数,超长段按 _split_long 的 12s 块计。n 用于弱证据门。"""
+    stats = {}
+    for s, e, sp in dsegs:
+        if e - s >= min_seg:
+            st = stats.setdefault(sp, {'n': 0, 'sec': 0.0})
+            st['n'] += max(1, len(_split_long([(s, e)])))
+            st['sec'] += e - s
+    return stats
+
+
+def canonicalize_clusters(dsegs, sigs, stats, theta=MERGE_INTRA):
+    """场内同人拆簇规整:签名互似 ≥theta 的簇迭代合并(每次并当前最高分对,签名按段数
+    加权均值),dsegs 就地重标到组内最小簇号。同人拆簇是跨会议双身份的主因(2026-10-24
+    实测:同场拆簇互似 0.72-0.79 而异人 ≤0.557),先在场内并掉,文稿显示与库匹配共用
+    规整后的簇。无签名的簇保持原簇号不动。返回 (dsegs, sigs, stats),键均为 int 簇号。"""
+    groups = {}
+    for sp, v in sigs.items():
+        st = stats.get(sp) or {}
+        groups[sp] = {'label': sp, 'members': [sp], 'vec': np.asarray(v, dtype=np.float32),
+                      'n': max(1, int(st.get('n') or 1)), 'sec': float(st.get('sec') or 0.0)}
+    while len(groups) > 1:
+        keys = sorted(groups)
+        best = None
+        for i in range(len(keys)):
+            va = groups[keys[i]]['vec']
+            va = va / (np.linalg.norm(va) + 1e-9)
+            for j in range(i + 1, len(keys)):
+                vb = groups[keys[j]]['vec']
+                vb = vb / (np.linalg.norm(vb) + 1e-9)
+                sim = float(np.dot(va, vb))
+                if best is None or sim > best[0]:
+                    best = (sim, keys[i], keys[j])
+        if best is None or best[0] < theta:
+            break
+        _, ka, kb = best
+        a, b = groups.pop(ka), groups.pop(kb)
+        n = a['n'] + b['n']
+        merged = (a['vec'] * a['n'] + b['vec'] * b['n']) / n
+        label = min(a['label'], b['label'])
+        groups[label] = {'label': label, 'members': a['members'] + b['members'],
+                         'vec': merged, 'n': n, 'sec': a['sec'] + b['sec']}
+    remap = {m: g['label'] for g in groups.values() for m in g['members']}
+    dsegs = [(s, e, remap.get(sp, sp)) for s, e, sp in dsegs]
+    sigs = {g['label']: (g['vec'] / (np.linalg.norm(g['vec']) + 1e-9)).tolist()
+            for g in groups.values()}
+    stats = {g['label']: {'n': g['n'], 'sec': round(g['sec'], 1)} for g in groups.values()}
+    return dsegs, sigs, stats
+
+
 # ---------- 全局说话人库(跨会议声纹) ----------
 
 def load_speakers():
@@ -219,20 +275,27 @@ def register_speaker(lib, name=None):
     return spk
 
 
-def match_speakers(sigs, lib, job_id):
+def match_speakers(sigs, lib, job_id, stats=None):
     """簇签名 vs 库内质心。返回 speaker_map {cluster: {gid, sim, status}} 并就地更新库。
-    ≥SIM_AUTO 自动匹配并加锚点;SIM_SUSPECT~SIM_AUTO 疑似(绑 gid 不动库,等确认);
-    低于阈值新建说话人。同一库内说话人只被最高分簇命中,防同会两人并一人。"""
+    ≥SIM_AUTO 认领;≥SIM_ANCHOR 且簇证据 ≥MIN_ANCHOR_N 段才加锚点写库(踩线只认不学,
+    弱证据只认不学);SIM_SUSPECT~SIM_AUTO 疑似(绑 gid 不动库,等确认);低于阈值且证据
+    充分才新建说话人,弱证据碎片簇不建条目(等长会再登记或任务级改名)。同一库内说话人
+    只被最高分簇命中,防同会两人并一人(同人拆簇应由 canonicalize_clusters 场内先并掉)。"""
     speaker_map = {}
     if not sigs:
         return speaker_map
+    stats = stats or {}
+
+    def strong(cluster):
+        return (stats.get(cluster, {}).get('n') or 0) >= MIN_ANCHOR_N
+
     cands = []
     for cluster, v in sigs.items():
         for spk in lib['speakers']:
             c = spk.get('centroid')
             if not c:
                 continue
-            sim = float(np.dot(v, np.asarray(c, dtype=np.float32)))
+            sim = float(np.dot(np.asarray(v, dtype=np.float32), np.asarray(c, dtype=np.float32)))
             if sim >= SIM_SUSPECT:
                 cands.append((sim, cluster, spk))
     cands.sort(key=lambda x: -x[0])
@@ -242,14 +305,15 @@ def match_speakers(sigs, lib, job_id):
             continue
         if sim >= SIM_AUTO:
             speaker_map[str(cluster)] = {'gid': spk['id'], 'sim': round(sim, 3), 'status': 'auto'}
-            spk_add_anchor(spk, job_id, cluster, sim, sigs[cluster])
+            if sim >= SIM_ANCHOR and strong(cluster):
+                spk_add_anchor(spk, job_id, cluster, sim, np.asarray(sigs[cluster], dtype=np.float32))
         else:
             speaker_map[str(cluster)] = {'gid': spk['id'], 'sim': round(sim, 3), 'status': 'suspect'}
         claimed_spk.add(spk['id'])   # 疑似也独占,避免另一簇再绑同一人
     for cluster, v in sigs.items():
-        if str(cluster) not in speaker_map:
+        if str(cluster) not in speaker_map and strong(cluster):
             spk = register_speaker(lib)
-            spk_add_anchor(spk, job_id, cluster, 1.0, v)
+            spk_add_anchor(spk, job_id, cluster, 1.0, np.asarray(v, dtype=np.float32))
             speaker_map[str(cluster)] = {'gid': spk['id'], 'sim': None, 'status': 'new'}
     return speaker_map
 
@@ -453,7 +517,6 @@ def process_job(job_id):
         if nspeakers == 1:
             for s in wsegs:
                 s['speaker'] = 0
-            detected = 1
             dsegs = single_speaker_dsegs(wsegs)
         else:
             if read_meta(job_id).get('cancel_requested'):
@@ -465,25 +528,32 @@ def process_job(job_id):
                 return True
 
             dsegs = run_diarization(wav, nspeakers, on_diar_progress)
+
+        sigs, stats = {}, {}
+        if meta.get('voiceprint', True):
+            # 场内同人拆簇先规整(互似 ≥MERGE_INTRA 并簇),文稿显示与库匹配共用规整后的簇
+            sigs = extract_cluster_embeddings(wav, dsegs)
+            if sigs:
+                stats = cluster_stats(dsegs)
+                dsegs, sigs, stats = canonicalize_clusters(dsegs, sigs, stats)
+        if nspeakers != 1:
             wsegs = assign_speakers(wsegs, dsegs)
-            detected = len({s for _, _, s in dsegs})
+        detected = len({s for _, _, s in dsegs})
 
         if read_meta(job_id).get('cancel_requested'):
             raise RuntimeError('已放弃')
-        # diar 结果与声纹签名落盘:换库重放、事后重匹配的原料,避免重跑 12 分钟 CPU
+        # diar 结果与声纹签名落盘(规整后):换库重放、事后重匹配的原料,避免重跑 12 分钟 CPU
         with open(os.path.join(job_dir(job_id), 'dsegs.json'), 'w', encoding='utf-8') as f:
             json.dump([[s, e, sp] for s, e, sp in dsegs], f, ensure_ascii=False)
 
         speaker_map = {}
-        if meta.get('voiceprint', True):
-            sigs = extract_cluster_embeddings(wav, dsegs)
-            if sigs:
-                with open(os.path.join(job_dir(job_id), 'embeddings.json'), 'w', encoding='utf-8') as f:
-                    json.dump({str(k): [round(float(x), 6) for x in v] for k, v in sigs.items()},
-                              f, ensure_ascii=False)
-                lib = load_speakers()
-                speaker_map = match_speakers(sigs, lib, job_id)
-                save_speakers(lib)
+        if sigs:
+            with open(os.path.join(job_dir(job_id), 'embeddings.json'), 'w', encoding='utf-8') as f:
+                json.dump({str(k): [round(float(x), 6) for x in v] for k, v in sigs.items()},
+                          f, ensure_ascii=False)
+            lib = load_speakers()
+            speaker_map = match_speakers(sigs, lib, job_id, stats)
+            save_speakers(lib)
 
         write_meta(job_id, status='merging', stage='生成文稿', progress=99,
                    speaker_map=speaker_map)
@@ -730,6 +800,43 @@ def spk_remove_anchor(spk, job_id, cluster):
     spk['updated_at'] = time.strftime('%Y-%m-%d %H:%M')
 
 
+def merge_library_speakers(lib, src, dst):
+    """同人双身份修复:src 锚点全部并入 dst(spk_add_anchor 去重并重算质心),dst 无名而
+    src 有名则继承其名,src 条目从库中移除。调用方负责 save_speakers 与任务 speaker_map
+    的 gid 改写(rewrite_gid_in_jobs)。"""
+    inherit = not (dst.get('name') or '').strip() and bool((src.get('name') or '').strip())
+    for a in list(src.get('anchors', [])):
+        spk_add_anchor(dst, a.get('job_id'), a.get('cluster'), a.get('sim') or 0.0,
+                       np.asarray(a['vec'], dtype=np.float32))
+    if inherit:
+        dst['name'] = src['name'].strip()[:30]
+    lib['speakers'] = [s for s in lib['speakers'] if s['id'] != src['id']]
+
+
+def rewrite_gid_in_jobs(old_gid, new_gid=None, drop=False):
+    """扫全部完成任务:speaker_map 中指向 old_gid 的条目改写为 new_gid(合并)或摘除
+    (drop=True,回落到任务级名/「说话人N」,与删除库条目语义一致),受影响文稿重生成。
+    返回改写的 job_id 列表。"""
+    touched = []
+    for jid, meta in list(iter_done_jobs()):
+        smap = meta.get('speaker_map') or {}
+        hit = False
+        for k, v in smap.items():
+            if (v or {}).get('gid') != old_gid:
+                continue
+            hit = True
+            smap[k] = ({'gid': None, 'sim': v.get('sim'), 'status': 'new'} if drop
+                       else {**v, 'gid': new_gid})
+        if hit:
+            write_meta(jid, speaker_map=smap)
+            touched.append(jid)
+            try:
+                write_md(jid)
+            except Exception:  # noqa: BLE001 单个任务 md 失败不阻断
+                pass
+    return touched
+
+
 @app.post('/api/jobs/<job_id>/speaker_map')
 def job_speaker_action(job_id):
     """声纹匹配的人工裁决:confirm=确认为同一人(疑似升为已确认并补锚点);
@@ -833,17 +940,26 @@ def speaker_delete(gid):
         abort(404)
     lib['speakers'] = [s for s in lib['speakers'] if s['id'] != gid]
     save_speakers(lib)
-    for jid, meta in list(iter_done_jobs()):
-        smap = meta.get('speaker_map') or {}
-        if any((v or {}).get('gid') == gid for v in smap.values()):
-            smap = {k: ({'gid': None, 'sim': v.get('sim'), 'status': 'new'} if (v or {}).get('gid') == gid else v)
-                    for k, v in smap.items()}
-            write_meta(jid, speaker_map=smap)
-            try:
-                write_md(jid)
-            except Exception:  # noqa: BLE001
-                pass
+    rewrite_gid_in_jobs(gid, drop=True)
     return jsonify({'ok': True})
+
+
+@app.post('/api/speakers/merge')
+def speakers_merge():
+    """合并同人的双身份:{src, dst} gid。src 锚点并入 dst、质心重算,全部任务 speaker_map
+    中 src 的 gid 改写为 dst 并重生成文稿,src 条目删除;dst 无名而 src 有名则继承其名。"""
+    body = request.get_json(force=True, silent=True) or {}
+    lib = load_speakers()
+    src = _find_speaker(lib, str(body.get('src') or ''))
+    dst = _find_speaker(lib, str(body.get('dst') or ''))
+    if not src or not dst:
+        return jsonify({'error': 'src 或 dst 说话人不存在'}), 404
+    if src['id'] == dst['id']:
+        return jsonify({'error': 'src 与 dst 是同一说话人,无需合并'}), 400
+    merge_library_speakers(lib, src, dst)
+    save_speakers(lib)
+    touched = rewrite_gid_in_jobs(src['id'], new_gid=dst['id'])
+    return jsonify({'ok': True, 'merged': src['id'], 'into': dst['id'], 'jobs_updated': touched})
 
 
 def recover_interrupted():
