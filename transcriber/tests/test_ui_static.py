@@ -1679,7 +1679,8 @@ class WP7ReopenLedgerVector(unittest.TestCase):
             os.unlink(vec)
 
 
-
+@unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
+class ApplyRouteVectors(unittest.TestCase):
     """applyRoute 纯函数断言向量(实际向量与提取逻辑在 test_ui_route_vectors.mjs,
     与 splitSentences 先例同款:花括号配平抠函数、ELECTRON_RUN_AS_NODE 执行)。"""
 
