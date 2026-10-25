@@ -870,8 +870,9 @@ class WP6StoppedBranchesVector(unittest.TestCase):
 
 
 class WP5IdentityPins(unittest.TestCase):
-    """WP5 色板静态钉子(Task 8,spec §WP5):live 六色与主台 --sp*-ink
-    同色相(亮化变体 --lsp0..5)、% 6 循环、灰不再参与真人分配。"""
+    """WP5 色板与说话人身份一致静态钉子(Task 8,spec §WP5):
+    live 六色与主台 --sp*-ink 同色相(亮化变体 --lsp0..5)、% 6 循环、
+    正文标签统一 displayName、chip 改名双路径确认条(不显示会议数)。"""
 
     SP_INK = ['#1d5290', '#1f6b45', '#8f520c', '#65449f', '#14615f', '#96365a']
 
@@ -916,6 +917,49 @@ class WP5IdentityPins(unittest.TestCase):
         self.assertIsNotNone(fn)
         self.assertIn('% 6', fn)
         self.assertNotIn('length - 1', fn)
+
+    def test_draw_body_uses_display_name(self):
+        """正文说话人名与搜索过滤 nm 同走 displayName(本地覆盖 > 全局库):
+        库里改名后历史任务正文标签同步,不再只认本地 speaker_names。"""
+        fn = _js_fn(self.src, 'draw')
+        self.assertIsNotNone(fn)
+        self.assertIn('displayName(s.speaker)', fn)
+        self.assertNotIn('names[String(s.speaker)]', fn)
+        self.assertIn("'说话人' + (s.speaker + 1)", fn, '无名回落默认名须保留')
+
+    def test_rename_dual_path_endpoints(self):
+        """chip 改名双路径(替换旧静默 PATCH):全局走 PATCH /api/speakers/<gid>
+        + toast「已全局改名,相关会议文稿已更新」+ ensureSpeakers(true);
+        本任务走 PATCH /api/jobs/<id>(speaker_names)+ names[sp]=v 不动全局。"""
+        fn = _js_fn(self.src, 'showRenameConfirm')
+        self.assertIsNotNone(fn, '缺 showRenameConfirm(双路径确认条)')
+        self.assertIn("'/api/speakers/' + encodeURIComponent(gid)", fn)
+        self.assertIn('已全局改名,相关会议文稿已更新', fn)
+        self.assertIn('ensureSpeakers(true)', fn)
+        self.assertIn("'/api/jobs/' + j.id", fn)
+        self.assertIn('speaker_names', fn)
+        self.assertIn('names[sp] = v', fn)
+
+    def test_rename_confirm_bar_copy_no_numbers(self):
+        """确认条文案「「{名}」应用到哪些会议?」+ [应用到所有会议][仅此会议] 双按钮;
+        复用库页 .suggest 样式族不新建组件;不得渲染会议数数字——弱证据门下
+        锚点数 ≠ 会议数,写数字必错(eng-review 勘误)。"""
+        fn = _js_fn(self.src, 'showRenameConfirm')
+        self.assertIn('应用到哪些会议', fn)
+        self.assertIn('应用到所有会议', fn)
+        self.assertIn('仅此会议', fn)
+        self.assertIn(".suggest", fn)
+        self.assertNotIn('场会议', fn, '确认条内不得出现会议数')
+
+    def test_rename_confirm_dedup_and_dismiss(self):
+        """同 chip 连续 onchange 只挂一条:showRenameConfirm 入口先拆旧条;
+        点条外(document click)即弃;空白/改回原值时撤回在途确认条
+        (条上提议须与输入框现值一致,防「条提议旧名、框显示原名」的错位)。"""
+        fn = _js_fn(self.src, 'showRenameConfirm')
+        self.assertIn('dismissRenameBar()', fn)
+        self.assertIn("addEventListener('click'", fn)
+        self.assertIsNotNone(re.search(r'function dismissRenameBar\s*\(', self.src))
+        self.assertIn('inp.value = cur; dismissRenameBar();', self.src)
 
 
 WP5_COLOR_VECTOR_MJS = r'''

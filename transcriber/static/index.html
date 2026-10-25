@@ -1099,19 +1099,25 @@ async function load(quiet){
   for(const inp of main.querySelectorAll('.chip input')){
     inp.onchange = async () => {
       const sp = inp.dataset.sp;
-      const v = inp.value.trim() || ('说话人' + (+sp + 1));
-      inp.value = v;
       const chip = inp.closest('.chip');
       const gid = chip && chip.dataset.gid;
+      const cur = displayName(sp);
+      const raw = inp.value.trim();
       if(gid){
-        // 全局说话人:改名对所有会议生效
-        await fetch('/api/speakers/' + encodeURIComponent(gid), {method:'PATCH',
-          headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:v})});
-      }else{
-        await fetch('/api/jobs/' + j.id, {method:'PATCH',
-          headers:{'Content-Type':'application/json'}, body:JSON.stringify({speaker_names:{[sp]:v}})});
-        names[sp] = v;
+        // 全局说话人:改动跨会议,应用范围不能静默决定——出行内确认条双路径
+        if(!raw || raw === cur){
+          // 空白/改回原值:数据不动,同时撤回在途确认条(条上提议须与输入框现值一致)
+          inp.value = cur; dismissRenameBar(); return;
+        }
+        inp.value = raw;
+        showRenameConfirm(j, inp, gid, sp, raw);
+        return;
       }
+      const v = raw || ('说话人' + (+sp + 1));
+      inp.value = v;
+      await fetch('/api/jobs/' + j.id, {method:'PATCH',
+        headers:{'Content-Type':'application/json'}, body:JSON.stringify({speaker_names:{[sp]:v}})});
+      names[sp] = v;
       draw($('#q').value.trim());
     };
   }
@@ -1150,6 +1156,49 @@ function displayName(sp, n){
     if(hit && hit.name) return hit.name;
   }
   return '';
+}
+
+/* WP5 chip 改名双路径:gid 说话人的改动跨会议,应用范围不能静默决定。
+   同时刻全页至多一条确认条(再次 onchange 先拆旧条,防重复弹出);点条外即弃。 */
+let renameBar = null;
+function dismissRenameBar(){
+  if(renameBar){ renameBar.remove(); renameBar = null; }
+}
+function showRenameConfirm(j, inp, gid, sp, v){
+  /* 行内确认条复用库页 .suggest 样式族(不新建组件),挂在 .spkrow 之后;
+     不显示会议数——弱证据门(<3 段不加锚)下锚点数 ≠ 会议数,写数字必错 */
+  dismissRenameBar();
+  const row = inp.closest('.spkrow');
+  if(!row || !row.parentNode) return;          // 视图已被重绘(切任务/出库),确认失去对象
+  const bar = document.createElement('div');
+  bar.className = 'suggest';
+  bar.innerHTML = '<div class="cap">「' + esc(v) + '」应用到哪些会议?</div>' +
+    '<div class="acts"><button class="qbtn primary" data-ra="all">应用到所有会议</button>' +
+    '<button class="qbtn" data-ra="here">仅此会议</button></div>';
+  row.after(bar);
+  renameBar = bar;
+  const tear = () => { dismissRenameBar(); document.removeEventListener('click', onDoc); };
+  const onDoc = e => {
+    if(bar.contains(e.target) || e.target === inp) return;  // 条内点击交按钮;输入框再编辑走 onchange 换新条
+    tear();
+  };
+  document.addEventListener('click', onDoc);
+  bar.querySelector('[data-ra="all"]').onclick = async () => {
+    tear();
+    const r = await fetch('/api/speakers/' + encodeURIComponent(gid), {method:'PATCH',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:v})});
+    if(!r.ok){ toast('全局改名失败:' + ((await r.json()).error || r.status), 'err'); return; }
+    toast('已全局改名,相关会议文稿已更新');
+    await ensureSpeakers(true);              // 库缓存换新后重绘:无本地覆盖名者正文即时随库更新
+    draw($('#q').value.trim());
+  };
+  bar.querySelector('[data-ra="here"]').onclick = async () => {
+    tear();
+    await fetch('/api/jobs/' + j.id, {method:'PATCH',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({speaker_names:{[sp]:v}})});
+    names[sp] = v;                           // 任务级覆盖 > 全局库(既有优先级,非缺陷)
+    draw($('#q').value.trim());
+  };
 }
 
 function bindTitleEdit(j){
@@ -1206,7 +1255,7 @@ function draw(q){
   const frag = document.createDocumentFragment();
   let shown = 0;
   segs.forEach((s, idx) => {
-    const nm = names[String(s.speaker)] || ('说话人' + (s.speaker + 1));
+    const nm = displayName(s.speaker) || ('说话人' + (s.speaker + 1));
     if(q && !(s.text.includes(q) || nm.includes(q))) return;
     shown++;
     const d = document.createElement('div');
