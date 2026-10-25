@@ -168,6 +168,8 @@ function handleEvent(ev){
         if (p[1] && p[1] !== p[0])
           setChip('stopChip', '未配置翻译密钥(.env),本场仅识别、不修正不翻译', 9000);
       }
+      // 7.8:无修正会话(无密钥或本就未选翻译)pass1 句即定稿——开始判一次,会话中途不改
+      applyLlmOff(ev.llm === false || langPairIsNoTranslate(state.lang));
       break;
     case 'partial':
       state.partial = ev.text || '';
@@ -814,11 +816,14 @@ var LANG_OK = {zh: 1, en: 1, ja: 1};
 var LANG_NAME = {zh: '中文', en: '英文', ja: '日文'};
 
 function langFromStorage(){
-  /* 存储仍是 'src>tgt' 对字符串(兼容旧值 zh>en / zh>zh 等):
-     tgt==src 即「不翻译」;非法值回落默认 zh>en。 */
-  var p = String(localStorage.getItem('live.lang') || 'zh>en').split('>');
+  /* 存储仍是 'src>tgt' 对字符串(兼容旧值 zh>zh 等):tgt==src 即「不翻译」。
+     旧默认 'zh>en' 在此一次性迁移清除(WP4,见 migrateLegacyLang);恰为旧默认的
+     返回值不得沿用(迁移的立意就是让旧默认失效),与无值/非法一样按新默认
+     「不翻译」回落(原回落 'en' 已废);其余合法值不动。 */
+  var raw = migrateLegacyLang();
+  var p = String(raw === LEGACY_DEFAULT_LANG ? '' : (raw || '')).split('>');
   var src = LANG_OK[p[0]] ? p[0] : 'zh';
-  var tgt = LANG_OK[p[1]] ? p[1] : 'en';
+  var tgt = LANG_OK[p[1]] ? p[1] : src;
   return {src: src, tgt: tgt === src ? '' : tgt};
 }
 
@@ -838,6 +843,42 @@ function langLabel(pairStr){
   var p = String(pairStr || '').split('>');
   var s = LANG_NAME[p[0]] || p[0], t = LANG_NAME[p[1]] || p[1];
   return p[1] === p[0] ? s + '(不翻译)' : s + ' → ' + t;
+}
+
+/* ---------- WP4 隐私:note 动态化 + 旧默认迁移 + 7.8 llm-off ---------- */
+
+var LEGACY_DEFAULT_LANG = 'zh>en';   // 旧版翻译默认;恰为此值即视为未显式选择(见迁移)
+var NOTE_LOCAL = '识别与说话人分离即时可用,全程在本机完成;修正与翻译事件到达时自动上屏。';
+var NOTE_REMOTE = '识别与说话人分离在本机完成;修正与翻译会把窗口文本(不含音频、路径、人名)发送至外部 LLM 服务。';
+
+function updateLangNote(){
+  /* tgt≠src 才外发:note 即时切换外发告知。fSrc 变化同样会翻转 tgt==src 语义
+     (如 tgt=en 时把 src 改成 en),两处 change 都监听。 */
+  var src = $('fSrc').value || 'zh';
+  var tgt = $('fTgt').value;
+  $('langNote').textContent = (tgt && tgt !== src) ? NOTE_REMOTE : NOTE_LOCAL;
+}
+
+function migrateLegacyLang(){
+  /* 旧默认一次性迁移(WP4):存量机器的 live.lang 恰为 'zh>en'(旧默认,无法区分
+     是否显式选过)时清除该键,让新默认「不翻译」生效——显式选过 zh>en 的用户被
+     重置一次,隐私收益优先;其余合法值不动。返回清除前读到的原始值:resume 路径
+     用它保持本次会话的展示语言不被迁移改写(真实会话语言在服务端,resume 不发 start)。 */
+  var raw = localStorage.getItem('live.lang');
+  if (raw === LEGACY_DEFAULT_LANG) localStorage.removeItem('live.lang');
+  return raw;
+}
+
+function langPairIsNoTranslate(pairStr){
+  var p = String(pairStr || '').split('>');
+  return p.length === 2 && p[0] !== '' && p[0] === p[1];
+}
+
+function applyLlmOff(off){
+  /* 7.8 f1 升白:无修正会话(服务端无密钥,或本就未选翻译)里 pass1 句上屏即定稿,
+     f1 灰层不再承担「待修正」语义 → 根节点 llm-off 让 f1 直接升定稿色(译文层不动)。
+     开始时判一次;页面单会话生命周期(endNew 走整页刷新),无需对称卸除。 */
+  document.documentElement.classList.toggle('llm-off', !!off);
 }
 
 /* ---------- 停止(文案硬约束:按钮就叫「停止」) ---------- */
@@ -914,9 +955,14 @@ function tryAutoResume(){
   state.autoResume = true;
   state.title = localStorage.getItem('live.title') || '实时会议';
   state.speakers = parseInt(localStorage.getItem('live.speakers') || '0', 10) || 0;
-  state.lang = localStorage.getItem('live.lang') || 'zh>en';
+  var savedLang = migrateLegacyLang();     // resume 路径同样过迁移(键清除);原值仍用于本次会话
+  state.lang = savedLang || 'zh>zh';       // resume 无 start 上行:真实语言在服务端,此处仅供
+                                           // 设置弹层展示与 llm-off 判断(旧回落 'zh>en' 已废)
   var sa = parseInt(localStorage.getItem('live.startedAt') || '0', 10);
   state.startedAt = sa > 0 ? sa : Date.now();
+  // resume 无 started 应答(llm 旗标拿不到):按恢复出的语言对判——不翻译会话升白;
+  // 曾选翻译的维持灰→白渐进(原始 llm 状态未持久化,backlog 重放也不携带,无从恢复)
+  applyLlmOff(langPairIsNoTranslate(state.lang));
   setPhase('connecting');
   startCapture().then(function(){
     enterLiveUI();
@@ -936,11 +982,6 @@ function init(){
   state.mode = modeParam === 'panel' || modeParam === 'bar'
     ? modeParam
     : (localStorage.getItem('live.mode') === 'panel' ? 'panel' : 'bar');
-  $('fTitle').value = localStorage.getItem('live.title') || '';
-  restoreLangSelects();
-  var sp = localStorage.getItem('live.speakers');
-  if (sp != null && $('fSpeakers').querySelector('option[value="' + sp + '"]'))
-    $('fSpeakers').value = sp;
 
   makeDraggable($('barGrab'), $('bar'), 'live.barPos', function(){
     var bar = $('bar');
@@ -959,6 +1000,8 @@ function init(){
     $('setupErr').hidden = true;
     beginSession();
   });
+  $('fTgt').addEventListener('change', updateLangNote);
+  $('fSrc').addEventListener('change', updateLangNote);   // src 变化同样翻转 tgt==src 语义
   $('barExpand').addEventListener('click', function(){ setMode('panel'); });
   $('panelCollapse').addEventListener('click', function(){ setMode('bar'); });
   $('barPause').addEventListener('click', togglePause);
@@ -985,7 +1028,16 @@ function init(){
     location.href = '/';
   });
 
-  if (!tryAutoResume()){ $('setup').hidden = false; }
+  // 先判 resume 再恢复表单:tryAutoResume 必须在表单路径迁移之前拿到 live.lang 原始值
+  //(langFromStorage 的迁移会清掉旧默认键,顺序反了会改写本次会话的展示语言)
+  var resumed = tryAutoResume();
+  $('fTitle').value = localStorage.getItem('live.title') || '';
+  restoreLangSelects();               // 表单路径迁移在此发生;resume 失败回表单时已是新默认
+  var sp = localStorage.getItem('live.speakers');
+  if (sp != null && $('fSpeakers').querySelector('option[value="' + sp + '"]'))
+    $('fSpeakers').value = sp;
+  updateLangNote();                   // 初始 note 与恢复出的语言对一致(默认不翻译→无外发字样)
+  if (!resumed){ $('setup').hidden = false; }
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
