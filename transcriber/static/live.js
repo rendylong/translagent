@@ -362,7 +362,7 @@ function onStopped(ev){
   } else if (ev.reason === 'empty'){
     $('endRetry').hidden = true;
     $('endRetryNote').hidden = true;
-    $('endTitle').textContent = '本場没有录到语音';
+    $('endTitle').textContent = '本场没有录到语音';
     $('endSub').textContent = '会话已结束,未生成文稿。';
     $('endLink').hidden = true;
     $('endwrap').hidden = false;

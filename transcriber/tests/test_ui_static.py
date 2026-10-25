@@ -488,7 +488,7 @@ class WP6EndCardPins(unittest.TestCase):
         桌面 openMainJob 分支原样保留(含 closeLiveCaption);
       - finalize_failed:标题「文稿生成失败,录音已保留」+ error 摘要 + 寻回文案
         + 「立即重试转正」按钮(POST /api/live/recover_now,防连点,原位转成功态);
-      - empty:「本場没有录到语音」(spec/brief 逐字,場为 U+5834)。
+      - empty:「本场没有录到语音」(spec 初稿笔误「本場」已经控制者勘误为简体「本场」)。
     三分支均不得出现旧文案「正在生成完整文稿」;旧服务端(stopped 无 reason 无
     job_id)按失败态渲染——行为级见 WP6StoppedBranchesVector。"""
 
@@ -557,9 +557,9 @@ class WP6EndCardPins(unittest.TestCase):
         self.assertIn('id="endRetryNote"', self.html, '就地提示元素缺失')
 
     def test_empty_branch_copy(self):
-        """空会话态(spec/brief 逐字,場为 U+5834):标题「本場没有录到语音」,
+        """空会话态(spec 勘误后逐字):标题「本场没有录到语音」,
         sub「会话已结束,未生成文稿。」;endLink 不显示(无文稿可开)。"""
-        self.assertIn('本場没有录到语音', self.js)
+        self.assertIn('本场没有录到语音', self.js)
         self.assertIn('会话已结束,未生成文稿', self.js)
 
     def test_old_generating_copy_banned(self):
@@ -812,7 +812,7 @@ ok(S.href === '/#job_ok', '成功态深链 href:got ' + S.href);
 ok(S.retryHidden === true && S.wrapHidden === false, '成功态寻回按钮须隐藏、结束卡须亮');
 ok(S.phase === 'ended', '成功态相位置 ended');
 const E = j(out.empty);
-ok(E.title === '本場没有录到语音', '空会话标题:got ' + E.title);
+ok(E.title === '本场没有录到语音', '空会话标题:got ' + E.title);
 ok(E.sub.indexOf('会话已结束,未生成文稿') >= 0, '空会话 sub 缺「会话已结束,未生成文稿」');
 ok(E.linkHidden === true, '空会话不得显示打开文稿');
 ok(E.title.indexOf('没有录到语音') >= 0 && E.title !== '文稿生成失败,录音已保留', '空会话误落失败态文案');

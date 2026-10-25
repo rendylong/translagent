@@ -181,12 +181,12 @@ class StaticCheck(unittest.TestCase):
 
     def test_end_card_three_states(self):
         """WP6 三分态(Task 7):成功「文稿已生成」/失败「文稿生成失败,录音已保留」
-        + 寻回文案/空会话「本場没有录到语音」;旧文案「正在生成完整文稿」三分支绝迹;
+        + 寻回文案/空会话「本场没有录到语音」(spec 初稿笔误「本場」已勘误);旧文案「正在生成完整文稿」三分支绝迹;
         结束卡结构新增「立即重试转正」按钮(hidden 默认)与就地提示槽;
         成功态 web 深链开新标签(不再本页导航)。"""
         self.assertIn('文稿已生成', self.js)
         self.assertIn('文稿生成失败,录音已保留', self.js)
-        self.assertIn('本場没有录到语音', self.js)
+        self.assertIn('本场没有录到语音', self.js)
         self.assertIn('录音仍在服务端,重启转写服务后会自动转为任务', self.js)
         self.assertNotIn('正在生成完整文稿', self.js, '三分支均不得再出现旧文案')
         self.assertNotIn('正在生成完整文稿', self.html)
