@@ -1237,17 +1237,41 @@ class WP7IndexFastFixPins(unittest.TestCase):
                       '导出 menu 入场 180ms')
 
     def test_7_16_view_in_fade(self):
-        """主区视图容器一次性淡入:#main 新首子元素 animation 跑一次即止(纯 CSS,
-        render 换 innerHTML 即触发)。"""
-        self.assertIn('#main > :first-child{animation:view-in var(--t-med) var(--t-ease)}', self.src)
+        """主区视图一次性淡入:类由 render() 仅视图切换时挂、animationend 摘除;
+        旧纯 CSS「#main > :first-child」规则绝迹——运行页 2.5s 轮询 load(true)
+        整块替换 innerHTML 不得重放淡入(评审 Important 修复)。"""
+        self.assertIn('#main.view-in{animation:view-in var(--t-med) var(--t-ease)}', self.src)
         self.assertIn('@keyframes view-in{from{opacity:0}}', self.src)
+        self.assertNotIn('#main > :first-child{animation', self.src,
+                         '纯 CSS 首子元素规则让运行页每 2.5s 闪一次(评审 Important)')
+
+    def test_7_16_view_in_only_from_render(self):
+        """playViewIn 只能由 render 调用(route 对同视图幂等短路 ⇒ render 即真切换);
+        load/renderEmpty/showLib 渲染器体内一律不得触发淡入。"""
+        self.assertEqual(self.src.count('playViewIn()'), 2,
+                         'playViewIn 只许出现定义与 render 调用两处')
+        render = _js_fn(self.src, 'render')
+        self.assertIsNotNone(render, 'render 缺失')
+        self.assertIn('playViewIn()', render)
+        for fn in ('load', 'renderEmpty', 'showLib'):
+            body = _js_fn(self.src, fn)
+            self.assertIsNotNone(body, '%s 缺失' % fn)
+            self.assertNotIn('playViewIn()', body, '%s 不得触发淡入' % fn)
+
+    def test_7_16_t_fast_token_not_dead(self):
+        """--t-fast 必须有真实消费者:.live-row .dot 的 background 过渡绑
+        var(--t-fast)(评审 Minor:token 不留死字面)。"""
+        self.assertIn('--t-fast:120ms', self.src)
+        m = re.search(r'\.live-row \.dot\{[^}]*\}', self.src)
+        self.assertTrue(m, '.live-row .dot 规则缺失')
+        self.assertIn('transition:background var(--t-fast)', m.group(0))
 
     def test_7_16_progress_transition_600ms_linear(self):
         """进度条 transition .8s → 600ms linear,.bar i 与 .runbar i 两处;
-        迟滞的 .8s 全文绝迹。"""
+        旧迟滞字面精确绝迹(不做裸 .8s 断言,防 1.8s 之类误报——评审 Minor)。"""
         self.assertEqual(len(re.findall(r'transition:width 600ms linear', self.src)), 2,
                          '两处进度条都须 600ms linear')
-        self.assertNotIn('.8s', self.src, '.8s 迟滞残留')
+        self.assertNotIn('transition:width .8s', self.src, '旧迟滞 transition 残留')
 
     # ---- 7.13 轮询不再全量重建 ----
     def test_7_13_signature_fn_and_fields(self):
@@ -1295,6 +1319,13 @@ class WP7IndexFastFixPins(unittest.TestCase):
         self.assertIn('jobStructSig(a) !== jobStructSig(b)', self.src,
                       '就地更新前须逐行比较结构签名')
 
+    def test_7_13_signature_includes_day_key(self):
+        """列表签名含 todayKey():跨午夜「今天/更早」分组陈旧在下一个轮询即自愈
+        (评审 Minor 闭合)。"""
+        sig = _js_fn(self.src, 'jobsSignature')
+        self.assertIsNotNone(sig, 'jobsSignature 缺失')
+        self.assertIn('todayKey()', sig)
+
     def test_7_13_tick_live_path_untouched(self):
         """Task 4 的 tick→refreshLiveState 顺带刷新不得回退。"""
         tick = _js_fn(self.src, 'tick')
@@ -1303,9 +1334,14 @@ class WP7IndexFastFixPins(unittest.TestCase):
 
     # ---- 7.17 逗号行首残留 ----
     def test_7_17_no_comma_after_bold(self):
-        """</b>,/</b>。 残留全清(逗号移进 <b> 内),窄栏侧栏不出现行首逗号。"""
-        self.assertIsNone(re.search(r'</b>\s*[,，。]', self.src),
-                          '</b> 后不得紧跟逗号/句号')
+        """</b>,/</b>。 残留全清(逗号移进 <b> 内),窄栏侧栏不出现行首逗号;
+        spec 要求两文件同查:index.html + live.html + live.js(评审 Minor 补 live 侧)。"""
+        pattern = re.compile(r'</b>\s*[,，。]')
+        self.assertIsNone(pattern.search(self.src), '</b> 后不得紧跟逗号/句号')
+        self.assertIsNone(pattern.search(LIVE_HTML.read_text(encoding='utf-8')),
+                          'live.html 同查须清')
+        self.assertIsNone(pattern.search(LIVE_JS.read_text(encoding='utf-8')),
+                          'live.js 同查须清')
 
     # ---- 7.18 audio 控件融入 ----
     def test_7_18_audio_accent_and_preload(self):

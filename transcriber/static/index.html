@@ -154,15 +154,17 @@
     border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;
     padding:8px 11px;font-size:12.5px;color:var(--muted);text-align:left;width:calc(100% - 28px)}
   .live-row:hover{border-color:#a9b0b9;background:#fafbfc}
-  .live-row .dot{width:8px;height:8px;border-radius:50%;background:#c4cad1;flex:none;transition:background .12s}
+  .live-row .dot{width:8px;height:8px;border-radius:50%;background:#c4cad1;flex:none;transition:background var(--t-fast)}
   .live-row.on{color:var(--text)}
   .live-row.on .dot{background:var(--negative);animation:rec-blink 1.6s ease-in-out infinite}
   .live-row .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* ---------- 主区 ---------- */
   .main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
-  /* 7.16 主区视图一次性淡入:render 换 innerHTML 的新首子元素动画跑一次即止(纯 CSS) */
-  #main > :first-child{animation:view-in var(--t-med) var(--t-ease)}
+  /* 7.16 主区视图一次性淡入:.view-in 类由 render() 仅在视图真切换时挂、
+     animationend 摘除;同视图重渲染(运行页 2.5s 轮询 load(true) 整块替换
+     innerHTML)不重放——评审 Important 修复,旧的纯 CSS 首子元素规则已绝迹 */
+  #main.view-in{animation:view-in var(--t-med) var(--t-ease)}
   @keyframes view-in{from{opacity:0}}
 
   .empty{margin:auto;text-align:center;padding:40px 20px;max-width:460px}
@@ -839,7 +841,8 @@ function currentViewKey(){
   return view && view.type === 'job' ? view.id : '';
 }
 function jobsSignature(){
-  return currentViewKey() + '\n' + jobs.map(jobSig).join('\n');
+  /* todayKey 入签名:跨午夜「今天/更早」分组陈旧在下一个轮询即自愈(评审 Minor) */
+  return currentViewKey() + '\n' + todayKey() + '\n' + jobs.map(jobSig).join('\n');
 }
 /* 就地更新资格:同一视图、行序与 id 一一对应、每行结构字段未变,
    且字段有变的行都是 running 任务(终态行字段有变保守起见重建) */
@@ -977,12 +980,23 @@ function route(){
 /* 主区渲染唯一入口:renderEmpty / showLib / load 都从这里调度。
    每次视图切换都作废在途 load(loadSeq++)并重刷历史高亮与 lib-cnt(refresh),
    返回键/深链等纯导航路径因此无需各自补刷。 */
+/* 主区一次性淡入(评审 Important 修复):route 对同视图幂等短路,render 只在
+   view.type/id 真变化(含首启)时进入——淡入类只在这里挂,animationend 摘除;
+   运行页 2.5s 轮询的 load(true) 整块替换 innerHTML 不经过 render,绝不重放 */
+function playViewIn(){
+  const m = $('#main');
+  m.classList.remove('view-in');
+  void m.offsetWidth;   // 强制 reflow:快速连切时让 180ms 动画从头重放
+  m.classList.add('view-in');
+  m.addEventListener('animationend', () => m.classList.remove('view-in'), {once:true});
+}
 function render(v){
   view = v;
   syncChrome();
   if(v.type === 'empty'){ loadSeq++; renderEmpty(); }
   else if(v.type === 'lib'){ loadSeq++; showLib(); }
   else load();
+  playViewIn();   // 仅真切换淡入(见上);同视图重渲染不经过这里
   refresh();
 }
 /* 空态唯一实现,与初始标记同元素集合(波形 SVG/h1/p/acts/meas);
