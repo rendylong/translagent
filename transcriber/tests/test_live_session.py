@@ -278,5 +278,44 @@ class StoppedReasonTest(unittest.TestCase):
         self.assertNotIn('reason', stopped[0], '成功分支不得带 reason')
 
 
+class StartRegistrationOrderTest(unittest.TestCase):
+    """TOCTOU 回归钉(2026-10-25 评审 Important):start() 里 _SESSIONS 登记必须
+    先于 Pass1Engine 构造(即 meta 落盘后的下一个动作)。否则「meta 已写、未注册」
+    窗口内 recover_now 会把即将录制的会话目录当死目录转正、或把 44 字节空壳 wav
+    直接删——两条都是音频丢失。Pass1Engine/Pass2Runner 替换桩后 start() 可无模型跑通。
+    """
+
+    def test_registered_before_engine_construction(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        sess = LiveSession(tmp.name, 'unused-model-dir', speaker_cluster=_StubCluster())
+        self.addCleanup(sess.handle_stop)   # 幂等收尾:空会话清目录 + 摘注册
+        observed = {}
+
+        class _SpyEngine:
+            def __init__(self, model_dir, on_partial, on_final):
+                observed['ok'] = live_session._SESSIONS.get(sess.id) is sess
+
+            def feed(self, pcm):
+                pass
+
+            def finals(self):
+                return []
+
+            def stop(self):
+                pass
+
+        class _StubRunner:
+            def __init__(self, *a, **kw):
+                pass
+
+        with unittest.mock.patch.object(live_session, 'Pass1Engine', _SpyEngine), \
+             unittest.mock.patch.object(live_session, 'Pass2Runner', _StubRunner), \
+             unittest.mock.patch.object(live_session, 'parse_key', lambda: None):
+            sess.start('注册顺序窗口钉', 0)
+        self.assertTrue(observed.get('ok', False),
+                        'Pass1Engine 构造时(meta 已落盘)会话必须已在 _SESSIONS')
+
+
 if __name__ == '__main__':
     unittest.main()

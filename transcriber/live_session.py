@@ -80,7 +80,11 @@ def find_session(session_id):
 
 
 def active_session_ids():
-    """进程内活跃会话 id 快照(持 _SESSIONS_LOCK):recover_now 排除正在录制的目录。"""
+    """进程内活跃会话 id 快照(持 _SESSIONS_LOCK):recover_now 排除正在录制的目录。
+
+    故意返回注册表全量、**不**按 ACTIVE_STATUSES 过滤:start() 的注册先于引擎构造
+    (TOCTOU 防御,见 start 内注释),窗口期 status 仍 idle——若在此过滤,该窗口
+    会重新暴露给 recover_now。注册表成员即「活会话或正在 start 的会话」,一律排除。"""
     with _SESSIONS_LOCK:
         return set(_SESSIONS)
 
@@ -295,32 +299,41 @@ class LiveSession:
                       'speakers': int(speakers or 0), 'created_at': time.strftime('%Y-%m-%d %H:%M'),
                       'status': 'listening', 'sample_rate': SAMPLE_RATE, 'language': whisper_lang}
         self._save_meta()
-        self._engine = Pass1Engine(self.model_dir, self._on_partial, self._on_final)
-        self._runner = Pass2Runner(os.path.join(self._dir, AUDIO), self._on_pass2_event,
-                                   language=whisper_lang, speaker_cluster=self._cluster)
-        self._writer = threading.Thread(target=self._run_writer, name='live-writer-' + self.id,
-                                        daemon=True)
-        self._writer.start()
-        self._pass2 = threading.Thread(target=self._run_pass2, name='live-pass2-' + self.id,
-                                       daemon=True)
-        self._pass2.start()
-        key = parse_key()                  # env.rtf;无 key → Pass3 整层禁用
-        self.llm_enabled = bool(key)       # ws_live 透传给前端:无 key 且选了翻译目标时提示
-        if key:
-            self._refiner = LLMRefiner(key, lang_pair=(whisper_lang, tgt))
-            self._llm = threading.Thread(
-                target=refine_worker,
-                args=(lambda: self._llm_q.get(timeout=0.5), self._emit,
-                      self._refiner, self._llm_stop),
-                name='live-llm-' + self.id, daemon=True)
-            self._llm.start()
-        self.started_at = int(time.time())
-        self.status = 'listening'
-        self._watchdog = threading.Thread(target=self._run_watchdog,
-                                          name='live-watchdog-' + self.id, daemon=True)
-        self._watchdog.start()
+        # 注册先行(TOCTOU,2026-10-25 评审):meta 已落盘的目录若还没进注册表,
+        # 窗口期内 recover_now 会把它当死目录转正、或把 44 字节空壳 wav 直接删——
+        # 都是音频丢失。故登记提前到 meta 写后、引擎构造前;此时 status 仍 idle,
+        # live_state 的 ACTIVE_STATUSES 过滤保证动作行红点不受影响。注册后任何
+        # 失败必须摘注册:半途对象永久占位会连带其目录被 recover_now 永久豁免。
         with _SESSIONS_LOCK:
             _SESSIONS[self.id] = self
+        try:
+            self._engine = Pass1Engine(self.model_dir, self._on_partial, self._on_final)
+            self._runner = Pass2Runner(os.path.join(self._dir, AUDIO), self._on_pass2_event,
+                                       language=whisper_lang, speaker_cluster=self._cluster)
+            self._writer = threading.Thread(target=self._run_writer, name='live-writer-' + self.id,
+                                            daemon=True)
+            self._writer.start()
+            self._pass2 = threading.Thread(target=self._run_pass2, name='live-pass2-' + self.id,
+                                           daemon=True)
+            self._pass2.start()
+            key = parse_key()                  # env.rtf;无 key → Pass3 整层禁用
+            self.llm_enabled = bool(key)       # ws_live 透传给前端:无 key 且选了翻译目标时提示
+            if key:
+                self._refiner = LLMRefiner(key, lang_pair=(whisper_lang, tgt))
+                self._llm = threading.Thread(
+                    target=refine_worker,
+                    args=(lambda: self._llm_q.get(timeout=0.5), self._emit,
+                          self._refiner, self._llm_stop),
+                    name='live-llm-' + self.id, daemon=True)
+                self._llm.start()
+            self.started_at = int(time.time())
+            self.status = 'listening'
+            self._watchdog = threading.Thread(target=self._run_watchdog,
+                                              name='live-watchdog-' + self.id, daemon=True)
+            self._watchdog.start()
+        except Exception:
+            self._reap()                       # 自愈:目录留给 recover(空壳删/转正),注册表不残留
+            raise
         return self.id
 
     def feed_bytes(self, b):

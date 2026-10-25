@@ -125,10 +125,10 @@ class RecoverNowApiTest(unittest.TestCase):
                         'status': status, 'language': 'zh'}), encoding='utf-8')
         return d
 
-    def _put_active_session(self, sid):
+    def _put_active_session(self, sid, status='listening'):
         s = live_session.LiveSession(tempfile.mkdtemp(), 'unused-model-dir')
         s.id = sid
-        s.status = 'listening'
+        s.status = status
         s.started_at = 1730000000
         s._meta = {'title': '正在录'}
         with live_session._SESSIONS_LOCK:
@@ -158,6 +158,18 @@ class RecoverNowApiTest(unittest.TestCase):
         self.assertTrue((d / 'live_audio.wav').is_file(), '活跃会话目录不得被清/转')
         self.assertTrue((d / 'live_meta.json').is_file())
         self.assertEqual(list(self.job_queue.queue), [], '不得入队任何 job')
+
+    def test_start_window_idle_registered_dir_not_touched(self):
+        """start 窗口(meta 已写、注册先行、status 仍 idle)的目录同样不得被转正或
+        清空壳——TOCTOU 回归钉(2026-10-25 评审 Important):active_session_ids
+        必须保持注册表全量语义,不得按 ACTIVE_STATUSES 过滤,否则重开本窗口。"""
+        self._make_live_dir('window-sess')
+        self._put_active_session('window-sess', status='idle')
+        out = self._post_recover_now()
+        self.assertEqual(out, {'recovered': []})
+        d = Path(self.live_root) / 'window-sess'
+        self.assertTrue((d / 'live_audio.wav').is_file(), 'start 窗口目录不得被清/转')
+        self.assertTrue((d / 'live_meta.json').is_file())
 
     def test_dead_and_active_mixed(self):
         """混合场景:死目录转正、活跃目录跳过,互不影响。"""
