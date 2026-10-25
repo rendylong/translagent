@@ -3,7 +3,8 @@
 
 四段:
   1. StaticCheck:live.html / live.js 关键实现的字符串存在性
-     (audio_flush_done、流式降采样、resume、5 分钟缓冲上限、「停止」文案、不出现「转正」,
+     (audio_flush_done、流式降采样、resume、5 分钟缓冲上限、「停止」文案、不出现「转正」、
+     两级渲染钉子:pass1_final 透传 speaker / llm speaker 三态 / pass2 层零残留;
      及 2026-10-24 句子账本化钉子:双轨删除回归、静态骨架、色板变量、reduced-motion)。
   2. SentenceSplitCheck:从 live.js 源码抠出 splitSentences(花括号配平,不 eval 整文件),
      经本机 .tools/electron 的 node 模式执行断言向量(本机无 node;二进制缺失时 skip)。
@@ -12,8 +13,8 @@
   4. ProtocolFlow:起 app.py 子进程,按前端 live.js 的真实时序走一遍
      start → 喂 zh 锚点 30s(200ms/包)→ 收 partial/pass1_final →
      断线重连 resume(last_seq=0 重放)→ 发 audio_flush_done → stop → stop_ack → stopped。
-     断言与 live_session.py / app.py ws_live 的实际实现逐点对齐(无 resumed 消息、
-     pass2 字段名 t0/t1 在本流程不出现——pass2 管线尚未接入 WS,前端先行画好)。
+     断言与 live_session.py / app.py ws_live 的实际实现逐点对齐(无 resumed 消息;
+     两层管线下 llm 事件需 LLM 密钥,协议流程不覆盖,llm 事件形状由静态段钉住)。
      另有 test_stop_after_reconnect 覆盖「断线期按停止」路径:重连后必须先 resume
      挂回会话再补发音频再 stop(否则新连接 session=None,stop 落空、会话悬死),
      断言 stop_ack/stopped 到达且服务端 wav 已 finalize。
@@ -168,11 +169,45 @@ class StaticCheck(unittest.TestCase):
         self.assertNotIn('转正', self.html, '界面文案不得出现「转正」')
         self.assertNotIn('转正', self.js, '界面文案不得出现「转正」')
 
-    def test_three_tier_rendering(self):
-        for key in ('pass1_final', 'pass2_skip', "'pass2'", "'llm'", 'translation'):
+    def test_two_tier_rendering(self):
+        """两级渲染钉子:pass1_final 透传 speaker(分人失败无键)、f1/llm 文本着色
+        条件、llmReplace 的 speaker 参数与 undefined/null/int 三态区分、软替换单窗
+        采事件 speaker、账本句行 f1/llm 分级配色、表单两级口径文案。
+        (合并注:原 renderBar 兜底主行钉子随主行/历史双轨删除而改写——账本线一句一行
+        无「兜底主行」,speaker 语义钉在 llmReplace 与句行配色上,见 test_bar_log_history。)"""
+        for key in ('pass1_final', "'llm'", 'translation'):
             self.assertIn(key, self.js)
         self.assertIn('t0_ms', self.js)   # pass1_final 字段名(与 live_session.py 一致)
-        self.assertIn('ev.t0', self.js)   # pass2/llm 字段名(与 live_pass2.py 一致)
+        self.assertIn('ev.t0', self.js)   # llm 字段名 t0/t1(与 live_llm.py 一致)
+        self.assertIn('speaker: ev.speaker', self.js)     # pass1_final 透传 speaker
+        # 着色门控(Task 6):有 speaker 才设内联色;无 speaker(f1 分人失败 / llm 跨批)
+        # 不设内联色,回落 .e.f1/.e.llm 的 CSS 灰(否则内联灰覆盖 CSS,.e.f1 成死规则)
+        self.assertIn("(entry.kind === 'f1' || entry.kind === 'llm') && entry.speaker != null",
+                      self.js)
+        self.assertIn('.e.f1 .txt,.e.llm .txt', self.html)   # 无 speaker 的 CSS 灰兜底
+        self.assertIn('llmReplace(t0, t1, text, translation, speaker)', self.js)
+        self.assertIn("llmReplace(ev.t0, ev.t1, ev.text || '', ev.translation || '', ev.speaker)",
+                      self.js)
+        self.assertIn('speaker !== undefined', self.js)   # null(跨说话人批)与缺键(undefined)区分
+        # 单窗软替换采事件 speaker(int 染色/null 通用色),缺键(undefined)才保留原值
+        self.assertIn('if (speaker !== undefined) e.speaker = speaker;', self.js)
+        # 账本句行两级分级配色:pass1 待修正暗色 → llm 定稿亮色(跳变即修正落地的瞥读信号)
+        self.assertIn('.blog .srow.f1 .stx', self.html)
+        self.assertIn('.blog .srow.llm .stx', self.html)
+        self.assertIn('句尾停顿后', self.html)            # 两级口径文案(修正翻译句尾停顿后替换)
+
+    def test_pass2_layer_retired(self):
+        """pass2 层退役:事件分支、修正徽标、p2/skip 样式零残留(前端只余 f1+llm 两级)。"""
+        self.assertNotIn('pass2', self.js)
+        self.assertNotIn('pass2', self.html)
+        self.assertNotIn('bdgFix', self.js)
+        self.assertNotIn('bdgFix', self.html)
+        self.assertNotIn('b-fix', self.html)
+        self.assertNotIn('replaceWindow', self.js)   # 仅 pass2/pass2_skip 分支使用,随之删除
+        self.assertNotIn('.e.p2', self.html)
+        self.assertNotIn('.e.skip', self.html)
+        self.assertNotIn('skiptxt', self.js)
+        self.assertNotIn('skiptxt', self.html)
 
     def test_ended_copy(self):
         self.assertIn('录音已保存 · 正在生成完整文稿', self.js)
@@ -185,7 +220,7 @@ class StaticCheck(unittest.TestCase):
 
     def test_start_failure_and_copy_fixes(self):
         """终审修复项 2/3 的静态钉子:start 阶段 error 前端停止自动重连并显示;
-        语言对文案如实(参与 Pass2/LLM);stopped 带 job_id 的旧失实注释已删。"""
+        语言对文案如实(参与 LLM 修正与翻译);stopped 带 job_id 的旧失实注释已删。"""
         self.assertIn('无法开始实时会话', self.js, 'onError 应处理 start 失败分支')
         self.assertIn("clearTimeout(state.reconnectTimer)", self.js)
         self.assertNotIn('当前版本不参与识别', self.html, '语言对文案失实(实际参与 Pass2/LLM)')

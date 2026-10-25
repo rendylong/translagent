@@ -95,12 +95,10 @@
   .blog .swho{font-size:11px;color:rgba(255,255,255,.62);font-weight:600}
   .blog .stx{min-width:0;overflow-wrap:break-word} /* 词内不硬断(anywhere 已弃用) */
   .blog .srow.f1 .stx{color:var(--lc-f1)}
-  .blog .srow.p2 .stx,.blog .srow.llm .stx{color:var(--lc-txt)}
+  .blog .srow.llm .stx{color:var(--lc-txt)}
   .blog .str{display:block;font-size:11.5px;color:var(--lc-tr)}    /* 句数对齐时的跟句译文 */
   .blog .trblk{font-size:11.5px;color:rgba(255,255,255,.5);padding-left:18px;
     overflow-wrap:break-word}                       /* 句数不等时的整窗译文回落 */
-  .blog .skipline{font-size:10.5px;color:var(--lc-faint);text-align:center;
-    margin:3px 0}
   /* 空态/partial 两行无 sdot+stx 子结构,必须退出 .srow 的 grid——否则文本落进 10px
      固定列竖排一字一行;display:block + 18px 缩进(=10px 列+8px gap)与 .stx 左缘对齐 */
   .blog .srow.prow,.blog .srow.empty{display:block;padding-left:18px}
@@ -179,11 +177,9 @@
   .e .dot{flex:none;width:9px;height:9px;border-radius:50%;background:#98a2b3;align-self:center}
   .e .who{flex:none;font-size:12px;font-weight:650;color:light-dark(#575f6b,rgba(233,235,239,.6))}
   .e .txt{min-width:0;overflow-wrap:anywhere;font-size:14.5px}
-  .e.f1 .txt{color:light-dark(#7c8592,rgba(233,235,239,.62))}
-  .e.p2 .txt{font-weight:550}
+  .e.f1 .txt,.e.llm .txt{color:light-dark(#7c8592,rgba(233,235,239,.62))}
   .e .tr{display:block;margin-top:2px;padding-left:17px;font-size:12.5px;
     color:light-dark(#575f6b,rgba(233,235,239,.58));overflow-wrap:anywhere}
-  .e.skip .skiptxt{font-size:12px;color:light-dark(#9aa2ad,rgba(233,235,239,.35))}
   .active{margin:8px 0 4px;padding:2px 0;color:light-dark(#7c8592,rgba(233,235,239,.55));
     font-size:14.5px;overflow-wrap:anywhere;min-height:1.6em}
 
@@ -197,11 +193,9 @@
     transition:color .2s,border-color .2s,background .2s;
   }
   .badge.b-asr.on{color:#1d5290;border-color:#9cc4f0;background:#e5eef8}
-  .badge.b-fix.on{color:#8f520c;border-color:#eedcb4;background:#faf0dc}
   .badge.b-tr.on{color:#1f6b45;border-color:#bfe3ce;background:#e3f1e9}
   @media (prefers-color-scheme: dark){
     .badge.b-asr.on{color:#9cc4f0;border-color:#2c4a68;background:#182735}
-    .badge.b-fix.on{color:#ffc46b;border-color:#5c4718;background:#332814}
     .badge.b-tr.on{color:#8fd4ab;border-color:#27503a;background:#152b1e}
   }
   .stopbtn{
@@ -290,7 +284,7 @@
         <option value="en" selected>英文</option>
         <option value="ja">日文</option>
       </select>
-      <p class="note">识别与说话人分离即时可用;修正与翻译事件到达时自动上屏;全程仅在本机使用。</p>
+      <p class="note">识别与说话人即时上屏;修正与翻译在句尾停顿后数秒自动替换;全程仅在本机使用。</p>
     </div>
     <button class="go" id="goBtn" type="submit"><i></i>开始实时字幕</button>
     <p class="note" id="resumeNote" hidden></p>
@@ -329,7 +323,6 @@
     </div>
     <footer class="pfoot">
       <span class="badge b-asr" id="bdgAsr">识别</span>
-      <span class="badge b-fix" id="bdgFix">修正</span>
       <span class="badge b-tr" id="bdgTr">翻译</span>
       <span class="chip" id="connChip" hidden>连接中断 · 重连中</span>
       <span class="chip" id="bufChip" hidden></span>

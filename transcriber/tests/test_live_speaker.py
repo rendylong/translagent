@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """titanet 在线聚类说话人分离的行为测试(Task 6)。
 
-三块:
+两块:
   - AnchorsAlternateTest:bench anchors 双说话人窗口交替喂 A/B 各 3 段
     → n_speakers==2、段→簇映射与 anchors 标签一致率 ≥5/6、首段开簇;
-  - 短段路径:<min_turn_s 归上一簇(不开新簇、不动簇心),首个短段也必须开簇;
-  - Pass2RunnerWiringTest:speaker_cluster 接线——段落与 pass2 事件带 speaker 字段;
-    不传 cluster 时行为与 Task 5 完全一致(段落/事件无 speaker 键)。
+  - 短段路径:<min_turn_s 归上一簇(不开新簇、不动簇心),首个短段也必须开簇。
+
+(原「Pass2 接线」测试类——speaker_cluster 经 pass2 窗口跑出带 speaker 的段落/
+事件——已随 Pass2 于 2026-10-24 摘除退役;两层管线的分人接线由 test_live_session
+的 test_on_final_speaker_assign 覆盖。)
 
 窗口选择依据(2026-10-23 实测,DEFAULT_THETA=0.40 下 6/6,见 task-6-report):
   - en:两说话人各自前 3 窗(anchors.json 顺序);
@@ -106,71 +108,6 @@ class ShortSegmentTest(unittest.TestCase):
         clu.assign(seg_of('zh', 'sp0', 0))
         self.assertEqual(clu.assign(np.zeros(0, dtype=np.float32)), 0)
         self.assertEqual(clu.n_speakers, 1)
-
-
-# ---------- Pass2Runner 接线:fake whisper + 正弦音频,不占 GPU ----------
-
-FAKE_WHISPER = """#!/usr/bin/env python3
-import json, os, sys
-argv = sys.argv[1:]
-prefix = argv[argv.index('-of') + 1]
-segs = [{'offsets': {'from': 0, 'to': 900}, 'text': '第一段替身'},
-        {'offsets': {'from': 1000, 'to': 2000}, 'text': '第二段替身'}]
-with open(prefix + '.json', 'w') as f:
-    json.dump({'transcription': segs}, f)
-"""
-
-
-class Pass2RunnerWiringTest(unittest.TestCase):
-    """speaker_cluster 传入 → 段落与 pass2 事件带 speaker;不传 → Task 5 原样。"""
-
-    def setUp(self):
-        import tempfile
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.tmp = Path(tmp.name)
-        fake = self.tmp / 'fake-whisper.py'
-        fake.write_text(FAKE_WHISPER)
-        fake.chmod(fake.stat().st_mode | 0o111)
-        self.fake_bin = str(fake)
-        from live_wav import write_slice
-        self.wav = str(self.tmp / 'live.wav')
-        write_slice(self.wav, (np.sin(np.arange(3 * SR) * 0.05) * 0.3).astype(np.float32))
-        self.events = []
-
-    def _runner(self, **kw):
-        import live_pass2
-        return live_pass2.Pass2Runner(self.wav, self.events.append, **kw)
-
-    def test_wiring_adds_speaker(self):
-        import unittest.mock
-        import live_pass2
-        with unittest.mock.patch.object(live_pass2, 'WHISPER_BIN', self.fake_bin):
-            r = self._runner(speaker_cluster=OnlineSpeakerCluster())
-            segs = r.run_window(0, 2000)
-        self.assertEqual(len(segs), 2)
-        for s in segs:
-            self.assertIn('speaker', s)
-            self.assertIsInstance(s['speaker'], int)
-        ev = self.events[-1]
-        self.assertEqual(ev['type'], 'pass2')
-        self.assertIn('speaker', ev)
-        self.assertIsInstance(ev['speaker'], int)
-        self.assertEqual(ev['speaker'], segs[0]['speaker'])   # 事件=首段(窗口主导)簇号
-        # 正弦音频同一"嗓音":两段同簇、单说话人
-        self.assertEqual(segs[0]['speaker'], segs[1]['speaker'])
-        self.assertEqual(r.cluster.n_speakers, 1)
-
-    def test_no_cluster_keeps_task5_schema(self):
-        import unittest.mock
-        import live_pass2
-        with unittest.mock.patch.object(live_pass2, 'WHISPER_BIN', self.fake_bin):
-            r = self._runner()
-            segs = r.run_window(0, 2000)
-        self.assertEqual(len(segs), 2)
-        for s in segs:
-            self.assertEqual(set(s), {'start_ms', 'end_ms', 'text'})
-        self.assertEqual(set(self.events[-1]), {'type', 't0', 't1', 'text'})
 
 
 if __name__ == '__main__':

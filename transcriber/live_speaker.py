@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """titanet 在线聚类说话人分离(live 实时字幕,Task 6)。
 
-对 Pass2 的 whisper 段落音频逐段提 NeMo TitaNet-large 声纹(模型与离线管线同款,
-app.EMB_MODEL),在线聚成「说话人N」:
+对 live 定稿句音频(Pass1 final 时间戳 → live_session._on_final 切片,2026-10-24
+两层管线起;原 Pass2 whisper 段落喂入已摘)逐段提 NeMo TitaNet-large 声纹(模型与
+离线管线同款,app.EMB_MODEL),在线聚成「说话人N」:
 
   - OnlineSpeakerCluster.assign(seg_pcm) → int 簇号:段音频按 CHUNK_S(8s)分块逐块
     提单位化 embedding → 与各簇心比余弦;最近簇心 > θ → 并入该簇(簇心=成员均值后
     单位化);否则开新簇;返回值=段内多数块的簇号。按喂入顺序单线程使用
-    (Pass2Runner.run_window 串行调用)。分块依据:whisper 段落可长达 20-30s 且跨
+    (LiveSession._on_final 分人切片串行调用)。分块依据:whisper 段落可长达 20-30s 且跨
     说话人轮次(双人寒暄区实测整窗一段),整段一个声纹必然混两人;Task 1 实测
     ~1.2s final 句粒度声纹不稳、3.6-6s 锚点粒度分离良好,8s 块取锚点粒度。
   - 不足 min_turn_s 的短段直接归上一簇(短段声纹不稳,不提 embedding、不动簇心);

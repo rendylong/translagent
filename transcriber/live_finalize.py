@@ -4,8 +4,9 @@
 finalize_session(session_dir, speakers_hint, force_tail, jobs_dir, queue) -> job_id
   把一个 live 会话目录转正成普通 job,走与 create_job 完全同构的 meta:
     ① live_meta 状态置 stopping(幂等;live 停止路径早已置过,崩溃恢复路径在此落);
-    ② force_tail 可调用对象非空时调用之——补跑尾窗,由 LiveSession 的 Pass2 驱动线程
-      提供闭包;崩溃恢复路径没有驱动线程,不补跑(音频保全即转正,spec §6.7);
+    ② force_tail 历史参数:两层管线(2026-10-24 摘 Pass2)下不再传入,恒为 None,
+      仅为向后兼容保留;非空时仍会调用之(崩溃恢复路径本就不传,不补跑任何尾窗,
+      音频保全即转正,spec §6.7);
     ③ 回填 WAV 头(RIFF/data 长度按文件实际大小;对已 finalize 的文件是幂等重写,
       对崩溃残留的 0 长度头文件是唯一修复手段);
     ④ 新建 jobs/<new>/,硬链接 live_audio.wav → source.wav(同卷零拷贝;跨卷回落复制);

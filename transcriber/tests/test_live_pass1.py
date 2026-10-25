@@ -58,6 +58,19 @@ class ModelFileResolutionTest(unittest.TestCase):
             '中英目录解析结果与原硬编码路径一致')
 
 
+class EndpointRulesTest(unittest.TestCase):
+    """endpoint 三规则常量钉子(spec 2026-10-24 §4.1/§5.1):RULE3 曾被按 icefall
+    旧语义误读成「最小句长门槛」钉在 1.0,致每秒强切(15.7s 连续语音 13 条碎片);
+    现取 sherpa-onnx 官方默认(rule1=尾静音断句 / rule2=说过话后尾静音断句 /
+    rule3=句长上限强制断句)。要改值须先推翻 spec §7 决策 3(按真实会议微调)。"""
+
+    def test_rule_constants(self):
+        import live_pass1
+        self.assertEqual(live_pass1.RULE1, 2.4)
+        self.assertEqual(live_pass1.RULE2, 1.2)
+        self.assertEqual(live_pass1.RULE3, 20.0)
+
+
 class Pass1EngineTest(unittest.TestCase):
     def test_partial_then_final(self):
         """喂完后 5s 内收到 ≥1 次 partial 与 ≥1 次 final;final 满足 t1_ms > t0_ms ≥ 0,且回调在工作线程触发。"""

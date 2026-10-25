@@ -31,6 +31,10 @@
 
 **结束卡与翻译可用性提示(2026-10-24)**:结束卡新增「关闭」按钮(desktop 经 `desk.closeLiveCaption` → `hide-live` IPC 隐藏悬浮窗,web 回工作台);「打开文稿」跳主窗后悬浮窗自动隐藏。`started` 事件携带 `llm: bool`(LiveSession.llm_enabled,来自 env.rtf 是否有 key):前端在选了翻译目标但 `llm===false` 时出「未配置翻译密钥」提示,不再静默无翻译。`_parse_reply` 按 lang_pair 校验 translation:src==tgt(不翻译)时空串合法,跨语种空串仍拒——修复不翻译组合下修正文本被当坏回复丢弃。
 
+**实时字幕管线两层化(2026-10-24)**:Pass1 流式整句(rule2=1.2/rule3=20 官方默认,断句碎片化根因修复见 spec)→ final 内联 TitaNet 分人(speaker 随 pass1_final 即时下发)→ LLM 合并批修正+翻译(相邻 final 间隔 ≤2.5s 并批、单说话人批剥行首标签、停止时在飞批排空后才 stopped)。
+
+**Pass2 摘除(2026-10-24)**:whisper 窗口重转与 GPU 争用移除(实时管线 GPU 零占用,GPU_LOCK 只剩离线 job 互斥),字幕条两级化(识别 → 翻译,修正徽标已删),`live_pass2.py` 仅剩 `read_wav_slice`(分人切片用),终稿仍走离线全量管线零变化。spec 见 `transcriber/docs/2026-10-24-live-captions-drop-pass2-and-segmentation-spec.md`。
+
 实测耗时(2026-10,86 分钟双说话人录音):whisper 5 分钟(GPU),说话人识别约 12 分钟(CPU,约 0.13 倍速)。单 worker 串行处理任务。
 
 ## 录音(web + 桌面客户端)
@@ -93,6 +97,6 @@ whisper 转中文口语音频会稳定错一批词。清理时优先检查:
 
 ## 约定
 
-- 音频、声纹数据不出本机。例外(2026-10-23 用户明示授权):实时字幕 Pass3 可将**转录文本的窗口级片段**(仅窗口文本+有限上下文,不含音频/路径/说话人姓名)送 MiniMax API 做修正与翻译;key 在根目录 `.env`(`MINIMAX_API_KEY=sk-…`,2026-10-24 起优先;旧 `env.rtf` 仍兼容,`parse_key` 级联 .env → env.rtf;两者均已 gitignore,运行时解析,不入库不打印)。除此之外不调用任何外部转录或上传服务。注意:本仓库 git 历史含早期已删文件的记录(声纹库 speakers.json 曾被跟踪,现已 `git rm --cached`);若将来要 push/外发仓库,先做历史审查。
+- 音频、声纹数据不出本机。例外(2026-10-23 用户明示授权):实时字幕的 LLM 层可将**转录文本的窗口级片段**(仅窗口文本+有限上下文,不含音频/路径/说话人姓名)送 MiniMax API 做修正与翻译;key 在根目录 `.env`(`MINIMAX_API_KEY=sk-…`,2026-10-24 起优先;旧 `env.rtf` 仍兼容,`parse_key` 级联 .env → env.rtf;两者均已 gitignore,运行时解析,不入库不打印)。除此之外不调用任何外部转录或上传服务。注意:本仓库 git 历史含早期已删文件的记录(声纹库 speakers.json 曾被跟踪,现已 `git rm --cached`);若将来要 push/外发仓库,先做历史审查。
 - 交付文档用中文。纪要中的时间节点、数字、人名须提醒用户对照原声核实。
 - 项目记忆里有本目录的工具链笔记(`meeting-transcription-pipeline`),与本文件互补,先读其一即可。

@@ -2,10 +2,12 @@
 """Pass1 流式识别引擎:sherpa-onnx 流式 transducer 的工作线程封装。
 
 live-captions 的 Pass1:Task 4 的 WebSocket 会话只调 feed() 喂 float32 PCM,
-从回调收 partial/final;finals() 取累积结果。recognizer 参数、endpoint 规则与
-时间戳口径(t0_ms=utterance 起点、t1_ms=该 utterance 结束时已喂入的音频位置,
-均取音频时间轴)与 Task 1 bench(models/bench/bench_streaming_asr.py)完全一致,
-该脚本已在本目录实测通过。
+从回调收 partial/final;finals() 取累积结果。recognizer 参数与时间戳口径
+(t0_ms=utterance 起点、t1_ms=该 utterance 结束时已喂入的音频位置,均取音频
+时间轴)沿用 Task 1 bench(models/bench/bench_streaming_asr.py)口径;endpoint
+三规则已改用 sherpa-onnx 官方默认 2.4/1.2/20(spec 2026-10-24 §4.1),不再
+沿用 bench 的 0.6/1.0——bench 值把 rule3 误当最小句长门槛,实为句长上限(见
+下方常量注释),是断句碎片化的根因。
 
 模型文件名按目录内容解析(spec 2026-10-24 §4.2):不同来源的流式模型 epoch 命名
 不同(中英双语是 *-epoch-99-avg-1,多语言日文是别的编号),glob 匹配
@@ -25,9 +27,17 @@ import traceback
 import numpy as np
 from sherpa_onnx.online_recognizer import OnlineRecognizer
 
-RULE1 = 2.4   # rule1_min_trailing_silence(spec §6.1,与 Task 1 一致)
-RULE2 = 0.6   # rule2_min_trailing_silence
-RULE3 = 1.0   # rule3_min_utterance_length
+# sherpa-onnx 2.0.0 EndpointConfig 三规则口径(官方文档,标定量,后续按真实会议
+# 语速可微调,spec 2026-10-24 §4.1):
+#   rule1 = 尾部静音时长超过即断句,与有没有说过话无关;
+#   rule2 = 解码出过非静音内容后,尾部静音时长超过即断句;
+#   rule3 = utterance 时长超过即断句,不管静音——是句长上限,不是 icefall 旧
+#           语义的「rule2 生效所需最小句长」。
+# 实测依据(2026-10-24,say -v Tingting 合成 15.7s 连续中文):RULE3=1.0 时被
+# 切成 13 条每秒碎片;改官方默认 2.4/1.2/20 后同为 1 条整句。
+RULE1 = 2.4   # rule1:尾部静音超过即断句(官方默认;与说话与否无关)
+RULE2 = 1.2   # rule2:说过话后尾部静音超过即断句(官方默认;原 0.6 偏碎)
+RULE3 = 20.0  # rule3:句长上限,超过强制断句(官方默认;原 1.0 = 每秒强切,断句碎片化根因)
 NUM_THREADS = 2
 
 

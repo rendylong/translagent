@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Pass3 LLM 修正翻译层的行为测试。
+"""LLM 修正翻译层的行为测试(两层管线口径:Pass1 final 直喂,spec 2026-10-24)。
 
 三块:
   - ParseKeyTest:env.rtf 的 RTF 壳剥取/纯文本/无 key 三态(不触真文件,迷你壳用 tempfile);
   - RefinerTest:monkeypatch urllib.request.urlopen,测 超时→None、坏 JSON→None、
-    连续 5 次失败熔断(成功复位)、请求契约(temperature=0、白名单字段、无音频/路径/说话人姓名);
-  - RefineWorkerTest:假队列 + 假 emit 测 worker 语义(消费 pass2→refine→emit llm、
-    跳过非 pass2、stop_flag 退出、熔断或 refine 失败不 emit llm 保留 whisper 文本)。
+    连续 5 次失败熔断(成功复位)、请求契约(temperature=0、白名单字段、补标点指令、
+    无音频/路径/说话人姓名);
+  - RefineWorkerTest:假队列 + 假 emit 测 worker 语义(消费 pass1_final → 合并批 →
+    refine → emit llm、跳过非目标事件、stop_flag 退出、熔断或 refine 失败不 emit);
+  - MergeBatchTest:合并批边界(间隔阈值/条数上限/等待窗有界/种子接续)与标签剥离;
+  - DrainBusyTest:busy_flag 在飞标志与停止不被掐(busy_flag=None 向后兼容)。
 
 真调用用例(RealCallTest)仅在 env.rtf 可解析出真 key 时运行,输出只含 corrected/translation。
 """
@@ -17,6 +20,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -246,21 +250,30 @@ class RefinerTest(unittest.TestCase):
         raw = req.data.decode('utf-8')
         for forbidden in ('/', '.wav', 'audio', 'path', 't0', 't1'):
             self.assertNotIn(forbidden, raw)
-        # 系统指令含契约要点:只修 ASR 错误、不改意思、JSON 输出、保留说话人标签
+        # 系统指令含契约要点:只修 ASR 错误、不改意思、JSON 输出、保留说话人标签、补标点
         sysmsg = body['messages'][0]['content']
-        for kw in ('ASR', 'JSON', '说话人', 'translation', 'corrected'):
+        for kw in ('ASR', 'JSON', '说话人', 'translation', 'corrected', '补全标点'):
             self.assertIn(kw, sysmsg)
+        # 剥标签指令(Task 6,e2e 实测译文带「Speaker 0:」前缀):translation 须为
+        # 纯译文;翻译分支与本分支(默认 zh>en)都不得包含说话人标签或行前缀
+        self.assertIn('输出纯英语译文', sysmsg)
+        self.assertIn('不得包含说话人标签或行前缀', sysmsg)
+        r_nt = LLMRefiner(FAKE_KEY, lang_pair=('zh', 'zh'), timeout_s=1)
+        self.assertIn('不得包含说话人标签或行前缀', r_nt._build_messages('x', '')[0])
 
 
 class RefineWorkerTest(unittest.TestCase):
-    """worker 语义:假 get_event(队列耗尽时置 stop 并抛 Empty)+ 假 emit 收集。"""
+    """worker 语义:假 get_event(队列耗尽时置 stop 并抛 Empty;支持 timeout 参数)
+    + 假 emit 收集。事件形状 {'type':'pass1_final','text','t0_ms','t1_ms','speaker'?};
+    本类 fixture 的时间戳一律拉开 >MERGE_GAP_MS 间隔(每条独立成批,保持逐条
+    refine/emit 的旧语义;并批行为见 MergeBatchTest)。"""
 
-    def _run(self, events, refiner):
+    def _run(self, events, refiner, busy_flag=None):
         emitted = []
         stop = threading.Event()
         state = {'i': 0}
 
-        def get_event():
+        def get_event(timeout=None):
             if state['i'] < len(events):
                 ev = events[state['i']]
                 state['i'] += 1
@@ -268,12 +281,12 @@ class RefineWorkerTest(unittest.TestCase):
             stop.set()                      # 事件耗尽 → 请求退出(模拟外部 stop)
             raise queue.Empty()
 
-        refine_worker(get_event, emitted.append, refiner, stop)
+        refine_worker(get_event, emitted.append, refiner, stop, busy_flag)
         return emitted
 
-    def test_worker_consumes_pass2_and_emits_llm(self):
-        """消费 pass2 → refine → emit llm(t0/t1 取自 pass2);prev_refined 滚动
-        ≤2 窗上下文;非 pass2 事件(partial/pass2_skip)直接跳过。"""
+    def test_worker_consumes_final_and_emits_llm(self):
+        """消费 pass1_final → refine → emit llm(t0/t1 取自 t0_ms/t1_ms);prev_refined
+        滚动 ≤2 批上下文;非目标事件(partial/历史 pass2_skip)直接跳过。"""
         calls = []
 
         class FakeRefiner:
@@ -285,25 +298,28 @@ class RefineWorkerTest(unittest.TestCase):
 
         events = [
             {'type': 'partial', 'text': '部分'},
-            {'type': 'pass2', 't0': 100, 't1': 2000, 'speaker': 1, 'text': '毛利下滑'},
-            {'type': 'pass2_skip', 't0': 2000, 't1': 3000},
-            {'type': 'pass2', 't0': 3000, 't1': 5000, 'text': '运费上涨'},   # 无 speaker 键
+            {'type': 'pass1_final', 't0_ms': 100, 't1_ms': 2000, 'speaker': 1,
+             'text': '毛利下滑'},
+            {'type': 'pass2_skip', 't0': 2000, 't1': 3000},   # 旧类型:不再消费
+            {'type': 'pass1_final', 't0_ms': 6000, 't1_ms': 8000, 'text': '运费上涨'},
         ]
         emitted = self._run(events, FakeRefiner())
         self.assertEqual([e['type'] for e in emitted], ['llm', 'llm'])
         self.assertEqual(emitted[0], {'type': 'llm', 't0': 100, 't1': 2000,
-                                      'text': '说话人1:毛利下滑[修]',
-                                      'translation': 'T:说话人'})
-        self.assertEqual(emitted[1]['t0'], 3000)
+                                      'text': '毛利下滑[修]',       # 单 speaker 批:标签剥离
+                                      'translation': 'T:说话人', 'speaker': 1})
+        self.assertEqual(emitted[1]['t0'], 6000)
+        self.assertEqual(emitted[1]['t1'], 8000)              # t0/t1 取自 t0_ms/t1_ms
         self.assertEqual(emitted[1]['text'], '运费上涨[修]')   # 无 speaker 不加标签
-        # 输入带说话人编号标签(非姓名);上下文为上一窗 corrected(滚动 2 窗)
+        self.assertIsNone(emitted[1]['speaker'])
+        # 输入带说话人编号标签(非姓名);上下文为上一批 corrected(滚动 2 批)
         self.assertEqual(calls[0][0], '说话人1:毛利下滑')
         self.assertEqual(calls[0][1], '')
         self.assertEqual(calls[1][0], '运费上涨')
         self.assertEqual(calls[1][1], '说话人1:毛利下滑[修]')
 
     def test_worker_context_rolls_two_windows(self):
-        """滚动上下文 ≤2 窗:第 3 窗的 prev_refined 只含前 2 窗 corrected。"""
+        """滚动上下文 ≤2 批:第 3 批的 prev_refined 只含前 2 批 corrected。"""
         seen = []
 
         class FakeRefiner:
@@ -313,7 +329,8 @@ class RefineWorkerTest(unittest.TestCase):
                 seen.append(prev_refined)
                 return {'corrected': 'W%d' % (len(seen)), 'translation': 't'}
 
-        events = [{'type': 'pass2', 't0': i, 't1': i + 1, 'text': 'x'} for i in range(3)]
+        events = [{'type': 'pass1_final', 't0_ms': i * 10000, 't1_ms': i * 10000 + 100,
+                   'text': 'x'} for i in range(3)]
         self._run(events, FakeRefiner())
         self.assertEqual(seen[0], '')
         self.assertEqual(seen[1], 'W1')
@@ -321,7 +338,7 @@ class RefineWorkerTest(unittest.TestCase):
 
     def test_worker_refine_fail_no_emit(self):
         """refine 返回 None(超时/坏 JSON 已在 RefinerTest 钉死)→ 不 emit llm,
-        UI 保留 pass2 whisper 文本(spec §6.8 unrefined 降级)。"""
+        UI 保留识别文本(spec §6.8 unrefined 降级)。"""
 
         class FakeRefiner:
             fused = False
@@ -330,11 +347,11 @@ class RefineWorkerTest(unittest.TestCase):
                 return None
 
         emitted = self._run(
-            [{'type': 'pass2', 't0': 0, 't1': 9, 'text': '原文'}], FakeRefiner())
+            [{'type': 'pass1_final', 't0_ms': 0, 't1_ms': 9, 'text': '原文'}], FakeRefiner())
         self.assertEqual(emitted, [])
 
     def test_worker_fused_no_emit(self):
-        """熔断后:事件照常消费,但不再 refine、不 emit llm(透传 whisper 版本);
+        """熔断后:事件照常消费,但不再 refine、不 emit llm(透传识别版本);
         熔断可见——恰一条 error 提示(spec §6.8「熔断并提示」,终审修复项 5)。"""
         calls = []
 
@@ -346,13 +363,13 @@ class RefineWorkerTest(unittest.TestCase):
                 return {'corrected': 'x', 'translation': 'y'}
 
         emitted = self._run(
-            [{'type': 'pass2', 't0': 0, 't1': 9, 'text': '原文'}], FusedRefiner())
+            [{'type': 'pass1_final', 't0_ms': 0, 't1_ms': 9, 'text': '原文'}], FusedRefiner())
         self.assertEqual(emitted, [{'type': 'error', 'message': '翻译服务已暂停(连续失败)'}])
         self.assertEqual(calls, [])          # refine 根本没被调用
 
     def test_worker_fused_notifies_once(self):
-        """运行中熔断(连续 FUSE_AFTER 次失败):提示恰好在熔断当窗发出一次,
-        后续窗口不再重复;期间不 emit llm。"""
+        """运行中熔断(连续 FUSE_AFTER 次失败):提示恰好在熔断当批发出一次,
+        后续批次不再重复;期间不 emit llm。"""
         class FuseRefiner:
             FUSE_AFTER = 5
 
@@ -367,7 +384,8 @@ class RefineWorkerTest(unittest.TestCase):
                 return None
 
         r = FuseRefiner()
-        events = [{'type': 'pass2', 't0': i, 't1': i + 1, 'text': 'x'} for i in range(8)]
+        events = [{'type': 'pass1_final', 't0_ms': i * 10000, 't1_ms': i * 10000 + 100,
+                   'text': 'x'} for i in range(8)]
         emitted = self._run(events, r)
         notices = [e for e in emitted if e.get('type') == 'error']
         self.assertEqual([e['type'] for e in emitted], ['error'],
@@ -386,24 +404,25 @@ class RefineWorkerTest(unittest.TestCase):
                 seen.append(text)
                 return {'corrected': text, 'translation': 't'}
 
-        self._run([{'type': 'pass2', 't0': 0, 't1': 9, 'speaker': '张三',
+        self._run([{'type': 'pass1_final', 't0_ms': 0, 't1_ms': 9, 'speaker': '张三',
                     'text': '原文'}], FakeRefiner())
         self.assertEqual(seen, ['原文'])          # 无标签,姓名未出境
 
     def test_worker_survives_transport_exception(self):
         """评审 Important:真 LLMRefiner + mock urlopen 抛 IncompleteRead——
-        第一窗 refine 失败(不 emit),worker 存活并继续消费第二窗成功 emit。"""
+        第一批 refine 失败(不 emit),worker 存活并继续消费第二批成功 emit。"""
         import http.client
         r = LLMRefiner(FAKE_KEY, retry_backoff_s=0)
         good = _FakeResp(_reply('{"corrected": "说话人1:第二窗", "translation": "W2"}'))
         bad = http.client.IncompleteRead(b'{"choices')
-        events = [{'type': 'pass2', 't0': 0, 't1': 9, 'speaker': 1, 'text': '第一窗'},
-                  {'type': 'pass2', 't0': 9, 't1': 19, 'speaker': 1, 'text': '第二窗'}]
+        events = [{'type': 'pass1_final', 't0_ms': 0, 't1_ms': 9, 'speaker': 1, 'text': '第一窗'},
+                  {'type': 'pass1_final', 't0_ms': 10000, 't1_ms': 10009, 'speaker': 1,
+                   'text': '第二窗'}]
         emitted = []
         stop = threading.Event()
         state = {'i': 0}
 
-        def get_event():
+        def get_event(timeout=None):
             if state['i'] < len(events):
                 ev = events[state['i']]
                 state['i'] += 1
@@ -415,12 +434,12 @@ class RefineWorkerTest(unittest.TestCase):
                                         side_effect=[bad, bad, good]):
             refine_worker(get_event, emitted.append, r, stop)   # 不抛即存活
         self.assertEqual(len(emitted), 1)          # 只有第二窗 emit
-        self.assertEqual(emitted[0]['text'], '说话人1:第二窗')
+        self.assertEqual(emitted[0]['text'], '第二窗')   # 单 speaker 批剥标签后的产物
         self.assertFalse(r.fused)                  # 一次失败未熔断
 
     def test_worker_survives_broken_refiner_and_emit(self):
         """兜底防线:refiner.refine 抛 RuntimeError、emit 抛异常——worker 都只丢
-        当前窗继续消费,最终把 stop 前的最后事件 emit 成功。"""
+        当前批继续消费,最终把 stop 前的最后事件 emit 成功。"""
 
         class ExplodingRefiner:
             fused = False
@@ -441,11 +460,12 @@ class RefineWorkerTest(unittest.TestCase):
                 raise RuntimeError('emit 故障')
             emitted.append(ev)
 
-        events = [{'type': 'pass2', 't0': i, 't1': i + 1, 'text': 'x'} for i in range(4)]
+        events = [{'type': 'pass1_final', 't0_ms': i * 10000, 't1_ms': i * 10000 + 100,
+                   'text': 'x'} for i in range(4)]
         stop = threading.Event()
         state = {'i': 0}
 
-        def get_event():
+        def get_event(timeout=None):
             if state['i'] < len(events):
                 ev = events[state['i']]
                 state['i'] += 1
@@ -462,8 +482,8 @@ class RefineWorkerTest(unittest.TestCase):
         stop = threading.Event()
         emitted = []
 
-        def get_event():
-            return q.get(timeout=0.05)       # 真队列:空时抛 Empty
+        def get_event(timeout=0.05):       # 真队列:空时抛 Empty(支持 timeout 参数)
+            return q.get(timeout=timeout)
 
         worker = threading.Thread(
             target=refine_worker, args=(get_event, emitted.append,
@@ -474,6 +494,176 @@ class RefineWorkerTest(unittest.TestCase):
         stop.set()
         worker.join(timeout=2)
         self.assertFalse(worker.is_alive())
+
+
+class _EchoRefiner:
+    """合并批测试替身:corrected 原样回显(带标签进带标签出),记录入参。"""
+    fused = False
+
+    def __init__(self):
+        self.calls = []
+
+    def refine(self, text, prev_refined=''):
+        self.calls.append(text)
+        return {'corrected': text, 'translation': 'T'}
+
+
+class MergeBatchTest(unittest.TestCase):
+    """合并批边界(spec §4.3):真 queue.Queue + 预置事件,emit 收到 llm 即置
+    stop 收尾(worker 同步跑在测试线程,时间断言以等待窗为界)。"""
+
+    def _run_q(self, events, refiner, busy_flag=None):
+        q = queue.Queue()
+        for e in events:
+            q.put(e)
+        emitted = []
+        stop = threading.Event()
+
+        def get_event(timeout=0.5):
+            return q.get(timeout=timeout)
+
+        def emit(ev):
+            emitted.append(ev)
+            if ev.get('type') == 'llm':
+                stop.set()                  # 拿到全部期望产物即可收尾
+
+        t0 = time.perf_counter()
+        refine_worker(get_event, emit, refiner, stop, busy_flag)
+        return emitted, time.perf_counter() - t0
+
+    def test_merge_within_gap(self):
+        """间隔 ≤2500ms 两事件 → 1 条 llm(t0=首句 t0_ms,t1=尾句 t1_ms),逐行送 refine。"""
+        r = _EchoRefiner()
+        events = [{'type': 'pass1_final', 't0_ms': 0, 't1_ms': 2000, 'text': '甲句'},
+                  {'type': 'pass1_final', 't0_ms': 3000, 't1_ms': 5000, 'text': '乙句'}]
+        emitted, _ = self._run_q(events, r)
+        llms = [e for e in emitted if e['type'] == 'llm']
+        self.assertEqual(len(llms), 1, '间隔 1000ms ≤2500ms 应并批:%s' % emitted)
+        self.assertEqual((llms[0]['t0'], llms[0]['t1']), (0, 5000))
+        self.assertEqual(r.calls, ['甲句\n乙句'])          # 批内逐行拼接送 refine
+        self.assertEqual(llms[0]['text'], '甲句\n乙句')   # 无 speaker:corrected 原样
+        self.assertIsNone(llms[0]['speaker'])
+
+    def test_no_merge_beyond_gap(self):
+        """间隔 >2500ms 两事件 → 2 条 llm,各自 t0/t1 对应本批首尾。"""
+        r = _EchoRefiner()
+        events = [{'type': 'pass1_final', 't0_ms': 0, 't1_ms': 1000, 'text': '甲句'},
+                  {'type': 'pass1_final', 't0_ms': 5000, 't1_ms': 6000, 'text': '乙句'}]
+        emitted, _ = self._run_q(events, r)
+        llms = [e for e in emitted if e['type'] == 'llm']
+        self.assertEqual(len(llms), 2, '间隔 4000ms >2500ms 不得并批:%s' % emitted)
+        self.assertEqual((llms[0]['t0'], llms[0]['t1']), (0, 1000))
+        self.assertEqual((llms[1]['t0'], llms[1]['t1']), (5000, 6000))
+        self.assertEqual(r.calls, ['甲句', '乙句'])
+
+    def test_single_event_bounded_wait(self):
+        """队列只有 1 事件(等待窗内无后续)→ 1 条 llm;等待窗有界:总耗时 ≥ 等待窗
+        (确实等了)且 < 3s(不无限攒批)。"""
+        r = _EchoRefiner()
+        events = [{'type': 'pass1_final', 't0_ms': 0, 't1_ms': 1000, 'text': '独句'}]
+        emitted, elapsed = self._run_q(events, r)
+        llms = [e for e in emitted if e['type'] == 'llm']
+        self.assertEqual(len(llms), 1)
+        self.assertGreaterEqual(elapsed, live_llm.MERGE_WAIT_S - 0.1, '应等待攒批窗')
+        self.assertLess(elapsed, 3.0, '等待窗必须有界(≤ MERGE_WAIT_S 量级)')
+
+    def test_max_items_cap(self):
+        """7 条链式间隔 100ms → 首批 MERGE_MAX_ITEMS=6 条封顶 + 第二批 1 条(共 2 条 llm)。"""
+        r = _EchoRefiner()
+        events = [{'type': 'pass1_final', 't0_ms': i * 1100, 't1_ms': i * 1100 + 1000,
+                   'text': '句%d' % i} for i in range(7)]
+        emitted, _ = self._run_q(events, r)
+        llms = [e for e in emitted if e['type'] == 'llm']
+        self.assertEqual(len(llms), 2, '条数上限 6:7 条应切两批:%s' % emitted)
+        self.assertEqual(len(r.calls[0].split('\n')), 6, '首批 6 行')
+        self.assertEqual(len(r.calls[1].split('\n')), 1, '第二批 1 行')
+        self.assertEqual((llms[0]['t0'], llms[0]['t1']), (0, 5 * 1100 + 1000))
+        self.assertEqual((llms[1]['t0'], llms[1]['t1']), (6 * 1100, 6 * 1100 + 1000))
+
+    def test_label_strip_single_speaker(self):
+        """同 speaker 两事件并批:refine 输入逐行带标签,corrected 剥行首标签、
+        以 \\n 连接,事件 speaker=簇号。"""
+        r = _EchoRefiner()
+        events = [{'type': 'pass1_final', 't0_ms': 0, 't1_ms': 1000, 'speaker': 1, 'text': '甲句'},
+                  {'type': 'pass1_final', 't0_ms': 2000, 't1_ms': 3000, 'speaker': 1, 'text': '乙句'}]
+        emitted, _ = self._run_q(events, r)
+        llms = [e for e in emitted if e['type'] == 'llm']
+        self.assertEqual(len(llms), 1)
+        self.assertEqual(r.calls, ['说话人1:甲句\n说话人1:乙句'])
+        self.assertEqual(llms[0]['text'], '甲句\n乙句', '单 speaker 批剥标签')
+        self.assertEqual(llms[0]['speaker'], 1)
+
+    def test_labels_kept_cross_speaker(self):
+        """跨 speaker 两事件并批:corrected 保留行标签,事件 speaker=None(前端通用色)。"""
+        r = _EchoRefiner()
+        events = [{'type': 'pass1_final', 't0_ms': 0, 't1_ms': 1000, 'speaker': 0, 'text': '甲句'},
+                  {'type': 'pass1_final', 't0_ms': 2000, 't1_ms': 3000, 'speaker': 1, 'text': '乙句'}]
+        emitted, _ = self._run_q(events, r)
+        llms = [e for e in emitted if e['type'] == 'llm']
+        self.assertEqual(len(llms), 1)
+        self.assertEqual(llms[0]['text'], '说话人0:甲句\n说话人1:乙句', '跨 speaker 保留行标签')
+        self.assertIsNone(llms[0]['speaker'])
+
+
+class DrainBusyTest(unittest.TestCase):
+    """busy_flag 在飞标志与停止不被掐(spec §4.2 排空判据的 worker 侧)。"""
+
+    def test_busy_set_during_refine_and_stop_not_killed(self):
+        """慢 refiner(sleep 0.5)+ busy_flag:处理期间 busy 置位、emit 后复位;
+        stop_flag 在处理前置位(攒批后、refine 完成前),事件仍被 emit(在飞不被掐)。"""
+        q = queue.Queue()
+        q.put({'type': 'pass1_final', 't0_ms': 0, 't1_ms': 9, 'text': '慢句'})
+        stop = threading.Event()
+        busy = threading.Event()
+        emitted = []
+
+        class SlowRefiner:
+            fused = False
+
+            def refine(self, text, prev_refined=''):
+                time.sleep(0.5)
+                return {'corrected': text, 'translation': 'T'}
+
+        worker = threading.Thread(
+            target=refine_worker,
+            args=(lambda timeout=0.5: q.get(timeout=timeout), emitted.append,
+                  SlowRefiner(), stop, busy),
+            daemon=True)
+        worker.start()
+        deadline = time.perf_counter() + 3
+        while not busy.is_set() and time.perf_counter() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(busy.is_set(), 'worker 取到首条后应置 busy')
+        stop.set()                           # 处理前置位(此刻还在攒批/refine 前)
+        self.assertTrue(busy.is_set(), '处理期间 busy 保持置位(排空判据)')
+        worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual([e['type'] for e in emitted], ['llm'], '在飞批不被 stop 掐掉')
+        self.assertFalse(busy.is_set(), 'emit 后 busy 复位')
+
+    def test_busy_flag_none_compat(self):
+        """busy_flag=None(向后兼容,旧签名四参调用)不崩,照常出 llm。"""
+
+        class _R:
+            fused = False
+
+            @staticmethod
+            def refine(text, prev_refined=''):
+                return {'corrected': text, 'translation': 'T'}
+
+        stop = threading.Event()
+        state = {'i': 0}
+        emitted = []
+
+        def get_event(timeout=None):
+            if state['i'] < 1:
+                state['i'] += 1
+                return {'type': 'pass1_final', 't0_ms': 0, 't1_ms': 9, 'text': 'x'}
+            stop.set()
+            raise queue.Empty()
+
+        refine_worker(get_event, emitted.append, _R(), stop)   # 第五参缺省 None
+        self.assertEqual([e['type'] for e in emitted], ['llm'])
 
 
 class RealCallTest(unittest.TestCase):
