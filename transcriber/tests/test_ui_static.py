@@ -1202,6 +1202,53 @@ class WP7IndexFastFixPins(unittest.TestCase):
         self.assertIsNotNone(hl, 'hl 缺失')
         self.assertIn("'gi'", hl, '高亮正则须带 gi 标志')
 
+    # ---- 7.12 toast 入场与时长 ----
+    def test_7_12_toast_entrance_exit_ttl(self):
+        """入场 fade+translateY(-6px→0) 200ms;退场 CSS 280ms 与 JS remove 300ms
+        对齐;err 类 ttl 7s、普通 4s(错误消息可读完)。"""
+        self.assertIn('@keyframes toast-in{from{opacity:0;transform:translateY(-6px)}}', self.src)
+        self.assertIn('toast-in 200ms', self.src, '入场 200ms')
+        self.assertIn('.toast.out{opacity:0;transform:translateY(-6px);transition:opacity 280ms,transform 280ms}',
+                      self.src, '退场 CSS 280ms')
+        toast = _js_fn(self.src, 'toast')
+        self.assertIsNotNone(toast, 'toast 缺失')
+        self.assertIn('setTimeout(() => t.remove(), 300)', toast,
+                      'JS remove 300ms(退场动画 280ms 跑完再摘)')
+        self.assertIn("kind === 'err' ? 7000 : 4000", toast, 'err 类 7s、普通 4s')
+
+    # ---- 7.16 动效 token 与过渡 ----
+    def test_7_16_motion_tokens_in_root(self):
+        """:root 增三枚动效 token,精确值字面。"""
+        self.assertIn('--t-fast:120ms', self.src)
+        self.assertIn('--t-med:180ms', self.src)
+        self.assertIn('--t-ease:cubic-bezier(.2,0,0,1)', self.src)
+
+    def test_7_16_popover_entrance(self):
+        """浮层入场 opacity+translateY(4px) 180ms(var(--t-med)/var(--t-ease)):
+        #setpop 与导出 menu 两处;hidden/details 关闭态 display:none,重开即重放。"""
+        self.assertIn('@keyframes pop-in{from{opacity:0;transform:translateY(4px)}}', self.src)
+        m = re.search(r'\.setpop\{[^}]*\}', self.src)
+        self.assertTrue(m, '.setpop 规则缺失')
+        self.assertIn('animation:pop-in var(--t-med) var(--t-ease)', m.group(0),
+                      '#setpop 入场 180ms')
+        m = re.search(r'details\.expd \.menu\{[^}]*\}', self.src)
+        self.assertTrue(m, '导出 menu 规则缺失')
+        self.assertIn('animation:pop-in var(--t-med) var(--t-ease)', m.group(0),
+                      '导出 menu 入场 180ms')
+
+    def test_7_16_view_in_fade(self):
+        """主区视图容器一次性淡入:#main 新首子元素 animation 跑一次即止(纯 CSS,
+        render 换 innerHTML 即触发)。"""
+        self.assertIn('#main > :first-child{animation:view-in var(--t-med) var(--t-ease)}', self.src)
+        self.assertIn('@keyframes view-in{from{opacity:0}}', self.src)
+
+    def test_7_16_progress_transition_600ms_linear(self):
+        """进度条 transition .8s → 600ms linear,.bar i 与 .runbar i 两处;
+        迟滞的 .8s 全文绝迹。"""
+        self.assertEqual(len(re.findall(r'transition:width 600ms linear', self.src)), 2,
+                         '两处进度条都须 600ms linear')
+        self.assertNotIn('.8s', self.src, '.8s 迟滞残留')
+
     # ---- 7.17 逗号行首残留 ----
     def test_7_17_no_comma_after_bold(self):
         """</b>,/</b>。 残留全清(逗号移进 <b> 内),窄栏侧栏不出现行首逗号。"""

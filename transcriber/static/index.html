@@ -21,6 +21,7 @@
     --sp3-bg:#efeaf8; --sp3-bd:#ddd4f0; --sp3-ink:#65449f;
     --sp4-bg:#e0f0ef; --sp4-bd:#c2e2e0; --sp4-ink:#14615f;
     --sp5-bg:#f9e8ec; --sp5-bd:#f0cdd6; --sp5-ink:#96365a;
+    --t-fast:120ms; --t-med:180ms; --t-ease:cubic-bezier(.2,0,0,1);   /* 7.16 动效 token */
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -76,7 +77,8 @@
   .setedit{border:0;background:none;padding:2px 4px;font-size:12.5px;color:var(--text);
     cursor:pointer;text-decoration:underline;display:inline-flex;align-items:center;gap:4px}
   .setpop{position:absolute;left:14px;right:14px;top:96px;z-index:30;background:var(--surface);
-    border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(20,23,28,.16);padding:14px 16px 12px}
+    border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(20,23,28,.16);
+    padding:14px 16px 12px;animation:pop-in var(--t-med) var(--t-ease)}   /* 7.16 入场 */
   .setpop[hidden]{display:none}
   .setpop h3{margin:0;font-size:13px;font-weight:650;display:flex;align-items:center}
   .setpop h3 button{margin-left:auto;border:0;background:none;cursor:pointer;color:var(--faint);font-size:15px;line-height:1}
@@ -129,7 +131,7 @@
   .job .s{font-size:12px;color:var(--faint);margin-top:1px;display:flex;align-items:center;gap:6px;min-width:0}
   .job .s .sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .bar{height:3px;border-radius:2px;background:var(--track);margin-top:7px;overflow:hidden}
-  .bar i{display:block;height:100%;background:var(--primary);width:0;transition:width .8s}
+  .bar i{display:block;height:100%;background:var(--primary);width:0;transition:width 600ms linear}
   .pill{font-size:11px;padding:1px 7px;border-radius:4px;white-space:nowrap;flex:none}
   .pill.err{color:var(--pill-neg-ink);background:var(--pill-neg-bg)}
   .pill.live{color:var(--sp0-ink);background:var(--sp0-bg)}
@@ -159,6 +161,9 @@
 
   /* ---------- 主区 ---------- */
   .main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+  /* 7.16 主区视图一次性淡入:render 换 innerHTML 的新首子元素动画跑一次即止(纯 CSS) */
+  #main > :first-child{animation:view-in var(--t-med) var(--t-ease)}
+  @keyframes view-in{from{opacity:0}}
 
   .empty{margin:auto;text-align:center;padding:40px 20px;max-width:460px}
   .empty svg{margin-bottom:14px}
@@ -186,7 +191,7 @@
   .pct small{font-size:16px;font-weight:500;color:var(--muted);margin-left:2px}
   .stage-line{color:var(--muted);font-size:13.5px;margin:6px 0 16px}
   .runbar{height:6px;border-radius:3px;background:var(--track);overflow:hidden;max-width:460px}
-  .runbar i{display:block;height:100%;background:var(--primary);transition:width .8s}
+  .runbar i{display:block;height:100%;background:var(--primary);transition:width 600ms linear}
   .run-note{font-size:12px;color:var(--faint);margin-top:18px;line-height:1.6}
   .run-actions{margin-top:20px}
   .qbtn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 14px;
@@ -265,7 +270,8 @@
   details.expd[open] summary{border-color:#a9b0b9}
   details.expd .menu{position:absolute;right:0;top:36px;z-index:20;background:var(--surface);
     border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 22px rgba(20,23,28,.14);
-    padding:5px;white-space:nowrap}
+    padding:5px;white-space:nowrap;animation:pop-in var(--t-med) var(--t-ease)}   /* 7.16 入场 */
+  @keyframes pop-in{from{opacity:0;transform:translateY(4px)}}
   details.expd .menu a{display:block;font-size:12.5px;color:var(--text);text-decoration:none;
     padding:6px 14px;border-radius:5px}
   details.expd .menu a:hover{background:var(--active)}
@@ -308,14 +314,15 @@
   .suggest .acts{display:flex;gap:8px}
   .libempty{padding:30px 0;color:var(--faint);font-size:13px}
 
-  /* toast */
+  /* toast:入场 fade+下落 200ms,退场 280ms 与 JS 300ms 摘除对齐(7.12) */
   .toasts{position:fixed;top:16px;right:16px;z-index:100;display:flex;flex-direction:column;
     gap:8px;max-width:min(380px,calc(100vw - 32px))}
   .toast{background:var(--primary);color:var(--primary-ink);font-size:13px;line-height:1.55;
     border-radius:8px;padding:9px 14px;box-shadow:0 8px 22px rgba(20,23,28,.25);
-    opacity:1;transition:opacity .3s;word-break:break-all}
+    word-break:break-all;animation:toast-in 200ms var(--t-ease)}
   .toast.err{background:var(--negative)}
-  .toast.out{opacity:0}
+  .toast.out{opacity:0;transform:translateY(-6px);transition:opacity 280ms,transform 280ms}
+  @keyframes toast-in{from{opacity:0;transform:translateY(-6px)}}
 
   @media (max-width:880px){
     .layout{flex-direction:column;height:auto;min-height:100vh}
@@ -490,7 +497,8 @@ function toast(msg, kind){
   if(kind === 'err') t.setAttribute('role', 'alert');
   t.textContent = msg;
   $('#toasts').appendChild(t);
-  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 350); }, 4000);
+  const ttl = kind === 'err' ? 7000 : 4000;   // 7.12:错误给足阅读时间,普通 4s
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, ttl);
 }
 function armConfirm(btn, confirmText, action){
   if(btn.dataset.armed === '1'){
