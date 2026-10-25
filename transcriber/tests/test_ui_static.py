@@ -734,6 +734,81 @@ class WP3TakenOverReopenVector(unittest.TestCase):
             os.unlink(vec)
 
 
+WP3_LATE_EVENT_GUARD_VECTOR_MJS = r'''
+import { readFileSync } from 'node:fs';
+const src = readFileSync(process.argv[2], 'utf8');
+function fn(name){
+  const m = src.match(new RegExp('function ' + name + '\\s*\\('));
+  if (!m) throw new Error(name + ' missing');
+  const start = src.indexOf('{', m.index);
+  let depth = 0;
+  for (let i = start; i < src.length; i++){
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}'){ depth--; if (!depth) return src.slice(m.index, i + 1); }
+  }
+  throw new Error(name + ' braces');
+}
+// 桩面:服务端 take_over 先发 session_taken_over 再 gone.set(),两句之间旧 pump 可再投
+// 一条带 seq 的事件——前端收到 [session_taken_over, event N]。onTakenOver 已把 lastSeq
+// 归零并置相位于 ended,handleEvent 必须在 ended 相位丢弃带 seq 事件,否则上一场的
+// 大 seq 写回 lastSeq,页内重开后新会话的小 seq 事件全被去重吞掉(字幕静默)。
+// 这里只抠 handleEvent,renderActive/badge/setPhase 用桩替换。
+const els = {};
+const $ = id => (els[id] || (els[id] = { hidden: false, textContent: '' }));
+const bundle = ['var state = {phase:"ended", lastSeq:0, partial:""};',
+  'var badgeCalls = 0, renderCalls = 0, phaseWrites = [];',
+  'function badge(){ badgeCalls++; }',
+  'function renderActive(){ renderCalls++; }',
+  'function setPhase(p){ phaseWrites.push(p); state.phase = p; }',
+  fn('handleEvent'),
+  // 场景 1:ended 相位(已被接管)收到迟到 partial(上一场大 seq=57)
+  'handleEvent({type:"partial", seq:57, text:"迟到的旧场字幕"});',
+  'const afterLate = {lastSeq: state.lastSeq, partial: state.partial,',
+  '  badgeCalls, renderCalls};',
+  // 场景 2(对照):live 相位同型事件照常入账——守卫不得误伤正常路径
+  'state.phase = "live";',
+  'handleEvent({type:"partial", seq:2, text:"新场字幕"});',
+  'const afterLive = {lastSeq: state.lastSeq, partial: state.partial};',
+  'return {afterLate, afterLive};'].join('\n');
+const out = new Function('$', bundle)($);
+let fail = 0;
+const ok = (cond, what) => { if (!cond){ console.error('FAIL ' + what); fail++; } };
+ok(out.afterLate.lastSeq === 0,
+  'ended 相位迟到事件把上一场大 seq 写回 lastSeq(重开后新会话小 seq 全被去重吞掉)');
+ok(out.afterLate.partial === '', 'ended 相位迟到文本不应再进字幕面板');
+ok(out.afterLate.badgeCalls === 0 && out.afterLate.renderCalls === 0,
+  'ended 相位迟到事件不应触发任何渲染');
+ok(out.afterLive.lastSeq === 2 && out.afterLive.partial === '新场字幕',
+  'live 相位同型事件被误伤:守卫只许在 ended 相位拦截');
+console.log(fail === 0 ? 'WP3_LATE_EVENT_GUARD_VECTOR_OK' : fail + ' FAILED');
+process.exit(fail === 0 ? 0 : 1);
+'''
+
+
+@unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
+class WP3LateEventGuardVector(unittest.TestCase):
+    """评审 Important 行为向量:接管后迟到事件不得重污染 lastSeq。handleEvent 在
+    ended 相位(如被接管)必须先丢带 seq 事件再去重/分派——静态钉只看得见「return
+    存在」,真跑才能证明 lastSeq 不被旧场大 seq 写回、live 相位又不被误伤。"""
+
+    def test_vector_green(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile('w', suffix='.mjs', delete=False,
+                                         encoding='utf-8') as f:
+            f.write(WP3_LATE_EVENT_GUARD_VECTOR_MJS)
+            vec = f.name
+        try:
+            env = dict(os.environ, ELECTRON_RUN_AS_NODE='1')
+            proc = subprocess.run([str(ELECTRON), vec, str(LIVE_JS)], env=env,
+                                  capture_output=True, timeout=60, cwd=str(BASE))
+            self.assertEqual(proc.returncode, 0, '迟到事件守卫向量未全绿:%s%s'
+                             % (proc.stdout.decode('utf-8', 'replace'),
+                                proc.stderr.decode('utf-8', 'replace')[:600]))
+            self.assertIn('WP3_LATE_EVENT_GUARD_VECTOR_OK', proc.stdout.decode('utf-8', 'replace'))
+        finally:
+            os.unlink(vec)
+
+
 WP6_STOPPED_VECTOR_MJS = r'''
 import { readFileSync } from 'node:fs';
 const src = readFileSync(process.argv[2], 'utf8');

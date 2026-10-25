@@ -226,6 +226,7 @@ function barChip(text){                       // 状态在字幕条形态下的�
 }
 
 function handleEvent(ev){
+  if (typeof ev.seq === 'number' && state.phase === 'ended') return;   // 已终态(如被接管):丢弃迟到事件,防旧场大 seq 重污染 lastSeq
   if (typeof ev.seq === 'number'){
     if (ev.seq <= state.lastSeq) return;          // resume 重放边界去重(seq 单调)
     state.lastSeq = ev.seq;
