@@ -7,10 +7,12 @@ live_meta.json 状态机三块。音频取 anchors.json 的 zh 条目 wav(本机
 _on_final 分人/落盘域、有 key 的 LLM 接线与停止排空用替身在快测覆盖。
 """
 import json
+import os
 import random
 import re
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import unittest.mock
@@ -399,6 +401,134 @@ class GpuLockTest(unittest.TestCase):
         self.assertFalse(app.GPU_LOCK.locked(), '返回后必须已释放')
         self.assertEqual(len(segs), 1)
         self.assertGreater(duration, 0)
+
+
+class StoppedReasonTest(unittest.TestCase):
+    """stopped 事件带 reason(spec WP6-1)三分支:empty / finalize_failed / 成功无 reason。
+
+    不经 start()(模型只在 start 加载,worktree 无模型):LiveSession 壳 + _finish
+    触碰的边缘件(writer/engine/wav)全部换最小桩,finalizer 注入,直调 _finish 同步收尾。
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = tmp.name
+        self.sess = LiveSession(self.root, 'unused-model-dir',
+                                speaker_cluster=_StubCluster())
+        self.sess.id = 'reason-test'
+        self.sess._dir = str(Path(self.root) / self.sess.id)
+        os.makedirs(self.sess._dir)
+        self.sess._meta = {'id': self.sess.id, 'title': 't', 'speakers': 0}
+        self.sess.status = 'stopping'
+        # _finish 的边缘件:writer 用已退出的真线程(join 立即返回),engine/wav 用空桩
+        done = threading.Thread(target=lambda: None)
+        done.start()
+        done.join()
+        self.sess._writer = done
+
+        class _FakeEngine:
+            def stop(self):
+                pass
+
+        class _FakeWav:
+            def finalize(self):
+                pass
+
+        self.sess._engine = _FakeEngine()
+        self.sess._wav = _FakeWav()
+        # pass2 已随 drop-pass2 线摘除(合并 2026-10-25):_finish 不再等 _pass2_done,
+        # 无需也无法预置该事件
+
+    def _drain(self):
+        out = []
+        drain(self.sess.events, out)
+        return out
+
+    def test_empty_session_reason_empty(self):
+        """0 字节空会话:stopped 带 reason='empty',无 job_id,目录直接清掉。"""
+        self.sess._bytes_fed = 0
+        self.sess._finish()
+        evs = self._drain()
+        stopped = [e for e in evs if e['type'] == 'stopped']
+        self.assertEqual(len(stopped), 1)
+        self.assertEqual(stopped[0]['reason'], 'empty')
+        self.assertNotIn('job_id', stopped[0])
+        self.assertFalse(Path(self.sess._dir).exists(), '空会话目录应被清理')
+
+    def test_finalize_failure_reason_with_brief(self):
+        """转正失败:stopped 带 reason='finalize_failed' 与 error 简要(路径打码);
+        error 事件先行且文案同源打码(先前的 %s 裸异常会带本机路径);无 job_id。"""
+        def boom(session_dir, speakers_hint=None):
+            raise RuntimeError('wav 头损坏: /Users/rendy/live/x/live_audio.wav')
+
+        self.sess._finalizer = boom
+        self.sess._bytes_fed = 32000       # 非空:走到 finalizer 才炸
+        self.sess._finish()
+        evs = self._drain()
+        stopped = [e for e in evs if e['type'] == 'stopped']
+        self.assertEqual(len(stopped), 1)
+        self.assertEqual(stopped[0]['reason'], 'finalize_failed')
+        self.assertNotIn('job_id', stopped[0])
+        self.assertIn('RuntimeError', stopped[0]['error'])
+        self.assertIn('[路径]', stopped[0]['error'], 'error 简要须打码本机路径')
+        self.assertNotIn('/Users', stopped[0]['error'])
+        errs = [e for e in evs if e['type'] == 'error']
+        self.assertEqual(len(errs), 1)
+        self.assertTrue(errs[0]['message'].startswith('停止转正失败:'), 'error 事件文案前缀不变')
+        self.assertIn('[路径]', errs[0]['message'], 'error 事件 message 须与 stopped.error 同源打码')
+        self.assertNotIn('/Users', errs[0]['message'], 'error 事件 message 不得泄露本机路径')
+        self.assertIn('RuntimeError', errs[0]['message'])
+
+    def test_success_stopped_has_job_id_no_reason(self):
+        """成功分支不变:带 job_id、无 reason 键(前端按有无 job_id 判成功)。"""
+        self.sess._finalizer = lambda d, speakers_hint=None: 'unit-test-job'
+        self.sess._bytes_fed = 32000
+        self.sess._finish()
+        evs = self._drain()
+        stopped = [e for e in evs if e['type'] == 'stopped']
+        self.assertEqual(len(stopped), 1)
+        self.assertEqual(stopped[0]['job_id'], 'unit-test-job')
+        self.assertNotIn('reason', stopped[0], '成功分支不得带 reason')
+
+
+class StartRegistrationOrderTest(unittest.TestCase):
+    """TOCTOU 回归钉(2026-10-25 评审 Important):start() 里 _SESSIONS 登记必须
+    先于 Pass1Engine 构造(即 meta 落盘后的下一个动作)。否则「meta 已写、未注册」
+    窗口内 recover_now 会把即将录制的会话目录当死目录转正、或把 44 字节空壳 wav
+    直接删——两条都是音频丢失。Pass1Engine 替换桩后 start() 可无模型跑通
+    (pass2 已随 drop-pass2 线摘除,合并后无 Pass2Runner 可替换)。
+    """
+
+    def test_registered_before_engine_construction(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        sess = LiveSession(tmp.name, 'unused-model-dir', speaker_cluster=_StubCluster())
+        self.addCleanup(sess.handle_stop)   # 幂等收尾:空会话清目录 + 摘注册
+        observed = {}
+
+        class _SpyEngine:
+            def __init__(self, model_dir, on_partial, on_final):
+                observed['ok'] = live_session._SESSIONS.get(sess.id) is sess
+
+            def feed(self, pcm):
+                pass
+
+            def finals(self):
+                return []
+
+            def stop(self):
+                pass
+
+        class _StubRunner:
+            def __init__(self, *a, **kw):
+                pass
+
+        with unittest.mock.patch.object(live_session, 'Pass1Engine', _SpyEngine), \
+             unittest.mock.patch.object(live_session, 'parse_key', lambda: None):
+            sess.start('注册顺序窗口钉', 0)
+        self.assertTrue(observed.get('ok', False),
+                        'Pass1Engine 构造时(meta 已落盘)会话必须已在 _SESSIONS')
 
 
 if __name__ == '__main__':

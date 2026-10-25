@@ -163,11 +163,16 @@ class StaticCheck(unittest.TestCase):
     def test_buffer_cap_5min(self):
         self.assertIn('BUFFER_MAX_SEC = 5 * 60', self.js)
 
-    def test_stop_copy_and_no_banned_word(self):
+    def test_stop_copy_and_jargon_limit(self):
         self.assertIn('停止', self.html)
         self.assertIn('停止', self.js)
-        self.assertNotIn('转正', self.html, '界面文案不得出现「转正」')
-        self.assertNotIn('转正', self.js, '界面文案不得出现「转正」')
+        # 「转正」曾属内部术语、整体禁入界面文案;WP6 起唯一例外是寻回按钮
+        # 「立即重试转正」(spec 点名)——出现必须成对,不许别处漏进来
+        for text in (self.html, self.js):
+            self.assertEqual(text.count('转正'), text.count('立即重试转正'),
+                             '「转正」只能以「立即重试转正」整词出现(界面术语纪律)')
+            self.assertGreaterEqual(text.count('立即重试转正'), 1,
+                                    'WP6 寻回按钮「立即重试转正」缺失')
 
     def test_two_tier_rendering(self):
         """两级渲染钉子:pass1_final 透传 speaker(分人失败无键)、f1/llm 文本着色
@@ -209,8 +214,22 @@ class StaticCheck(unittest.TestCase):
         self.assertNotIn('skiptxt', self.js)
         self.assertNotIn('skiptxt', self.html)
 
-    def test_ended_copy(self):
-        self.assertIn('录音已保存 · 正在生成完整文稿', self.js)
+    def test_end_card_three_states(self):
+        """WP6 三分态(Task 7):成功「文稿已生成」/失败「文稿生成失败,录音已保留」
+        + 寻回文案/空会话「本场没有录到语音」(spec 初稿笔误「本場」已勘误);旧文案「正在生成完整文稿」三分支绝迹;
+        结束卡结构新增「立即重试转正」按钮(hidden 默认)与就地提示槽;
+        成功态 web 深链开新标签(不再本页导航)。"""
+        self.assertIn('文稿已生成', self.js)
+        self.assertIn('文稿生成失败,录音已保留', self.js)
+        self.assertIn('本场没有录到语音', self.js)
+        self.assertIn('录音仍在服务端,重启转写服务后会自动转为任务', self.js)
+        self.assertNotIn('正在生成完整文稿', self.js, '三分支均不得再出现旧文案')
+        self.assertNotIn('正在生成完整文稿', self.html)
+        self.assertIn("window.open('/#' + jobId, '_blank')", self.js)
+        retry = re.search(r'<button[^>]*id="endRetry"[^>]*>', self.html)
+        self.assertTrue(retry, '结束卡缺「立即重试转正」按钮')
+        self.assertIn('hidden', retry.group(0), '#endRetry 默认须 hidden')
+        self.assertIn('id="endRetryNote"', self.html)
 
     def test_bar_and_panel_forms(self):
         self.assertIn('backdrop-filter', self.html)   # 字幕条半透明+模糊
@@ -228,9 +247,10 @@ class StaticCheck(unittest.TestCase):
         self.assertNotIn('Task 9 接入', self.js, 'stopped 无 job_id 的过期注释应删')
 
     def test_stop_deep_link(self):
-        """停止后的完整转录记录:结束卡深链到工作台对应任务(hash 路由),
-        悬浮窗内点击时聚焦主窗而非在小窗内导航。"""
-        self.assertIn("'/#' + ev.job_id", self.js)
+        """停止后的完整转录记录:结束卡深链到工作台对应任务(hash 路由)。
+        WP6 起 web 端 window.open 新标签(本页停在结束卡,防 /live 内导航出
+        双工作台);悬浮窗内点击仍聚焦主窗而非在小窗内导航。"""
+        self.assertIn("window.open('/#' + jobId, '_blank')", self.js)
         self.assertIn('openMainJob', self.js)
 
     def test_stale_auto_resume_falls_back_to_setup(self):
@@ -315,13 +335,13 @@ class StaticCheck(unittest.TestCase):
         self.assertIn("document.addEventListener('pointermove', move, true)", lwjs)
 
     def test_workbench_live_entry(self):
-        """主界面实时字幕入口:三 Tab 之一 + 拉起逻辑(桌面悬浮窗/网页新标签页);
-        历史列表对 live 转正任务显示「实时」徽标。"""
+        """主界面实时字幕入口(WP2 起为「新任务」卡下动作行,不再是 Tab)+
+        拉起逻辑(桌面悬浮窗/网页命名 target 新标签页);历史列表对 live 转正
+        任务显示「实时」徽标。"""
         idx = INDEX_HTML.read_text(encoding='utf-8')
-        self.assertIn('id="tab-live"', idx)
-        self.assertIn('id="pane-live"', idx)
+        self.assertIn('id="liveRow"', idx)
         self.assertIn('openLiveCaption', idx)
-        self.assertIn("window.open('/live?mode=panel'", idx)
+        self.assertIn("window.open('/live?mode=panel', 'livePanel')", idx)
         self.assertIn('pill live', idx)
 
 

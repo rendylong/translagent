@@ -33,10 +33,13 @@ events 队列 + 环形缓存(BACKLOG_MAX,resume 按 last_seq 重放)。WS 层 pu
 EventTap 取事件:断连后快速重连时旧 pump 手里的事件锁内放回队首,不吞、不乱序
 (Task 7 实测的 stop_ack 丢失竞态在此修);pump 主循环 pump_events 同在本模块,
 stopped / gone / 连续 send 失败任一即退出(转正异步期间对端断开不活锁)。
+连接注册表(_conns,spec WP3 接管语义):resume 顶掉旧附着连接——旧连接收
+session_taken_over 后被置 gone 并关闭,任一时刻至多一条 pump 在消费队列。
 """
 import json
 import os
 import queue
+import re
 import threading
 import time
 import uuid
@@ -59,6 +62,7 @@ WATCHDOG_PERIOD_S = 60                    # 看门狗巡检周期(秒;测试注�
 META = 'live_meta.json'
 AUDIO = 'live_audio.wav'
 JSONL = 'live_pass1.jsonl'
+ACTIVE_STATUSES = ('listening', 'stopping')   # 动作行红点口径:转正排空期管线仍被占
 
 _STOP = object()   # 音频写线程停止哨兵(区别于任何字节串)
 
@@ -70,6 +74,45 @@ def find_session(session_id):
     """按 id 找进程内会话;已转正回收或服务重启后的会话返回 None(恢复走 live_finalize)。"""
     with _SESSIONS_LOCK:
         return _SESSIONS.get(session_id)
+
+
+def active_session_ids():
+    """进程内活跃会话 id 快照(持 _SESSIONS_LOCK):recover_now 排除正在录制的目录。
+
+    故意返回注册表全量、**不**按 ACTIVE_STATUSES 过滤:start() 的注册先于引擎构造
+    (TOCTOU 防御,见 start 内注释),窗口期 status 仍 idle——若在此过滤,该窗口
+    会重新暴露给 recover_now。注册表成员即「活会话或正在 start 的会话」,一律排除。"""
+    with _SESSIONS_LOCK:
+        return set(_SESSIONS)
+
+
+def live_state():
+    """全局会话状态查询(GET /api/live/state 真身,spec WP2-3):侧栏动作行红点用。
+
+    active = 存在 status ∈ ACTIVE_STATUSES 的会话(转正排空期仍占管线,不提前熄灭);
+    多个活跃会话取 started_at 最大者;无会话返回全 None。注册表读写持 _SESSIONS_LOCK,
+    字段读取亦在锁内完成(CPython 属性读原子,此处取齐快照防跨锁不一致)。"""
+    best = None
+    with _SESSIONS_LOCK:
+        for s in _SESSIONS.values():
+            if s.status in ACTIVE_STATUSES and (best is None
+                                                or (s.started_at or 0) > (best.started_at or 0)):
+                best = s
+        if best is None:
+            return {'active': False, 'status': None, 'title': None, 'started_at': None}
+        return {'active': True, 'status': best.status, 'title': best.title,
+                'started_at': best.started_at}
+
+
+def error_brief(e):
+    """异常 → 单行简要(WS 下行安全):只取首行、截 100 字符,unix/win 路径与
+    sk- 密钥一律打码——websocket 帧页面可直接读到,不得泄露本机信息。
+    app.live_start_brief(start 失败)与本模块 finalize_failed 的 stopped.error 同源。"""
+    s = str(e).strip()
+    brief = s.splitlines()[0][:100] if s else ''
+    brief = re.sub(r'(?:[A-Za-z]:)?[/\\]\S*', '[路径]', brief)
+    brief = re.sub(r'sk-[A-Za-z0-9_-]{8,}', '[密钥]', brief)
+    return '%s:%s' % (type(e).__name__, brief) if brief else type(e).__name__
 
 
 def _parse_lang(spec):
@@ -176,6 +219,7 @@ class LiveSession:
         self.model_dir = model_dir
         self.id = None
         self.status = 'idle'               # idle → listening → stopping(目录随后删除)
+        self.started_at = None             # start 时的 int(time.time());live_state 取最新会话用
         self.events = queue.Queue()        # WS 层直接消费的下行事件队列
         self._last_activity = time.monotonic()   # 看门狗判活:最近一次字节喂入或事件投递
         self._watchdog_idle_s = watchdog_idle_s
@@ -204,6 +248,33 @@ class LiveSession:
         # 转正
         self._finalizer = finalizer or self._default_finalizer
         self._finalizing = None
+        # 每会话连接注册(spec WP3 接管语义):conn_id → {'ws': ws, 'gone': Event}
+        self._conns = {}
+
+    @property
+    def title(self):
+        """会话标题(start 前 _meta 未建,返回 None)。"""
+        return (self._meta or {}).get('title')
+
+    def attach_conn(self, conn_id, ws, gone):
+        """登记一条附着连接并顶掉其他连接(接管语义,spec WP3)。
+
+        注册表读写持 _SESSIONS_LOCK;返回被顶掉的旧连接列表([{'ws','gone'},…]),
+        调用方必须在锁外对旧连接发 session_taken_over / 置 gone / close——
+        锁内绝不网络 send。已断开(gone 置位)的旧连接直接摘除,不发通知。"""
+        with _SESSIONS_LOCK:
+            displaced = []
+            for cid, c in list(self._conns.items()):
+                del self._conns[cid]
+                if c['gone'] is not gone and not c['gone'].is_set():
+                    displaced.append(c)
+            self._conns[conn_id] = {'ws': ws, 'gone': gone}
+            return displaced
+
+    def detach_conn(self, conn_id):
+        """连接收尾时摘除注册(finally 幂等调用;被接管的连接早已不在册)。"""
+        with _SESSIONS_LOCK:
+            self._conns.pop(conn_id, None)
 
     # ---------- 生命周期(调用方线程) ----------
 
@@ -220,26 +291,38 @@ class LiveSession:
                       'speakers': int(speakers or 0), 'created_at': time.strftime('%Y-%m-%d %H:%M'),
                       'status': 'listening', 'sample_rate': SAMPLE_RATE, 'language': whisper_lang}
         self._save_meta()
-        self._engine = Pass1Engine(self.model_dir, self._on_partial, self._on_final)
-        self._writer = threading.Thread(target=self._run_writer, name='live-writer-' + self.id,
-                                        daemon=True)
-        self._writer.start()
-        key = parse_key()                  # .env/env.rtf;无 key → LLM 整层禁用
-        self.llm_enabled = bool(key)       # ws_live 透传给前端:无 key 且选了翻译目标时提示
-        if key:
-            self._refiner = LLMRefiner(key, lang_pair=(whisper_lang, tgt))
-            self._llm = threading.Thread(
-                target=refine_worker,
-                args=(lambda timeout=0.5: self._llm_q.get(timeout=timeout), self._emit,
-                      self._refiner, self._llm_stop, self._llm_busy),
-                name='live-llm-' + self.id, daemon=True)
-            self._llm.start()
-        self.status = 'listening'
-        self._watchdog = threading.Thread(target=self._run_watchdog,
-                                          name='live-watchdog-' + self.id, daemon=True)
-        self._watchdog.start()
+        # 注册先行(TOCTOU,2026-10-25 评审):meta 已落盘的目录若还没进注册表,
+        # 窗口期内 recover_now 会把它当死目录转正、或把 44 字节空壳 wav 直接删——
+        # 都是音频丢失。故登记提前到 meta 写后、引擎构造前;此时 status 仍 idle,
+        # live_state 的 ACTIVE_STATUSES 过滤保证动作行红点不受影响。注册后任何
+        # 失败必须摘注册:半途对象永久占位会连带其目录被 recover_now 永久豁免。
+        # (合并注:pass2 已随 drop-pass2 线摘除,这里保 main 的两层结构 +
+        #  分支的注册先行/started_at/失败自愈。)
         with _SESSIONS_LOCK:
             _SESSIONS[self.id] = self
+        try:
+            self._engine = Pass1Engine(self.model_dir, self._on_partial, self._on_final)
+            self._writer = threading.Thread(target=self._run_writer, name='live-writer-' + self.id,
+                                            daemon=True)
+            self._writer.start()
+            key = parse_key()                  # .env/env.rtf;无 key → LLM 整层禁用
+            self.llm_enabled = bool(key)       # ws_live 透传给前端:无 key 且选了翻译目标时提示
+            if key:
+                self._refiner = LLMRefiner(key, lang_pair=(whisper_lang, tgt))
+                self._llm = threading.Thread(
+                    target=refine_worker,
+                    args=(lambda timeout=0.5: self._llm_q.get(timeout=timeout), self._emit,
+                          self._refiner, self._llm_stop, self._llm_busy),
+                    name='live-llm-' + self.id, daemon=True)
+                self._llm.start()
+            self.started_at = int(time.time())
+            self.status = 'listening'
+            self._watchdog = threading.Thread(target=self._run_watchdog,
+                                              name='live-watchdog-' + self.id, daemon=True)
+            self._watchdog.start()
+        except Exception:
+            self._reap()                       # 自愈:目录留给 recover(空壳删/转正),注册表不残留
+            raise
         return self.id
 
     def feed_bytes(self, b):
@@ -307,13 +390,15 @@ class LiveSession:
             if self._bytes_fed == 0:           # 空会话:无音频可转正,不建 job 直接清目录
                 import shutil
                 shutil.rmtree(self._dir, ignore_errors=True)
-                self._emit({'type': 'stopped'})
+                self._emit({'type': 'stopped', 'reason': 'empty'})
                 return
             job_id = self._finalizer(self._dir, speakers_hint=self._meta.get('speakers'))
             self._emit({'type': 'stopped', 'job_id': job_id})
         except Exception as e:  # noqa: BLE001 转正失败也要让客户端收尾:error 可见 + stopped(无 job_id)
-            self._emit({'type': 'error', 'message': '停止转正失败:%s' % e})
-            self._emit({'type': 'stopped'})   # 无 job_id;音频留在 live/ 由重启恢复转正
+            self._emit({'type': 'error', 'message': '停止转正失败:%s' % error_brief(e)})
+            # reason 让前端分态渲染结束卡(失败态不再报喜);error 为打码简要
+            self._emit({'type': 'stopped', 'reason': 'finalize_failed',
+                        'error': error_brief(e)})   # 无 job_id;音频留在 live/ 由重启恢复转正
         finally:
             self._reap()
 

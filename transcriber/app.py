@@ -590,6 +590,8 @@ def run_diarization(wav, num_speakers, progress_cb):
     try:
         res = sd.process(samples, callback=progress_cb)
     except TypeError:
+        # 旧 sherpa 无 callback 参数回落到此:回调内放弃不可用,
+        # 放弃仍在阶段边界生效(process_job 里的 cancel_requested 检查)
         res = sd.process(samples)
     return [(s.start, s.end, s.speaker) for s in res.sort_by_start_time()]
 
@@ -657,7 +659,12 @@ def process_job(job_id):
             write_meta(job_id, status='diarizing', stage='说话人识别', progress=86)
 
             def on_diar_progress(done, total):
+                # sherpa-onnx 2.0.0 忽略回调返回值(eng-review 实测,docstring 失实),
+                # 回调内 raise 才是真中止:cancel_requested 置位后首次回调即抛出,
+                # 秒级传播出 sd.process,实例无损可复用
                 write_meta(job_id, progress=86 + int(done * 12 / max(total, 1)))
+                if read_meta(job_id).get('cancel_requested'):
+                    raise RuntimeError('已放弃')
                 return True
 
             dsegs = run_diarization(wav, nspeakers, on_diar_progress)
@@ -885,7 +892,10 @@ def job_reveal(job_id):
 
 @app.post('/api/jobs/<job_id>/cancel')
 def job_cancel(job_id):
-    """放弃进行中的任务:杀掉 whisper 子进程立即生效;diarizing 阶段在下一个阶段边界放弃。"""
+    """放弃进行中的任务:kill 前先校验 pid 确属 whisper(comm 含 'whisper')再杀——
+    whisper 退出后 pid 被系统复用时,无条件 kill 会误杀无辜进程(与
+    recover_interrupted 同款闸门);diarizing 阶段由回调内 raise 秒级生效,
+    其余阶段在下一个阶段边界生效。"""
     if not re.fullmatch(r'[\w-]+', job_id) or not os.path.isfile(os.path.join(job_dir(job_id), 'meta.json')):
         abort(404)
     meta = read_meta(job_id)
@@ -893,7 +903,9 @@ def job_cancel(job_id):
         return jsonify({'error': '任务已结束,无需放弃'}), 409
     pid = meta.get('worker_pid')
     if pid:
-        subprocess.run(['kill', str(pid)], capture_output=True)
+        r = subprocess.run(['ps', '-p', str(pid), '-o', 'comm='], capture_output=True, text=True)
+        if 'whisper' in r.stdout:
+            subprocess.run(['kill', str(pid)], capture_output=True)
     write_meta(job_id, cancel_requested=True)
     return jsonify({'ok': True})
 
@@ -1121,7 +1133,7 @@ def recover_interrupted():
             r = subprocess.run(['ps', '-p', str(pid), '-o', 'comm='], capture_output=True, text=True)
             if 'whisper' in r.stdout:
                 subprocess.run(['kill', str(pid)])
-        meta.update(status='error', stage='失败', error='服务重启导致中断,请删除后重新上传')
+        meta.update(status='error', stage='失败', error='服务重启导致中断,可用原音频重跑')
         tmp = mp + '.tmp'
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(meta, f, ensure_ascii=False, indent=1)
@@ -1139,18 +1151,36 @@ LIVE_MODEL_DIR = os.path.join(MODEL_DIR, 'streaming-zipformer-zh-en')       # �
 LIVE_JA_MODEL_DIR = os.path.join(MODEL_DIR, 'streaming-zipformer-ja')       # 多语言流式(含日文,spec 2026-10-24)
 
 
-def live_recover():
-    """启动时扫描 live/ 未终态会话目录 → 自动转正建 job(Task 9;真身 live_finalize)。"""
+def live_recover(exclude=()):
+    """扫描 live/ 未终态会话目录 → 自动转正建 job(真身 live_finalize.recover_all)。
+
+    启动期(main())不排除;运行期 /api/live/recover_now 传 live_session 的活跃
+    会话 id 集合——正在录制的会话目录正在被写入,绝不能拿去转正。返回 [(会话, job)]。"""
     import live_finalize
-    done = live_finalize.recover_all(LIVE_ROOT)
+    done = live_finalize.recover_all(LIVE_ROOT, exclude=frozenset(exclude))
     if done:
         print('live 恢复:%d 个未完成会话已转正:%s'
               % (len(done), ', '.join('%s→%s' % (s, j) for s, j in done)))
+    return done
+
+
+@app.post('/api/live/recover_now')
+def live_recover_now():
+    """运行期安全版 live_recover(spec WP6-4):转正失败寻回不要求重启服务;
+    幂等(已终态目录沿用既有跳过/清理逻辑);活跃会话目录排除。"""
+    done = live_recover(exclude=live_domain.active_session_ids())
+    return jsonify({'recovered': [jid for _sid, jid in done]})
 
 
 @app.get('/live')
 def live_page():
     return send_from_directory(STATIC_DIR, 'live.html')
+
+
+@app.get('/api/live/state')
+def live_state_api():
+    """侧栏动作行红点查询(spec WP2-3):有无进行中会话与开始时间;真身在 live_session。"""
+    return jsonify(live_domain.live_state())
 
 
 @app.get('/live.js')
@@ -1159,21 +1189,23 @@ def live_js():
 
 
 def live_start_brief(e):
-    """live start 失败的下行文案:异常类名 + 首行简述;路径与疑似密钥一律打码,
-    不得把本机信息(websocket 帧可直接读到)泄给页面。"""
-    s = str(e).strip()
-    brief = s.splitlines()[0][:100] if s else ''
-    brief = re.sub(r'(?:[A-Za-z]:)?[/\\]\S*', '[路径]', brief)
-    brief = re.sub(r'sk-[A-Za-z0-9_-]{8,}', '[密钥]', brief)
-    return '%s:%s' % (type(e).__name__, brief) if brief else type(e).__name__
+    """live start 失败的下行文案:打码规则真身在 live_session.error_brief
+    (start 失败与 finalize_failed 的 stopped.error 同源,勿在此另写正则)。"""
+    return live_domain.error_brief(e)
 
 
 @sock.route('/ws/live')
 def ws_live(ws):
-    """纯转发层:二进制帧→feed_bytes;start/stop/resume→LiveSession;事件队列→下行。"""
+    """纯转发层:二进制帧→feed_bytes;start/stop/resume→LiveSession;事件队列→下行。
+
+    每条连接生成 conn_id 并在 start/resume 成功时注册进会话连接注册表;resume 到达
+    时已有其他连接附着则接管(spec WP3):旧连接先收 session_taken_over 终态通知再被
+    置 gone 并关闭(旧 pump 经 gone 有界退出,EventTap 归还语义不变),新连接重放
+    backlog 并挂 pump。接管收尾严格在锁外:锁内只从注册表取旧 ws 引用与 gone。"""
     session = None
     sender = None
     gone = threading.Event()
+    conn_id = uuid.uuid4().hex
 
     def pump(last_seq):
         """转发会话事件队列(主循环在 live_session.pump_events,便于单测):stopped
@@ -1182,6 +1214,20 @@ def ws_live(ws):
         def send(ev):
             ws.send(json.dumps(ev, ensure_ascii=False))
         return live_domain.pump_events(session.tap, send, gone, last_seq)
+
+    def take_over(displaced):
+        """锁外收尾被接管的旧连接:先发终态通知,再置 gone(旧 pump 随之退出)并关闭。
+        send 失败只说明旧连接已断,照常置 gone;顺序即 spec:「先通知再断」。"""
+        for c in displaced:
+            try:
+                c['ws'].send(json.dumps({'type': 'session_taken_over'}))
+            except Exception:  # noqa: BLE001 旧连接已断:通知发不出,照样收尾
+                pass
+            c['gone'].set()
+            try:
+                c['ws'].close()
+            except Exception:  # noqa: BLE001 关闭失败无碍:gone 已置位
+                pass
 
     try:
         while True:
@@ -1217,6 +1263,7 @@ def ws_live(ws):
                 ws.send(json.dumps({'type': 'started', 'session_id': sid,
                                     'llm': bool(getattr(session, 'llm_enabled', False))},
                                    ensure_ascii=False))
+                session.attach_conn(conn_id, ws, gone)   # 新会话无旧连接,不会顶掉谁
                 sender = threading.Thread(target=pump, args=(0,), daemon=True)
                 sender.start()
             elif mtype == 'stop' and session is not None and session.status == 'listening':
@@ -1234,6 +1281,9 @@ def ws_live(ws):
                     last_seq = int(msg.get('last_seq') or 0)
                 except (TypeError, ValueError):
                     last_seq = 0
+                # 接管:注册本连接并顶掉旧附着连接(锁内取引用),锁外通知旧连接后
+                # 再做本连接的 backlog 重放与挂 pump(顺序即 spec)
+                take_over(session.attach_conn(conn_id, ws, gone))
                 replay = session.backlog_after(last_seq)
                 for ev in replay:
                     ws.send(json.dumps(ev, ensure_ascii=False))
@@ -1244,6 +1294,8 @@ def ws_live(ws):
         pass
     finally:
         gone.set()
+        if session is not None:
+            session.detach_conn(conn_id)
 
 
 def main():

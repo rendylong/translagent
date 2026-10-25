@@ -21,6 +21,7 @@
     --sp3-bg:#efeaf8; --sp3-bd:#ddd4f0; --sp3-ink:#65449f;
     --sp4-bg:#e0f0ef; --sp4-bd:#c2e2e0; --sp4-ink:#14615f;
     --sp5-bg:#f9e8ec; --sp5-bd:#f0cdd6; --sp5-ink:#96365a;
+    --t-fast:120ms; --t-med:180ms; --t-ease:cubic-bezier(.2,0,0,1);   /* 7.16 动效 token */
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -42,7 +43,7 @@
   .brand .bs{font-size:11.5px;color:var(--faint);line-height:1.4}
   .sec{padding:14px 20px 6px;font-size:12.5px;color:var(--faint)}
   .pane-wrap{padding:0 14px 6px;position:relative}
-  .tabs{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid var(--border);
+  .tabs{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border);
     border-radius:8px;overflow:hidden;background:var(--surface)}
   .tabs button{height:36px;border:0;background:none;cursor:pointer;font-size:13.5px;
     color:var(--muted);display:flex;align-items:center;justify-content:center;gap:7px}
@@ -76,7 +77,8 @@
   .setedit{border:0;background:none;padding:2px 4px;font-size:12.5px;color:var(--text);
     cursor:pointer;text-decoration:underline;display:inline-flex;align-items:center;gap:4px}
   .setpop{position:absolute;left:14px;right:14px;top:96px;z-index:30;background:var(--surface);
-    border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(20,23,28,.16);padding:14px 16px 12px}
+    border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(20,23,28,.16);
+    padding:14px 16px 12px;animation:pop-in var(--t-med) var(--t-ease)}   /* 7.16 入场 */
   .setpop[hidden]{display:none}
   .setpop h3{margin:0;font-size:13px;font-weight:650;display:flex;align-items:center}
   .setpop h3 button{margin-left:auto;border:0;background:none;cursor:pointer;color:var(--faint);font-size:15px;line-height:1}
@@ -129,11 +131,10 @@
   .job .s{font-size:12px;color:var(--faint);margin-top:1px;display:flex;align-items:center;gap:6px;min-width:0}
   .job .s .sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .bar{height:3px;border-radius:2px;background:var(--track);margin-top:7px;overflow:hidden}
-  .bar i{display:block;height:100%;background:var(--primary);width:0;transition:width .8s}
+  .bar i{display:block;height:100%;background:var(--primary);width:0;transition:width 600ms linear}
   .pill{font-size:11px;padding:1px 7px;border-radius:4px;white-space:nowrap;flex:none}
   .pill.err{color:var(--pill-neg-ink);background:var(--pill-neg-bg)}
   .pill.live{color:var(--sp0-ink);background:var(--sp0-bg)}
-  .live-entry .live-desc{font-size:13px;color:var(--muted);line-height:1.6;margin:2px 0 2px}
   .jdel{position:absolute;right:6px;top:8px;border:0;background:none;color:var(--faint);cursor:pointer;
     opacity:0;padding:3px;border-radius:5px;display:flex}
   .job:hover .jdel,.jdel:focus-visible{opacity:1}
@@ -147,8 +148,24 @@
   .side-foot.on{background:#e4e7ea;color:var(--text);font-weight:600}
   .side-foot .cnt{margin-left:auto;font-size:11px;color:var(--faint)}
 
+  /* 实时字幕动作行(新任务卡下方):入口是动作行而非 Tab——字幕「不在本页发生」,
+     形态与行为一致;状态点空闲灰/进行中红(呼吸,复用 rec-blink),整行可点 */
+  .live-row{margin:2px 14px 0;display:flex;align-items:center;gap:8px;
+    border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;
+    padding:8px 11px;font-size:12.5px;color:var(--muted);text-align:left;width:calc(100% - 28px)}
+  .live-row:hover{border-color:#a9b0b9;background:#fafbfc}
+  .live-row .dot{width:8px;height:8px;border-radius:50%;background:#c4cad1;flex:none;transition:background var(--t-fast)}
+  .live-row.on{color:var(--text)}
+  .live-row.on .dot{background:var(--negative);animation:rec-blink 1.6s ease-in-out infinite}
+  .live-row .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
   /* ---------- 主区 ---------- */
   .main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+  /* 7.16 主区视图一次性淡入:.view-in 类由 render() 仅在视图真切换时挂、
+     animationend 摘除;同视图重渲染(运行页 2.5s 轮询 load(true) 整块替换
+     innerHTML)不重放——评审 Important 修复,旧的纯 CSS 首子元素规则已绝迹 */
+  #main.view-in{animation:view-in var(--t-med) var(--t-ease)}
+  @keyframes view-in{from{opacity:0}}
 
   .empty{margin:auto;text-align:center;padding:40px 20px;max-width:460px}
   .empty svg{margin-bottom:14px}
@@ -176,7 +193,7 @@
   .pct small{font-size:16px;font-weight:500;color:var(--muted);margin-left:2px}
   .stage-line{color:var(--muted);font-size:13.5px;margin:6px 0 16px}
   .runbar{height:6px;border-radius:3px;background:var(--track);overflow:hidden;max-width:460px}
-  .runbar i{display:block;height:100%;background:var(--primary);transition:width .8s}
+  .runbar i{display:block;height:100%;background:var(--primary);transition:width 600ms linear}
   .run-note{font-size:12px;color:var(--faint);margin-top:18px;line-height:1.6}
   .run-actions{margin-top:20px}
   .qbtn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 14px;
@@ -210,7 +227,7 @@
   .tedit{font-size:19px;font-weight:650;font-family:inherit;border:1px solid var(--control);
     border-radius:6px;padding:2px 8px;width:min(560px,100%);background:var(--surface);color:var(--text)}
   .meta-line{color:var(--faint);font-size:12.5px;margin-top:5px}
-  audio{width:100%;margin-top:12px;height:34px}
+  audio{width:100%;margin-top:12px;height:34px;accent-color:var(--primary)}   /* 7.18 播放器控件随主题 */
   .spkrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
   .spkrow .cap{font-size:12.5px;color:var(--faint);flex:none}
   .chips{display:inline-flex;gap:8px;flex-wrap:wrap}
@@ -255,7 +272,8 @@
   details.expd[open] summary{border-color:#a9b0b9}
   details.expd .menu{position:absolute;right:0;top:36px;z-index:20;background:var(--surface);
     border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 22px rgba(20,23,28,.14);
-    padding:5px;white-space:nowrap}
+    padding:5px;white-space:nowrap;animation:pop-in var(--t-med) var(--t-ease)}   /* 7.16 入场 */
+  @keyframes pop-in{from{opacity:0;transform:translateY(4px)}}
   details.expd .menu a{display:block;font-size:12.5px;color:var(--text);text-decoration:none;
     padding:6px 14px;border-radius:5px}
   details.expd .menu a:hover{background:var(--active)}
@@ -298,14 +316,15 @@
   .suggest .acts{display:flex;gap:8px}
   .libempty{padding:30px 0;color:var(--faint);font-size:13px}
 
-  /* toast */
+  /* toast:入场 fade+下落 200ms,退场 280ms 与 JS 300ms 摘除对齐(7.12) */
   .toasts{position:fixed;top:16px;right:16px;z-index:100;display:flex;flex-direction:column;
     gap:8px;max-width:min(380px,calc(100vw - 32px))}
   .toast{background:var(--primary);color:var(--primary-ink);font-size:13px;line-height:1.55;
     border-radius:8px;padding:9px 14px;box-shadow:0 8px 22px rgba(20,23,28,.25);
-    opacity:1;transition:opacity .3s;word-break:break-all}
+    word-break:break-all;animation:toast-in 200ms var(--t-ease)}
   .toast.err{background:var(--negative)}
-  .toast.out{opacity:0}
+  .toast.out{opacity:0;transform:translateY(-6px);transition:opacity 280ms,transform 280ms}
+  @keyframes toast-in{from{opacity:0;transform:translateY(-6px)}}
 
   @media (max-width:880px){
     .layout{flex-direction:column;height:auto;min-height:100vh}
@@ -319,6 +338,20 @@
     .txt{grid-column:2}
     .tools input[type=search]{width:150px}
     .lib{padding:5vh 16px 40px}
+  }
+
+  /* 7.10 系统减弱动效·通用兜底:主台无细粒度 reduce 块,此兜底即全部——
+     所有动画/过渡压到 .01ms 跑一次(pop-in/toast-in/view-in 入场瞬时至、
+     .bar i 进度条宽度瞬时至)。与 rec-blink 的无限呼吸语义兼容:iteration-count:1
+     让它「跑一次即静止」,fill 默认 none、结束回落规则值 opacity:1——录制红点与
+     live-row 状态点静态可见,正是 reduce 期望(rec-blink 两处消费点不改)。
+     live.html 侧同款兜底 + 细粒度例外块,两文件同一字面 */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{
+      animation-duration:.01ms !important;
+      animation-iteration-count:1 !important;
+      transition-duration:.01ms !important;
+    }
   }
 </style>
 </head>
@@ -351,9 +384,6 @@
         <button id="tab-rec" role="tab" aria-selected="false" aria-controls="pane-record" type="button">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="5.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M3 8a5 5 0 0 0 10 0M8 13v1.5"/></svg>
           现场录制</button>
-        <button id="tab-live" role="tab" aria-selected="false" aria-controls="pane-live" type="button">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M4 8h2.5M9 8h3M4 10.5h7"/></svg>
-          实时字幕</button>
       </div>
 
       <!-- 上传面板 -->
@@ -419,17 +449,14 @@
           </div>
         </div>
       </div>
-
-      <!-- 实时字幕入口面板 -->
-      <div class="pane" id="pane-live" role="tabpanel" aria-labelledby="tab-live" hidden>
-        <div class="live-entry">
-          <p class="live-desc">会议现场逐句上屏:识别、说话人、修正与翻译即时显示,边开会边看字幕。</p>
-          <button class="go live-go" id="live-go" type="button">开始实时字幕</button>
-          <div class="setrow">停止后自动生成<b>完整文稿</b>,存入下方历史记录(带「实时」标记)。</div>
-          <div class="hint">桌面端以置顶悬浮窗显示,可拖右下角调整大小;网页端在新标签页打开。全程本机处理。</div>
-        </div>
-      </div>
     </div>
+
+    <!-- 实时字幕动作行:字幕「不在本页发生」,故为常驻动作行而非 Tab;
+         状态点与文案由 /api/live/state 驱动(独立慢定时器),整行可点 -->
+    <button class="live-row" id="liveRow" type="button" title="打开实时字幕悬浮窗或新标签页">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="txt" id="liveRowText" aria-live="polite">实时字幕 · 开悬浮窗或新标签页</span>
+    </button>
 
     <div class="sec">历史记录</div>
     <div class="hist" id="hist"></div>
@@ -468,7 +495,10 @@
 <script src="recorder.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-let jobs = [], current = null, lastStatus = null, pollTimer = null, libView = false;
+/* 单一视图状态:view = {type:'empty'|'job'|'lib', id?},由 hash 路由(route)唯一写入;
+   loadSeq 是渲染代际守卫:任何视图切换或新 load 都使在途的详情渲染过期 */
+let jobs = [], view = null, curTab = 'upload', lastStatus = null, pollTimer = null;
+let loadSeq = 0;
 let segs = [], names = {}, spmap = {}, lastPlayIdx = -1, rowEls = [];
 
 const STAGE_LABEL = {queued:'排队中', converting:'转码音频', transcribing:'语音转录',
@@ -483,7 +513,8 @@ function toast(msg, kind){
   if(kind === 'err') t.setAttribute('role', 'alert');
   t.textContent = msg;
   $('#toasts').appendChild(t);
-  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 350); }, 4000);
+  const ttl = kind === 'err' ? 7000 : 4000;   // 7.12:错误给足阅读时间,普通 4s
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, ttl);
 }
 function armConfirm(btn, confirmText, action){
   if(btn.dataset.armed === '1'){
@@ -533,24 +564,35 @@ $('#pop-speakers').onchange = e => { settings.speakers = e.target.value; saveSet
 $('#pop-voice').onchange = e => { settings.voiceprint = e.target.checked; saveSettings(); };
 syncSettingsUI();
 
-/* ---------- 入口 Tab ---------- */
+/* ---------- 入口 Tab 与侧栏激活态 ---------- */
 const isDesktop = !!(window.desk && window.desk.isDesktop);
-const TAB_LIST = [['up','upload'], ['rec','record'], ['live','live']];
-function setTab(which){
+/* 实时字幕不是 Tab(WP2):字幕「不在本页发生」,入口是下方 #liveRow 动作行,
+   Tab 条只保留「往本页投喂任务」的两类 */
+const TAB_LIST = [['up','upload'], ['rec','record']];
+/* 侧栏 chrome 随视图同步:说话人库视图时 libbtn 高亮、三个 Tab 全部退出选中
+   (此前 .side-foot.on 是死样式,JS 从未加过;离开库视图反向恢复 curTab) */
+function syncChrome(){
+  const lib = !!view && view.type === 'lib';
+  $('#libbtn').classList.toggle('on', lib);
   for(const [key, pane] of TAB_LIST){
-    const on = pane === which;
+    const on = !lib && pane === curTab;
     $('#tab-' + key).classList.toggle('on', on);
     $('#tab-' + key).setAttribute('aria-selected', on);
-    $('#pane-' + pane).hidden = !on;
+    $('#pane-' + pane).hidden = lib || !on;
   }
 }
-$('#tab-up').onclick = () => setTab('upload');
-$('#tab-rec').onclick = () => setTab('record');
-$('#tab-live').onclick = () => setTab('live');
+function setTab(which){
+  curTab = which;
+  syncChrome();
+  if(view && view.type === 'empty') renderEmpty();   // 空态文案随 Tab 出 upload/record 变体
+}
+$('#tab-up').onclick = () => { setTab('upload'); if(view && view.type === 'lib') location.hash = '#'; };
+$('#tab-rec').onclick = () => { setTab('record'); if(view && view.type === 'lib') location.hash = '#'; };
 if(isDesktop) setTab('record');   // 桌面客户端以录制为主任务
 
-/* 实时字幕入口:桌面端拉起/聚焦悬浮窗,网页端新标签页打开独立页 */
-$('#live-go').onclick = () => {
+/* 实时字幕动作行:桌面端拉起/聚焦悬浮窗(旧客户端降级 toast),网页端命名 target
+   开 /live?mode=panel——重复点击聚焦同一标签,防双开(第二个标签 resume 即会话劫持) */
+$('#liveRow').onclick = () => {
   if(isDesktop){
     if(window.desk.openLiveCaption){
       try{ window.desk.openLiveCaption(); }catch(e){ toast('拉起悬浮窗失败:' + e.message, 'err'); }
@@ -559,8 +601,39 @@ $('#live-go').onclick = () => {
     toast('客户端版本过旧,请退出并重新打开「会议录制工作台」以使用实时字幕', 'err');
     return;
   }
-  window.open('/live?mode=panel', '_blank');
+  window.open('/live?mode=panel', 'livePanel');
 };
+
+/* 字幕会话状态(Task 1 契约):active 涵盖 listening+stopping——转正排空期管线
+   仍被占,红点不提前熄灭。独立常驻慢定时器驱动,与任务轮询(pollTimer,仅在存在
+   running 任务时才创建)是两条路径:无会话时也照跑维持空闲态,请求失败静默保持
+   上次状态;页面不可见时暂停拉取,可见即刷。 */
+let liveState = {active:false, started_at:null};
+function liveHHMM(ts){
+  const d = new Date((ts || 0) * 1000);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function renderLiveRow(){
+  const on = !!liveState.active;
+  const txt = !on ? '实时字幕 · 开悬浮窗或新标签页'
+    : (liveState.started_at ? '字幕进行中 · 已开 ' + liveHHMM(liveState.started_at) : '字幕进行中');
+  $('#liveRow').classList.toggle('on', on);
+  const t = $('#liveRowText');
+  if(t.textContent !== txt) t.textContent = txt;   // aria-live:仅真变化才改 DOM,静默期不重复播报
+}
+async function refreshLiveState(){
+  try{
+    const r = await fetch('/api/live/state');
+    if(!r.ok) return;
+    const j = await r.json();
+    liveState = {active: !!j.active, started_at: j.started_at};
+    renderLiveRow();
+  }catch(e){ /* 服务不可达:保持上次状态 */ }
+}
+function liveTick(){ if(!document.hidden) refreshLiveState(); }
+setInterval(liveTick, 12000);
+document.addEventListener('visibilitychange', liveTick);
+refreshLiveState();   // 启动即拉一次,初始态不靠猜
 
 /* ---------- 上传 ---------- */
 const drop = $('#drop'), fileEl = $('#file');
@@ -588,6 +661,7 @@ function resetDrop(){
   window._file = null;
   drop.classList.remove('has');
   $('#drop-text').innerHTML = '拖拽音频到此处,或点击选择<br><b>m4a / wav / mp3 / aac / flac / aiff</b>';
+  $('#title').value = '';   // 7.1:标题一并清空,上一场填过的标题不得串到下一场
   $('#go').disabled = true;
 }
 $('#go').onclick = async () => {
@@ -603,8 +677,8 @@ $('#go').onclick = async () => {
     const j = await r.json();
     if(!r.ok) throw new Error(j.error || r.status);
     resetDrop();
-    setCurrent(j.id);
-    load(); refresh();
+    location.hash = '#' + j.id;   // hashchange → route → render → load(单一写路径)
+    refresh();
   }catch(e){
     toast('上传失败:' + e.message, 'err');
   }finally{
@@ -639,7 +713,6 @@ function recIdle(){
   $('#tab-up').disabled = false;
   $('#pane-upload').classList.remove('locked');
   $('#rec-src-row').classList.remove('locked');
-  $('#setrow-lock') && $('#setrow-lock').remove();
   recLv.style.width = '0';
   if(isDesktop && window.desk.diag) window.desk.diag('rec-state:0');
 }
@@ -719,8 +792,8 @@ $('#rec-stop').onclick = async () => {
     const blob = await rec.stop();
     const job = await MeetRecorder.uploadRecording(blob, recMeta);
     rec = null; recIdle();
-    setCurrent(job.id);
-    load(); refresh();
+    location.hash = '#' + job.id;   // hashchange → route → render → load
+    refresh();
   }catch(e){
     try{ rec && rec.abort(); }catch(err){}
     rec = null; recIdle();
@@ -742,14 +815,94 @@ window.addEventListener('beforeunload', e => {
   }
 });
 
-/* ---------- 历史列表与轮询 ---------- */
+/* ---------- 历史列表与轮询 ----------
+   7.13 轮询不再全量重建:refresh 先算任务列表签名(jobSig 覆盖行渲染全部输入:
+   status/stage/progress/queue_pos/running/title/created_at/duration_s/error/is_live
+   + id 序列 + 当前视图 id),无变化直接 return——零 DOM 写,行内「确认?」武装态与
+   列表滚动位置天然保住;仅 running 任务运行期字段变化 → 按 data-id 就地更新该行
+   .sub 与进度条宽;结构变化(增删/分组迁移/终态/改名/切换视图)才全量重建。 */
 function dayKey(s){ return (s || '').slice(0, 10); }
 function todayKey(){
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+/* 行内副文本与进度条宽的唯一实现:全量重建(addJob)与就地更新(patchRunningRows)
+   共用,两路渲染不漂移 */
+function jobSubText(j){
+  if(j.status === 'done') return j.created_at + (j.duration_s ? ' · ' + fmtDur(j.duration_s) : '');
+  if(j.status === 'error') return j.created_at + (j.error ? ' · ' + errBrief(j.error) : '');
+  if(j.status === 'queued' && j.queue_pos) return '排队中 · 第 ' + j.queue_pos + ' 位';
+  return (j.stage || '') + ' · ' + j.progress + '%';
+}
+function jobBarPct(j){
+  if(j.status === 'queued' && j.queue_pos) return 0;
+  if(j.status === 'done' || j.status === 'error') return null;   // 终态无进度条
+  return j.progress;
+}
+/* 全量签名(JSON 序列化防拼接歧义):任何一项变化都必须在 UI 上有体现 */
+function jobSig(j){
+  return JSON.stringify([j.id, !!j.running, j.title || '', j.created_at || '',
+    j.duration_s ?? 0, j.error || '', !!j.is_live,
+    j.status || '', j.stage || '', j.progress ?? 0, j.queue_pos ?? 0]);
+}
+/* 结构子集:id/分组(running)/标题/创建时间/时长/错误/实时标记——变化即
+   增删/分组迁移/终态/改名级,必须全量重建;title 在内:改名不得被就地更新吞掉 */
+function jobStructSig(j){
+  return JSON.stringify([j.id, !!j.running, j.title || '', j.created_at || '',
+    j.duration_s ?? 0, j.error || '', !!j.is_live]);
+}
+function currentViewKey(){
+  return view && view.type === 'job' ? view.id : '';
+}
+function jobsSignature(){
+  /* todayKey 入签名:跨午夜「今天/更早」分组陈旧在下一个轮询即自愈(评审 Minor) */
+  return currentViewKey() + '\n' + todayKey() + '\n' + jobs.map(jobSig).join('\n');
+}
+/* 就地更新资格:同一视图、行序与 id 一一对应、每行结构字段未变,
+   且字段有变的行都是 running 任务(终态行字段有变保守起见重建) */
+function patchableInPlace(prevJobs, prevKey){
+  if(prevKey !== currentViewKey()) return false;
+  if(!prevJobs || prevJobs.length !== jobs.length) return false;
+  for(let i = 0; i < jobs.length; i++){
+    const a = prevJobs[i], b = jobs[i];
+    if(a.id !== b.id) return false;                          // 增删/重排
+    if(jobStructSig(a) !== jobStructSig(b)) return false;    // 分组迁移/终态/改名
+    if(!b.running && jobSig(a) !== jobSig(b)) return false;  // 终态行字段有变 → 保守重建
+  }
+  return true;
+}
+/* 就地更新:只动 running 行的 .sub 文本与进度条宽,其余行一律不碰 */
+function patchRunningRows(){
+  const wrap = $('#hist');
+  const byId = {};
+  for(const el of wrap.querySelectorAll('.job[data-id]')) byId[el.dataset.id] = el;
+  for(const j of jobs){
+    if(!j.running) continue;
+    const row = byId[j.id];
+    if(!row) continue;
+    const sub = row.querySelector('.sub');
+    if(sub) sub.textContent = jobSubText(j);
+    const bar = row.querySelector('.bar i');
+    const pct = jobBarPct(j);
+    if(bar && pct != null) bar.style.width = pct + '%';
+  }
+}
+let lastJobsSig = null, lastViewKey = null, renderedJobs = null;
 async function refresh(){
   try{ jobs = await (await fetch('/api/jobs')).json(); }catch(e){ return; }
+  /* lib-cnt:待确认声纹数(ensureSpeakers 带缓存,轮询期零额外请求;0 时空串隐藏) */
+  ensureSpeakers().then(syncLibCnt);
+  const sig = jobsSignature();
+  if(sig === lastJobsSig) return;   // 无变化:零 DOM 写,武装态与滚动位置天然保住
+  const prev = renderedJobs, prevKey = lastViewKey;
+  lastJobsSig = sig; lastViewKey = currentViewKey(); renderedJobs = jobs;
+  if(prev && patchableInPlace(prev, prevKey)) patchRunningRows();
+  else rebuildHist();
+  const cnt = jobs.filter(j => j.running).length;
+  if(cnt && !pollTimer) pollTimer = setInterval(tick, 2500);
+  if(!cnt && pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+}
+function rebuildHist(){
   const wrap = $('#hist');
   wrap.innerHTML = '';
   if(!jobs.length){
@@ -773,22 +926,16 @@ async function refresh(){
   };
   function addJob(j){
     const d = document.createElement('div');
-    d.className = 'job' + (j.id === current && !libView ? ' on' : '');
+    d.className = 'job' + (view && view.type === 'job' && j.id === view.id ? ' on' : '');
+    d.dataset.id = j.id;   // 7.13:就地更新按 data-id 找行
     d.setAttribute('role', 'button');
     d.setAttribute('tabindex', '0');
-    let sub = '', extra = '', del = '';
-    if(j.status === 'done'){
-      sub = j.created_at + (j.duration_s ? ' · ' + fmtDur(j.duration_s) : '');
-    }else if(j.status === 'error'){
-      sub = j.created_at;
+    const sub = jobSubText(j);
+    let extra = '';
+    if(j.status === 'error'){
       extra = '<span class="pill err">失败</span>';
-      if(j.error) sub += ' · ' + errBrief(j.error);
-    }else if(j.status === 'queued' && j.queue_pos){
-      sub = '排队中 · 第 ' + j.queue_pos + ' 位';
-      extra = '<div class="bar"><i style="width:0"></i></div>';
-    }else{
-      sub = (j.stage || '') + ' · ' + j.progress + '%';
-      extra = '<div class="bar"><i style="width:' + j.progress + '%"></i></div>';
+    }else if(j.status !== 'done'){   // 进行中才有进度条(queued 有位次时宽 0)
+      extra = '<div class="bar"><i style="width:' + jobBarPct(j) + '%"></i></div>';
     }
     // 终态才可删除;进行中由详情页「放弃」处理
     const deletable = j.status === 'done' || j.status === 'error';
@@ -797,16 +944,16 @@ async function refresh(){
       (deletable ? '<button class="jdel" title="删除任务" aria-label="删除任务">' +
         '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2.5 4h11M6 4V2.8h4V4M4 4l.7 9h6.6L12 4M6.5 6.8v4M9.5 6.8v4"/></svg></button>' : '');
     d.querySelector('.t').textContent = j.title;
-    const open = () => { if(current !== j.id || libView){ libView = false; setCurrent(j.id); refresh(); load(); } };
+    const open = () => { if(!view || view.type !== 'job' || view.id !== j.id) location.hash = '#' + j.id; };
     d.onclick = open;
     d.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); open(); } };
     const delBtn = d.querySelector('.jdel');
     if(delBtn){
       delBtn.onclick = e => {
         e.stopPropagation();
-        armConfirm(delBtn, '确认?', async () => {
+        armConfirm(delBtn, '删除后音频与文稿不可恢复,确认?', async () => {
           await fetch('/api/jobs/' + j.id, {method:'DELETE'});
-          if(current === j.id){ current = null; history.replaceState(null, '', '#'); renderEmpty(); }
+          if(view && view.type === 'job' && view.id === j.id) location.hash = '#';   // 删的是当前视图 → 空态
           refresh();
         });
       };
@@ -816,30 +963,81 @@ async function refresh(){
   addGroup('处理中(' + running.length + ')', running);
   addGroup('今天', today);
   addGroup('更早', older);
-
-  const cnt = running.length;
-  if(cnt && !pollTimer) pollTimer = setInterval(tick, 2500);
-  if(!cnt && pollTimer){ clearInterval(pollTimer); pollTimer = null; }
 }
 async function tick(){
+  refreshLiveState();   // 任务轮询期顺带刷字幕会话状态(不 await,独立轻路径;2.5s 节奏更快看到红点切换)
   await refresh();
-  if(!current || libView) return;
-  const j = jobs.find(x => x.id === current);
+  if(!view || view.type !== 'job') return;
+  const j = jobs.find(x => x.id === view.id);
   if(j && (j.running || j.status !== lastStatus)) load(true);
 }
 
-/* ---------- hash 路由 ---------- */
-function setCurrent(id){
-  current = id;
-  history.replaceState(null, '', id ? '#' + id : '#');
+/* ---------- hash 路由:单一写路径 + 单一视图状态 ----------
+   程序化导航一律 location.hash 赋值(自动入历史栈并触发 hashchange),
+   不走 History API 注入——与 hash 赋值并存必然双处理或漏处理;
+   hashchange 与 popstate 都进 route(),幂等短路吸收双发(返回/前进会双触发);
+   #<job_id> 深链格式是桌面端已发版契约(desktop/main.js 的 loadURL('/#'+id)),
+   同文档 fragment 导航触发的正是 hashchange——这是本次重构要修的 P0。 */
+function applyRoute(hash){
+  const h = String(hash ?? '');
+  const id = h.charAt(0) === '#' ? h.slice(1) : h;
+  if(!id) return {type:'empty'};                        // '' 或 '#':空态
+  if(id === 'speakers') return {type:'lib'};
+  if(id.length <= 80 && /^[\w-]+$/.test(id)) return {type:'job', id};
+  return {type:'empty'};   // 非法 hash(中文/超长/未知格式)落空态,不报错
 }
+function route(){
+  const v = applyRoute(location.hash);
+  if(view && v.type === view.type && v.id === view.id) return;   // 目标已渲染,不动
+  render(v);
+}
+/* 主区渲染唯一入口:renderEmpty / showLib / load 都从这里调度。
+   每次视图切换都作废在途 load(loadSeq++)并重刷历史高亮与 lib-cnt(refresh),
+   返回键/深链等纯导航路径因此无需各自补刷。 */
+/* 主区一次性淡入(评审 Important 修复):route 对同视图幂等短路,render 只在
+   view.type/id 真变化(含首启)时进入——淡入类只在这里挂,animationend 摘除;
+   运行页 2.5s 轮询的 load(true) 整块替换 innerHTML 不经过 render,绝不重放 */
+function playViewIn(){
+  const m = $('#main');
+  m.classList.remove('view-in');
+  void m.offsetWidth;   // 强制 reflow:快速连切时让 180ms 动画从头重放
+  m.classList.add('view-in');
+  m.addEventListener('animationend', () => m.classList.remove('view-in'), {once:true});
+}
+function render(v){
+  view = v;
+  syncChrome();
+  if(v.type === 'empty'){ loadSeq++; renderEmpty(); }
+  else if(v.type === 'lib'){ loadSeq++; showLib(); }
+  else load();
+  playViewIn();   // 仅真切换淡入(见上);同视图重渲染不经过这里
+  refresh();
+}
+/* 空态唯一实现,与初始标记同元素集合(波形 SVG/h1/p/acts/meas);
+   文案随侧栏 Tab 出两变体:upload → 上传引导,record → 录制引导 */
 function renderEmpty(){
-  libView = false;
+  const rec = curTab === 'record';
   $('#main').innerHTML =
-    '<div class="empty"><h1>上传一场会议录音,或直接开始录制</h1>' +
-    '<p>完成后这里会显示带说话人与时间戳的文稿,点击时间戳可跳转播放。</p>' +
-    '<div class="acts"><button class="abtn" id="empty-up" type="button">选择文件…</button>' +
-    '<button class="abtn rec" id="empty-rec" type="button"><i aria-hidden="true"></i>开始录制</button></div></div>';
+    '<div class="empty">' +
+      '<svg width="40" height="40" viewBox="0 0 22 22" aria-hidden="true">' +
+        '<g fill="#b7bdc4">' +
+          '<rect x="0" y="8" width="2.6" height="6" rx="1.3"/>' +
+          '<rect x="4.8" y="4.8" width="2.6" height="12.4" rx="1.3"/>' +
+          '<rect x="9.7" y="1.5" width="2.6" height="19" rx="1.3"/>' +
+          '<rect x="14.6" y="6" width="2.6" height="10" rx="1.3"/>' +
+          '<rect x="19.4" y="8.8" width="2.6" height="4.4" rx="1.3"/>' +
+        '</g>' +
+      '</svg>' +
+      '<h1>' + (rec ? '按下开始录制,录音会出现在这里' : '上传一场会议录音,或直接开始录制') + '</h1>' +
+      '<p>完成后这里会显示带说话人与时间戳的文稿,点击时间戳可跳转播放。</p>' +
+      '<div class="acts">' +
+        '<button class="abtn" id="empty-up" type="button">' +
+          '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 11V2.5M4.5 6 8 2.5 11.5 6M2.5 13.5h11"/></svg>' +
+          '选择文件…</button>' +
+        '<button class="abtn rec" id="empty-rec" type="button"><i aria-hidden="true"></i>开始录制</button>' +
+      '</div>' +
+      '<div class="meas">实测参考:86 分钟双说话人录音,转录约 5 分钟,说话人识别约 12 分钟。</div>' +
+    '</div>';
   $('#empty-up').onclick = () => { setTab('upload'); fileEl.click(); };
   $('#empty-rec').onclick = () => setTab('record');
 }
@@ -856,10 +1054,16 @@ function errBrief(text){
 
 /* ---------- 详情视图 ---------- */
 async function load(quiet){
-  if(libView) return;
-  const r = await fetch('/api/jobs/' + current);
-  if(!r.ok){ setCurrent(null); refresh(); return; }
+  if(!view || view.type !== 'job') return;
+  /* 代际守卫:fetch 前快照序号,每个 await 之后、render 之前校验,
+     过期(已有更新的导航/新 load)即弃——防快速连点两任务时慢者后到覆盖新视图 */
+  const seq = ++loadSeq, id = view.id;
+  const stale = () => seq !== loadSeq || !view || view.type !== 'job' || view.id !== id;
+  const r = await fetch('/api/jobs/' + id);
+  if(stale()) return;
+  if(!r.ok){ location.hash = '#'; return; }   // 任务已不存在:回空态(仍走单一写路径)
   const {job: j, segments} = await r.json();
+  if(stale()) return;
   lastStatus = j.status;
   const main = $('#main');
 
@@ -914,7 +1118,9 @@ async function load(quiet){
 
   /* 完成视图 */
   segs = segments; names = j.speaker_names || {}; spmap = j.speaker_map || {}; lastPlayIdx = -1;
-  await ensureSpeakers();
+  const spk = await ensureSpeakers(true);   // 强制重拉:开任务/任务刚完成时 chips 与角标都要新数据
+  if(stale()) return;
+  syncLibCnt(spk);
   const n = Math.max(j.num_speakers_detected || 1, ...segments.map(s => s.speaker + 1));
   let chips = '';
   for(let i = 0; i < n; i++){
@@ -942,7 +1148,7 @@ async function load(quiet){
       '<div class="trow"><h1 id="doc-title" title="点击修改标题"></h1><span class="grow"></span>' +
         '<button class="tbtn" id="del">删除</button></div>' +
       '<div class="meta-line num">' + fmtDur(j.duration_s) + ' · ' + segments.length + ' 段 · ' + esc(j.created_at) + '</div>' +
-      '<audio id="au" controls preload="none" src="/api/jobs/' + j.id + '/audio"></audio>' +
+      '<audio id="au" controls preload="metadata" src="/api/jobs/' + j.id + '/audio"></audio>' +
       '<div class="spkrow"><span class="cap">说话人:</span><span class="chips">' + chips + '</span></div>' +
       '<div class="tools">' +
         '<input type="search" id="q" placeholder="搜索文稿…" aria-label="搜索文稿">' +
@@ -997,19 +1203,26 @@ async function load(quiet){
   for(const inp of main.querySelectorAll('.chip input')){
     inp.onchange = async () => {
       const sp = inp.dataset.sp;
-      const v = inp.value.trim() || ('说话人' + (+sp + 1));
-      inp.value = v;
       const chip = inp.closest('.chip');
       const gid = chip && chip.dataset.gid;
+      const cur = displayName(sp);
+      const raw = inp.value.trim();
       if(gid){
-        // 全局说话人:改名对所有会议生效
-        await fetch('/api/speakers/' + encodeURIComponent(gid), {method:'PATCH',
-          headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:v})});
-      }else{
-        await fetch('/api/jobs/' + j.id, {method:'PATCH',
-          headers:{'Content-Type':'application/json'}, body:JSON.stringify({speaker_names:{[sp]:v}})});
-        names[sp] = v;
+        // 全局说话人:改动跨会议,应用范围不能静默决定——出行内确认条双路径
+        if(!raw || raw === cur){
+          // 空白/改回原值:数据不动,同时撤回在途确认条(条上提议须与输入框现值一致)
+          inp.value = cur; dismissRenameBar(); return;
+        }
+        inp.value = raw;
+        showRenameConfirm(j, inp, gid, sp, raw);
+        return;
       }
+      const v = raw || ('说话人' + (+sp + 1));
+      inp.value = v;
+      const r = await fetch('/api/jobs/' + j.id, {method:'PATCH',
+        headers:{'Content-Type':'application/json'}, body:JSON.stringify({speaker_names:{[sp]:v}})});
+      if(!r.ok){ inp.value = displayName(sp); toast('改名失败:' + ((await r.json()).error || r.status), 'err'); return; }
+      names[sp] = v;
       draw($('#q').value.trim());
     };
   }
@@ -1034,6 +1247,12 @@ async function ensureSpeakers(force){
   catch(e){ speakerCache = {speakers:[], suspects:[]}; }
   return speakerCache;
 }
+/* lib-cnt 角标:拿到(最好是强拉的)库数据处直接同步,避免 refresh 用旧缓存
+   算出过期数字——confirm/separate 后角标必须立刻归算 */
+function syncLibCnt(d){
+  const n = ((d && d.suspects) || []).length;
+  $('#lib-cnt').textContent = n ? String(n) : '';
+}
 function displayName(sp, n){
   if(names[String(sp)]) return names[String(sp)];
   const m = spmap[String(sp)];
@@ -1042,6 +1261,64 @@ function displayName(sp, n){
     if(hit && hit.name) return hit.name;
   }
   return '';
+}
+
+/* WP5 chip 改名双路径:gid 说话人的改动跨会议,应用范围不能静默决定。
+   同时刻全页至多一条确认条(再次 onchange 先拆旧条,防重复弹出)。
+   拆条时机用 pointerdown:监听在 blur→change 里注册,而触发本次 change 的
+   那次按压的 pointerdown 已经发生——同一 interaction 尾随的 click 冒泡
+   不会再有新 pointerdown,绝不误拆刚挂上的确认条(评审 Important 修复;
+   旧版挂 click,「点别处提交改名」时条被同一次点击秒拆,新名滞留输入框零落盘,
+   下次 load 即回退)。 */
+let renameBarTear = null;
+function dismissRenameBar(){
+  const t = renameBarTear;
+  renameBarTear = null;
+  if(t) t(false);   // 常规拆条不碰输入框:再改名字换条时输入框持着新 raw,还原会吃掉用户输入;
+                    // 还原当前显示名仅由条外 pointerdown 的 tear(true) 负责
+}
+function showRenameConfirm(j, inp, gid, sp, v){
+  /* 行内确认条复用库页 .suggest 样式族(不新建组件),挂在 .spkrow 之后;
+     不显示会议数——弱证据门(<3 段不加锚)下锚点数 ≠ 会议数,写数字必错 */
+  dismissRenameBar();
+  const row = inp.closest('.spkrow');
+  if(!row || !row.parentNode) return;          // 视图已被重绘(切任务/出库),确认失去对象
+  const cur = displayName(sp);
+  const bar = document.createElement('div');
+  bar.className = 'suggest';
+  bar.innerHTML = '<div class="cap">「' + esc(v) + '」应用到哪些会议?</div>' +
+    '<div class="acts"><button class="qbtn primary" data-ra="all">应用到所有会议</button>' +
+    '<button class="qbtn" data-ra="here">仅此会议</button></div>';
+  row.after(bar);
+  const tear = restore => {
+    renameBarTear = null;
+    bar.remove();
+    document.removeEventListener('pointerdown', onDoc);
+    if(restore) inp.value = cur;               // 应用路径传 false:输入框保留新名待落盘
+  };
+  const onDoc = e => {
+    if(bar.contains(e.target) || e.target === inp) return;  // 条内按压交按钮;输入框再编辑走 onchange 换新条
+    tear(true);
+  };
+  document.addEventListener('pointerdown', onDoc);
+  renameBarTear = tear;
+  bar.querySelector('[data-ra="all"]').onclick = async () => {
+    tear(false);
+    const r = await fetch('/api/speakers/' + encodeURIComponent(gid), {method:'PATCH',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:v})});
+    if(!r.ok){ toast('全局改名失败:' + ((await r.json()).error || r.status), 'err'); return; }
+    toast('已全局改名,相关会议文稿已更新');
+    await ensureSpeakers(true);              // 库缓存换新后重绘:无本地覆盖名者正文即时随库更新
+    draw($('#q').value.trim());
+  };
+  bar.querySelector('[data-ra="here"]').onclick = async () => {
+    tear(false);
+    const r = await fetch('/api/jobs/' + j.id, {method:'PATCH',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({speaker_names:{[sp]:v}})});
+    if(!r.ok){ inp.value = cur; toast('改名失败:' + ((await r.json()).error || r.status), 'err'); return; }
+    names[sp] = v;                           // 任务级覆盖 > 全局库(既有优先级,非缺陷)
+    draw($('#q').value.trim());
+  };
 }
 
 function bindTitleEdit(j){
@@ -1097,9 +1374,10 @@ function draw(q){
   rowEls = new Array(segs.length).fill(null);
   const frag = document.createDocumentFragment();
   let shown = 0;
+  const ql = q ? q.toLowerCase() : '';   // 7.6:过滤与高亮同一折叠,搜小写命中大写
   segs.forEach((s, idx) => {
-    const nm = names[String(s.speaker)] || ('说话人' + (s.speaker + 1));
-    if(q && !(s.text.includes(q) || nm.includes(q))) return;
+    const nm = displayName(s.speaker) || ('说话人' + (s.speaker + 1));
+    if(q && !(s.text.toLowerCase().includes(ql) || nm.toLowerCase().includes(ql))) return;
     shown++;
     const d = document.createElement('div');
     d.className = 'seg';
@@ -1131,10 +1409,9 @@ function draw(q){
 function bindDelete(j){
   const b = $('#del'); if(!b) return;
   b.onclick = () => {
-    armConfirm(b, '再点一次确认删除', async () => {
+    armConfirm(b, '删除后音频与文稿不可恢复,确认?', async () => {
       await fetch('/api/jobs/' + j.id, {method:'DELETE'});
-      setCurrent(null);
-      renderEmpty();
+      location.hash = '#';   // 删除即离开该任务:hash 赋值 → route → 空态
       refresh();
     });
   };
@@ -1155,13 +1432,19 @@ function bindReveal(j){
 }
 
 /* ---------- 说话人库 ---------- */
-$('#libbtn').onclick = async () => {
-  libView = true;
-  await showLib();
-  refresh();
+/* 入口走 hash 路由:#speakers 直开/刷新/返回键都停在库视图;激活态由 render→syncChrome 维护。
+   已在库视图时 hash 赋值不触发事件(幂等),故保留一次同视图强刷(与旧行为对齐) */
+$('#libbtn').onclick = () => {
+  if(view && view.type === 'lib') showLib();
+  else location.hash = '#speakers';
 };
 async function showLib(){
+  /* 代际守卫(与 load 同款):库在途强拉期间切到任务视图,慢响应后到
+     不得把主区覆盖回库视图——快加载的 load 先落地渲染文稿,过期 showLib 即弃 */
+  const seq = loadSeq;
   const d = await ensureSpeakers(true);
+  if(seq !== loadSeq || !view || view.type !== 'lib') return;
+  syncLibCnt(d);   // 角标随库强拉即时归算(confirm/separate 后立刻见 0)
   const main = $('#main');
   const SPK_COLORS = ['var(--sp0-ink)','var(--sp1-ink)','var(--sp2-ink)','var(--sp3-ink)','var(--sp4-ink)','var(--sp5-ink)'];
   let rows = '';
@@ -1225,7 +1508,8 @@ function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<
 function hl(text, q){
   const safe = esc(text);
   if(!q) return safe;
-  const re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'g');
+  /* 7.6:gi 与过滤同一折叠大小写不敏感命中;捕获组原样回填,原文大小写不被改写 */
+  const re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
   return safe.replace(re, '<mark>$1</mark>');
 }
 function fmtDur(sec){
@@ -1242,11 +1526,9 @@ function fmtTs(ms){
 }
 
 /* ---------- 启动 ---------- */
-if(location.hash.length > 1 && /^[\w-]+$/.test(location.hash.slice(1))){
-  current = location.hash.slice(1);
-  load();
-}
-refresh();
+window.addEventListener('hashchange', route);
+window.addEventListener('popstate', route);   // 返回/前进与 hashchange 双发,幂等短路吸收
+route();   // 唯一入口:空态 / 深链 #<job_id> / #speakers 全部从 hash 解析渲染
 </script>
 </body>
 </html>

@@ -12,10 +12,22 @@
   :root{
     color-scheme: light dark;
     --lc-txt:#fff;                            /* 定稿句 ≈8.1:1 */
-    --lc-f1:rgba(255,255,255,.48);            /* pass1 待修正,过渡态有意更暗 ≈3.2:1 */
+    --lc-f1:rgba(255,255,255,.48);            /* pass1 待修正,过渡态有意更暗 ≈3.2:1;llm-off 会话直接升白 */
     --lc-partial:rgba(255,255,255,.68);       /* 正在说 ≈4.8:1,与 f1 拉开 20pp 瞥读可分 */
     --lc-tr:rgba(255,255,255,.62);            /* 跟句译文 ≈4.3:1(次级注释,接受) */
     --lc-faint:rgba(255,255,255,.35);         /* 静音分隔等最弱层 */
+
+    /* 说话人六色(--lsp0..5):与主台 index.html --sp0-ink..--sp5-ink 六色相一一对应的
+       亮化变体——「同一个人跨端同色相」是硬要求,明度按底色分档(主台浅底用深 ink,
+       live 深底用亮化值)。选值理由:对最不利深底 #1d2026 实测对比 6.4~8.9:1,
+       远超字幕瞥读 3:1 线,与原三色档(#4C9AFF 5.7 / #FFB02E 8.9)同明度风格。
+       live.js SPEAKER_COLORS 是同一套字面,改动须三处同步(index --sp*-ink / 此处 / live.js)。 */
+    --lsp0:#6db3ff;   /* --lsp0 ↔ index --sp0-ink #1d5290 亮化(蓝),对 #1d2026 ≈7.4:1 */
+    --lsp1:#5ecb96;   /* --lsp1 ↔ index --sp1-ink #1f6b45 亮化(绿),对 #1d2026 ≈8.1:1 */
+    --lsp2:#FFB02E;   /* --lsp2 ↔ index --sp2-ink #8f520c 亮化(琥珀),对 #1d2026 ≈8.9:1;沿用原 live 琥珀 */
+    --lsp3:#b79cff;   /* --lsp3 ↔ index --sp3-ink #65449f 亮化(紫),对 #1d2026 ≈7.2:1 */
+    --lsp4:#4fc8bf;   /* --lsp4 ↔ index --sp4-ink #14615f 亮化(青),对 #1d2026 ≈8.0:1 */
+    --lsp5:#f27da5;   /* --lsp5 ↔ index --sp5-ink #96365a 亮化(玫红),对 #1d2026 ≈6.4:1 */
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -96,6 +108,7 @@
   .blog .stx{min-width:0;overflow-wrap:break-word} /* 词内不硬断(anywhere 已弃用) */
   .blog .srow.f1 .stx{color:var(--lc-f1)}
   .blog .srow.llm .stx{color:var(--lc-txt)}
+  .llm-off .blog .srow.f1 .stx{color:var(--lc-txt)}   /* 7.8 无修正会话:pass1 句即定稿,f1 升白 */
   .blog .str{display:block;font-size:11.5px;color:var(--lc-tr)}    /* 句数对齐时的跟句译文 */
   .blog .trblk{font-size:11.5px;color:rgba(255,255,255,.5);padding-left:18px;
     overflow-wrap:break-word}                       /* 句数不等时的整窗译文回落 */
@@ -111,11 +124,12 @@
   }
   .bar:hover .grab{opacity:1}
   .bar .grab:active{cursor:grabbing}
+  /* 7.11 三按钮常显:原 hover 门控(opacity:0 + pointer-events:none)已删,
+     网页叠加态右上角三按钮直接可见可点;桌面悬浮窗 PAGE_CSS 的 opacity/pointer-events
+     !important 覆盖自此成为冗余,保留不动(不改 live-window.js) */
   .bar .actions{
     position:absolute;right:8px;top:-34px;display:flex;gap:6px;
-    opacity:0;transition:opacity .15s;pointer-events:none;
   }
-  .bar:hover .actions{opacity:1;pointer-events:auto}
   .bar .actions button{
     height:26px;padding:0 11px;border:0;border-radius:7px;cursor:pointer;font-size:12.5px;
     background:rgba(12,14,18,.72);backdrop-filter:blur(12px);color:#e9ebef;
@@ -123,19 +137,41 @@
   }
   .bar .actions button:hover{background:rgba(38,42,50,.9)}
   .bar .actions .danger{color:#ff8a80}
+  /* 7.9 caret 条件闪烁:partial 行默认无 caret(静默期不闪,旧恒闪 steps 硬切已废);
+     行带 .typing(live.js renderActive 按 partial 空/非空 toggle)才亮出并平滑呼吸。
+     keyframes 只写 50%,0%/100% 落元素指定值 opacity:1——ease 曲线由 1 缓入缓出到 .15 */
   .caret{display:inline-block;width:2px;height:1.05em;margin-left:2px;vertical-align:-2px;
-    background:currentColor;animation:blink 1.1s steps(2,start) infinite}
-  @keyframes blink{50%{opacity:0}}
-  /* 系统减弱动效:入场淡入与 caret 闪烁全部停用(caret 恒显,partial 静态) */
+    background:currentColor;opacity:0}
+  .typing .caret{opacity:1;animation:caretBreath 1.1s ease infinite}
+  @keyframes caretBreath{50%{opacity:.15}}
+  /* 系统减弱动效·细粒度语义块:入场淡入停用;caret 按 7.9 三态整合——typing 时
+     静态恒显(animation:none 关掉呼吸,opacity:1 是规则值),非 typing 走 .caret
+     默认 opacity:0 隐藏。旧「.caret{animation:none}恒显」语义已随 7.9 改写 */
   @media (prefers-reduced-motion: reduce){
     .blog .e{animation:none}
-    .caret{animation:none}
+    .typing .caret{animation:none;opacity:1}
+  }
+  /* 系统减弱动效·通用兜底(7.10):细粒度块之上的最后防线,面板 .e 入场、
+     .phead .pulse、badge/box-shadow 过渡等全部瞬时至。与细粒度块是「兜底 + 例外」
+     关系:兜底靠 !important 只压时长/次数,细粒度块管语义例外(哪些彻底关掉)。
+     对 .typing .caret:细粒度 animation:none 关掉动画名,兜底的 .01ms 无从生效;
+     即便没有细粒度例外,呼吸动画 .01ms 跑一次即止、fill 默认 none,结束回落规则值
+     opacity:1——仍是静态恒显,两块层叠语义一致。无限动画(rec-blink/pulse 类)被
+     iteration-count:1 变「跑一次即静止」,结束回落规则值 = 静态可见,正确 */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{
+      animation-duration:.01ms !important;
+      animation-iteration-count:1 !important;
+      transition-duration:.01ms !important;
+    }
   }
   .chip{
     display:inline-flex;align-items:center;font-size:11.5px;padding:2px 9px;border-radius:999px;
     background:rgba(255,179,46,.16);color:#ffc46b;border:1px solid rgba(255,179,46,.32);
     white-space:nowrap;
   }
+  .chip.clickable{cursor:pointer}                       /* 7.14 重连终态:chip 可点手动重试 */
+  .chip.clickable:hover{text-decoration:underline}
   .bar .statebar{display:flex;gap:8px;margin-top:9px}
   .bar .statebar:empty{display:none}
 
@@ -178,6 +214,9 @@
   .e .who{flex:none;font-size:12px;font-weight:650;color:light-dark(#575f6b,rgba(233,235,239,.6))}
   .e .txt{min-width:0;overflow-wrap:anywhere;font-size:14.5px}
   .e.f1 .txt,.e.llm .txt{color:light-dark(#7c8592,rgba(233,235,239,.62))}
+  /* 7.8 面板侧同升「定稿正文色」:面板随系统深浅色,浅色下半白底垫 #fff 不可读,
+     故浅色取面板正文色 #1b1e23、深色取 --lc-txt(账本侧无此问题,直接 var(--lc-txt)) */
+  .llm-off .pbody .e.f1 .txt{color:light-dark(#1b1e23,var(--lc-txt))}
   .e .tr{display:block;margin-top:2px;padding-left:17px;font-size:12.5px;
     color:light-dark(#575f6b,rgba(233,235,239,.58));overflow-wrap:anywhere}
   .active{margin:8px 0 4px;padding:2px 0;color:light-dark(#7c8592,rgba(233,235,239,.55));
@@ -235,6 +274,15 @@
     padding:7px 18px;
   }
   .ecard .elink:hover{background:rgba(138,180,248,.1)}
+  /* WP6 成功态:endLink 升主按钮——复用 .ego 的主按钮视觉(浅底深字 650,块级大按钮)。
+     a 元素没有按钮的默认居中,用 flex 居中;primary 类由 JS 在成功分支添加 */
+  .ecard .elink.primary{
+    display:flex;align-items:center;justify-content:center;
+    margin:18px auto 0;height:38px;min-width:180px;padding:0 18px;
+    border:0;border-radius:9px;background:#e9ebef;color:#14171c;
+    font-size:14px;font-weight:650;text-decoration:none;
+  }
+  .ecard .elink.primary:hover{background:#fff;color:#14171c}
   .ecard .ego{
     display:block;margin:18px auto 0;height:38px;min-width:180px;border:0;border-radius:9px;
     background:#e9ebef;color:#14171c;font-size:14px;font-weight:650;cursor:pointer;
@@ -253,7 +301,7 @@
 <section class="setup" id="setup">
   <form class="card" id="setupForm">
     <h1><i></i>实时字幕</h1>
-    <p class="sub">会议现场实时字幕 · 音频只在本机处理,不经任何外部服务</p>
+    <p class="sub">音频不出本机;开启翻译时,识别文本交由外部 LLM 修正与翻译</p>
     <div class="fld">
       <label for="fTitle">标题</label>
       <input id="fTitle" type="text" maxlength="80" placeholder="会议标题(可留空)">
@@ -279,12 +327,12 @@
     <div class="fld">
       <label for="fTgt">翻译目标</label>
       <select id="fTgt">
-        <option value="">不翻译</option>
+        <option value="" selected>不翻译</option>
         <option value="zh">中文</option>
-        <option value="en" selected>英文</option>
+        <option value="en">英文</option>
         <option value="ja">日文</option>
       </select>
-      <p class="note">识别与说话人即时上屏;修正与翻译在句尾停顿后数秒自动替换;全程仅在本机使用。</p>
+      <p class="note" id="langNote">识别与说话人分离即时可用,全程在本机完成;修正与翻译事件到达时自动上屏。</p>
     </div>
     <button class="go" id="goBtn" type="submit"><i></i>开始实时字幕</button>
     <p class="note" id="resumeNote" hidden></p>
@@ -350,11 +398,16 @@
       <svg width="22" height="22" viewBox="0 0 22 22"><path d="M4.5 11.5l4.2 4.2 8.8-9.4" fill="none"
         stroke="#34c759" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
-    <div class="etitle" id="endTitle">录音已保存 · 正在生成完整文稿</div>
-    <p class="esub" id="endSub">完整文稿生成后可在转录工作台查看。</p>
+    <!-- WP6 三分态:标题/副文案/按钮显隐由 onStopped 三分支渲染(showEndSuccess/
+         showEndFailure),此处只放占位(每次亮卡前必被覆写);#endRetry/#endRetryNote
+         仅失败态亮出,寻回态机见 live.js retryFinalize -->
+    <div class="etitle" id="endTitle">会话已结束</div>
+    <p class="esub" id="endSub"></p>
     <a class="elink" id="endLink" hidden href="/">打开文稿</a>
     <button class="ego" id="endNew" type="button">开始新会话</button>
+    <button class="ego ghost" id="endRetry" type="button" hidden>立即重试转正</button>
     <button class="ego ghost" id="endClose" type="button">关闭</button>
+    <p class="err" id="endRetryNote" hidden></p>
   </div>
 </div>
 

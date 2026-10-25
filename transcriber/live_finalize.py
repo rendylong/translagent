@@ -16,10 +16,11 @@ finalize_session(session_dir, speakers_hint, force_tail, jobs_dir, queue) -> job
       finalized 残目录由 recover_all 清)。
   返回 job_id。全程同步,由调用方决定在哪个线程跑(live 停止路径在转正线程)。
 
-recover_all(live_root) -> list[(session_id, job_id)]
+recover_all(live_root, exclude=frozenset()) -> list[(session_id, job_id)]
   启动扫描(app.live_recover 真身):live/ 下含 live_meta.json 的目录——
   非 finalized → 转正(无尾窗补跑);finalized 残留 → 只删目录;
   无 live_audio.wav 或 ≤44 字节的空壳 → 无可救音频,直接删。单个目录失败不阻断其余。
+  exclude:会话 id 集合,运行期 recover_now 用来跳过活跃会话的目录。
 """
 import json
 import os
@@ -129,14 +130,20 @@ def finalize_session(session_dir, speakers_hint=None, force_tail=None,
     return job_id
 
 
-def recover_all(live_root):
-    """启动扫描 live/:非终态会话全部转正(无尾窗补跑),终态残目录与空壳清理。"""
+def recover_all(live_root, exclude=frozenset()):
+    """启动扫描 live/:非终态会话全部转正(无尾窗补跑),终态残目录与空壳清理。
+
+    exclude:会话 id(目录名)集合——运行期 recover_now 传入进程内活跃会话,
+    这些目录正被 LiveSession 写入(边录边落盘),读/删/转正都是越界,整体跳过;
+    启动期不传(注册表必空)。"""
     out = []
     if not os.path.isdir(live_root):
         return out
     for name in sorted(os.listdir(live_root)):
         d = os.path.join(live_root, name)
         if not os.path.isdir(d) or name.startswith('_'):
+            continue
+        if name in exclude:
             continue
         mp = os.path.join(d, META)
         if not os.path.isfile(mp):
