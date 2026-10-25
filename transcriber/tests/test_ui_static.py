@@ -335,6 +335,104 @@ class WP4LivePrivacyPins(unittest.TestCase):
         self.assertNotIn('不经任何外部服务', self.html)
 
 
+class WP3LiveGuardPins(unittest.TestCase):
+    """WP3 会话守卫前端半边 + 7.3/7.14 快修静态钉子(Task 6,spec WP3 前端部分 +
+    WP7 表 7.3/7.14 行)。
+
+    四件事,全部钉在 live.js/live.html 源码字面:
+      1. 单实例锁:'live-session' Web Locks,beginSession 与 tryAutoResume 双入口
+         都先过锁闸再 startCapture(锁不可得不碰 getUserMedia);无 locks 环境降级
+         (服务端 resume 接管守卫兜底);终态释放路径在位;
+      2. session_taken_over 终态:停重连/停麦/清存储/放锁/回表单提示;
+      3. 7.3 beforeunload:connecting/live/stopping 三相位白名单拦截,桌面悬浮窗
+         形态(window.desk)跳过——主进程已有关窗拦截;
+      4. 7.14 重连终态:计数 >10 停止自动重连,chip 终态文案可点(role=button)
+         手动 connect() 并清零计数。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = LIVE_HTML.read_text(encoding='utf-8')
+        cls.js = LIVE_JS.read_text(encoding='utf-8')
+
+    def test_single_instance_lock_dual_entry(self):
+        """锁名/能力探测/ifAvailable 三要素在位;两个会话入口都先 acquireLiveLock
+        再 startCapture——锁闸在麦克风之前,锁被占的路径绝不触发 getUserMedia。"""
+        self.assertIn("'live-session'", self.js, '锁名字面缺失')
+        self.assertIn("'locks' in navigator", self.js, '无 Web Locks 环境的降级探测缺失')
+        self.assertIn('服务端守卫兜底', self.js, '降级缘由注释缺失(服务端接管语义兜底)')
+        self.assertRegex(self.js, r'navigator\.locks\.request\(')
+        self.assertRegex(self.js, r'ifAvailable:\s*true')
+        self.assertIsNotNone(_js_fn(self.js, 'acquireLiveLock'), 'acquireLiveLock 缺失')
+        for fn in ('beginSession', 'tryAutoResume'):
+            body = _js_fn(self.js, fn)
+            self.assertIsNotNone(body, fn + ' 缺失')
+            self.assertIn('acquireLiveLock()', body, fn + ' 未先取单实例锁')
+            self.assertLess(body.index('acquireLiveLock()'), body.index('startCapture()'),
+                            fn + ' 锁闸必须在 startCapture 之前(占用时不触发 getUserMedia)')
+
+    def test_lock_busy_copy_and_release_paths(self):
+        """锁不可得的表单提示文案;句柄存入 state.lock 供终态释放,releaseLiveLock
+        存在且终态路径(stopped/会话失效/无法开始/taken_over/停止未建会话/采集失败)
+        全数调用——调用点计数给下限,防新增终态漏放锁。"""
+        self.assertIn('字幕会话已在其他窗口进行', self.js, '锁被占的表单提示文案缺失')
+        self.assertIsNotNone(_js_fn(self.js, 'releaseLiveLock'), 'releaseLiveLock 缺失')
+        self.assertIn('state.lock = handle', self.js, '锁句柄未存入 state(终态无从释放)')
+        self.assertGreaterEqual(self.js.count('releaseLiveLock()'), 6,
+                                'releaseLiveLock 调用点过少:终态路径疑似漏放锁')
+
+    def test_session_taken_over_terminal(self):
+        """终态消息分发 + onTakenOver 收尾五件套:置 ended(防 onclose 再重连)、
+        停麦、清 session 存储、放锁、回表单提示「会话已在其他窗口打开」。"""
+        self.assertIn("case 'session_taken_over'", self.js, '消息分发缺失')
+        body = _js_fn(self.js, 'onTakenOver')
+        self.assertIsNotNone(body, 'onTakenOver 缺失')
+        for token in ("setPhase('ended')", 'stopCapture()', 'clearSessionStorage()',
+                      'releaseLiveLock()', 'clearTimeout(state.reconnectTimer)',
+                      '会话已在其他窗口打开'):
+            self.assertIn(token, body, 'onTakenOver 缺终态动作:' + token)
+
+    def test_onclose_terminal_short_circuit_stays(self):
+        """taken_over 后服务端随即断连接,onclose 必然跟着到——ended/idle 相位的
+        重连短路守卫必须在位(否则终态又进 scheduleReconnect,A/B 双页互踢复活)。"""
+        self.assertRegex(self.js,
+                         r"if\s*\(\s*state\.phase === 'ended' \|\|\s*state\.phase === 'idle'\s*\)\s*return")
+
+    def test_beforeunload_three_phase_with_desk_skip(self):
+        """7.3:connecting/live/stopping 三相位白名单拦截(ended/idle 不拦);
+        桌面悬浮窗形态 window.desk 跳过——主进程已有关窗拦截,双拦会弹两次。"""
+        m = re.search(r"addEventListener\('beforeunload',\s*function\s*\(e\)\s*\{(.*?)\}\);\s*\n",
+                      self.js, re.S)
+        self.assertTrue(m, 'beforeunload 拦截缺失')
+        body = m.group(1)
+        self.assertIn('window.desk', body, '桌面悬浮窗形态须跳过')
+        for ph in ('connecting', 'live', 'stopping'):
+            self.assertIn("'" + ph + "'", body, '拦截相位缺 ' + ph)
+        self.assertIn("state.phase !== 'connecting'", body, '须白名单式否定三连(ended/idle 不拦)')
+        self.assertIn('preventDefault', body)
+        self.assertIn("e.returnValue = ''", body)
+
+    def test_reconnect_terminal_and_clickable_chip(self):
+        """7.14:阈值 10、超限进终态;终态文案字面;chip 升级 role=button + tabindex
+        可点;manualReconnect 清零计数并 connect();连接成功(onopen)清零解除终态;
+        可点样式落在 live.html。"""
+        self.assertIn('reconnectTries', self.js)
+        self.assertRegex(self.js, r'RECONNECT_MAX_TRIES\s*=\s*10\b')
+        self.assertIn('reconnectTries > RECONNECT_MAX_TRIES', self.js, '超限判断缺失')
+        self.assertIn('无法连接转写服务,请确认服务已启动 · 点击重试', self.js, '终态文案缺失')
+        self.assertIsNotNone(_js_fn(self.js, 'enterReconnectFinal'), 'enterReconnectFinal 缺失')
+        body = _js_fn(self.js, 'manualReconnect')
+        self.assertIsNotNone(body, 'manualReconnect(终态手动重试)缺失')
+        self.assertIn('state.reconnectTries = 0', body)
+        self.assertIn('connect()', body)
+        self.assertIn("setAttribute('role', 'button'", self.js, 'chip 须升级按钮语义(可点)')
+        self.assertIn("setAttribute('tabindex', '0'", self.js)
+        conn = _js_fn(self.js, 'connect')
+        self.assertIsNotNone(conn)
+        self.assertIn('reconnectTries = 0', conn, '连接成功须清零计数并解除终态')
+        self.assertRegex(self.html, r'\.chip\.clickable\{[^}]*cursor:\s*pointer',
+                         '可点 chip 缺指针样式')
+
+
 # langFromStorage/migrateLegacyLang 行为向量:从 live.js 源码抠真实函数(花括号配平,
 # splitSentences/applyRoute 先例),桩掉 localStorage 后跑迁移语义断言。
 # 曾抓到的回归:langFromStorage 沿用 migrateLegacyLang 返回的原值 → 键清了、表单仍
