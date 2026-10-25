@@ -477,6 +477,112 @@ class WP3LiveGuardPins(unittest.TestCase):
         self.assertIn("'连接中断 · 重连中'", manual, '手动重试后须即时切回重连中文案')
 
 
+class WP6EndCardPins(unittest.TestCase):
+    """WP6 结束卡三分态静态钉子(Task 7,spec WP6 全节)。
+
+    服务端(Task 1 契约,不得改)stopped 事件:成功带 job_id 无 reason;
+    空会话 reason='empty';转正失败 reason='finalize_failed' 另带 error 简要。
+    结束卡按此三分支渲染:
+      - 成功:标题「文稿已生成」;endLink 升主按钮(.ego 视觉),「开始新会话」降
+        ghost;web 深链 window.open('/#id', '_blank')(不再本页导航,防双工作台),
+        桌面 openMainJob 分支原样保留(含 closeLiveCaption);
+      - finalize_failed:标题「文稿生成失败,录音已保留」+ error 摘要 + 寻回文案
+        + 「立即重试转正」按钮(POST /api/live/recover_now,防连点,原位转成功态);
+      - empty:「本場没有录到语音」(spec/brief 逐字,場为 U+5834)。
+    三分支均不得出现旧文案「正在生成完整文稿」;旧服务端(stopped 无 reason 无
+    job_id)按失败态渲染——行为级见 WP6StoppedBranchesVector。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = LIVE_HTML.read_text(encoding='utf-8')
+        cls.js = LIVE_JS.read_text(encoding='utf-8')
+
+    def test_three_branch_dispatch_shape(self):
+        """onStopped 分派形状:job_id 优先 → reason==='empty' → 其余(含旧服务端
+        无 reason 无 job_id)一律落失败态——保守给寻回文案,绝不误报「没有录到语音」。"""
+        body = _js_fn(self.js, 'onStopped')
+        self.assertIsNotNone(body, 'onStopped 缺失')
+        self.assertIn('if (ev.job_id)', body, '成功分支判定缺失')
+        self.assertIn("ev.reason === 'empty'", body, '空会话分支判定缺失')
+        self.assertIn('showEndSuccess(ev.job_id)', body, '成功分支未走共用成功态渲染')
+        self.assertIn('showEndFailure(', body, '兜底分支未走失败态渲染')
+        self.assertLess(body.index('if (ev.job_id)'),
+                        body.index("ev.reason === 'empty'"),
+                        '分派顺序:job_id 必须先于 reason 判定(成功事件无 reason)')
+
+    def test_success_branch_copy_and_primary_link(self):
+        """成功态:标题「文稿已生成」;endLink 升主按钮(classList 加 primary),
+        「开始新会话」降 ghost。CSS 侧 .elink.primary 复用 .ego 主按钮视觉
+        (浅底深字 650)——DOM 最小改动:endLink 仍是 <a>,不加第二套结构。"""
+        self.assertIn('文稿已生成', self.js)
+        success = _js_fn(self.js, 'showEndSuccess')
+        self.assertIsNotNone(success, 'showEndSuccess 缺失')
+        self.assertIn("link.classList.add('primary')", success, 'endLink 未升主按钮形态')
+        self.assertIn("$('endNew').classList.add('ghost')", success, '「开始新会话」未降 ghost')
+        self.assertRegex(self.html,
+                         r'\.ecard \.elink\.primary\{[^}]*background:#e9ebef[^}]*font-weight:650',
+                         '.elink.primary 未复用 .ego 主按钮视觉')
+
+    def test_failure_branch_copy_and_recover_button(self):
+        """失败态:标题「文稿生成失败,录音已保留」;sub 含 error 摘要 + 寻回文案
+        (spec 逐字);「立即重试转正」按钮 POST /api/live/recover_now。"""
+        self.assertIn('文稿生成失败,录音已保留', self.js)
+        self.assertIn('录音仍在服务端,重启转写服务后会自动转为任务(历史记录带「实时」标记)。',
+                      self.js, '寻回文案缺失或被改写(spec 逐字)')
+        failure = _js_fn(self.js, 'showEndFailure')
+        self.assertIsNotNone(failure, 'showEndFailure 缺失')
+        self.assertIn('立即重试转正', failure)
+        retry = _js_fn(self.js, 'retryFinalize')
+        self.assertIsNotNone(retry, 'retryFinalize(寻回重试)缺失')
+        self.assertIn("fetch('/api/live/recover_now'", retry, '寻回端点未接')
+        self.assertIn("method: 'POST'", retry, 'recover_now 必须 POST')
+
+    def test_recover_retry_button_states(self):
+        """寻回按钮态机:防连点(recoverBusy + disabled 双保险);有新 job → 原位转
+        成功态(showEndSuccess(recovered[0]));空数组/请求失败 → 就地提示
+        (endRetryNote,不弹整卡错误)并保持失败态(按钮还原可再点)。"""
+        retry = _js_fn(self.js, 'retryFinalize')
+        self.assertIsNotNone(retry)
+        self.assertIn('state.recoverBusy', retry, '防连点旗标缺失')
+        self.assertLess(retry.index('recoverBusy'), retry.index('fetch('),
+                        '防连点判断必须在发起请求之前')
+        self.assertIn('btn.disabled = true', retry, '进行中态须禁用按钮')
+        self.assertIn('正在寻回', retry, '进行中态文案缺失')
+        self.assertIn('showEndSuccess(ids[0])', retry, '寻回成功未原位转成功态')
+        self.assertIn('endRetryNote', retry, '就地提示槽缺失(不许整卡报错)')
+        self.assertIn('btn.disabled = false', retry, '失败后按钮须还原可再点')
+        html_btn = re.search(r'<button[^>]*id="endRetry"[^>]*>', self.html)
+        self.assertTrue(html_btn, 'live.html 缺 #endRetry 按钮')
+        self.assertIn('hidden', html_btn.group(0), '#endRetry 默认须隐藏')
+        self.assertIn('id="endRetryNote"', self.html, '就地提示元素缺失')
+
+    def test_empty_branch_copy(self):
+        """空会话态(spec/brief 逐字,場为 U+5834):标题「本場没有录到语音」,
+        sub「会话已结束,未生成文稿。」;endLink 不显示(无文稿可开)。"""
+        self.assertIn('本場没有录到语音', self.js)
+        self.assertIn('会话已结束,未生成文稿', self.js)
+
+    def test_old_generating_copy_banned(self):
+        """三分支均不得出现旧文案「正在生成完整文稿」(失败/空会话报喜、成功态失实)。"""
+        self.assertNotIn('正在生成完整文稿', self.js)
+        self.assertNotIn('正在生成完整文稿', self.html)
+
+    def test_web_blank_deep_link_desk_branch_kept(self):
+        """成功态深链:web window.open('/#' + jobId, '_blank') 开新标签(本页停在
+        结束卡,不再 /live 内导航出双工作台);桌面 openMainJob 分支原样保留,
+        且跳转后仍调 closeLiveCaption 隐藏悬浮窗。"""
+        success = _js_fn(self.js, 'showEndSuccess')
+        self.assertIsNotNone(success)
+        self.assertIn("window.open('/#' + jobId, '_blank')", success,
+                      'web 深链未开新标签(本页导航会造成双工作台)')
+        self.assertIn('openMainJob', success, '桌面分支缺失')
+        i_desk = success.index('openMainJob')
+        self.assertLess(i_desk, success.index('window.open('),
+                        '桌面分支应在 web 分支之前(优先级不变)')
+        self.assertIn('closeLiveCaption', success, '跳转后须隐藏悬浮窗')
+        self.assertIn('preventDefault', success)
+
+
 # langFromStorage/migrateLegacyLang 行为向量:从 live.js 源码抠真实函数(花括号配平,
 # splitSentences/applyRoute 先例),桩掉 localStorage 后跑迁移语义断言。
 # 曾抓到的回归:langFromStorage 沿用 migrateLegacyLang 返回的原值 → 键清了、表单仍
@@ -624,6 +730,141 @@ class WP3TakenOverReopenVector(unittest.TestCase):
                              % (proc.stdout.decode('utf-8', 'replace'),
                                 proc.stderr.decode('utf-8', 'replace')[:600]))
             self.assertIn('WP3_TAKEN_OVER_VECTOR_OK', proc.stdout.decode('utf-8', 'replace'))
+        finally:
+            os.unlink(vec)
+
+
+WP6_STOPPED_VECTOR_MJS = r'''
+import { readFileSync } from 'node:fs';
+const src = readFileSync(process.argv[2], 'utf8');
+function fn(name){
+  const m = src.match(new RegExp('function ' + name + '\\s*\\('));
+  if (!m) throw new Error(name + ' missing');
+  const start = src.indexOf('{', m.index);
+  let depth = 0;
+  for (let i = start; i < src.length; i++){
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}'){ depth--; if (!depth) return src.slice(m.index, i + 1); }
+  }
+  throw new Error(name + ' braces');
+}
+// 桩面:与 WP3TakenOverReopenVector 同款——onStopped 依赖链(setPhase/stopCapture/
+// stopTimer/clearSessionStorage/releaseLiveLock/barChip/disarmReconnectChip)全数抠入,
+// $ 按 id 缓存,classList 真实现(primary/ghost 断言要靠它)。
+const els = {};
+const makeEl = id => ({ id, hidden: false, textContent: '', href: '', disabled: false,
+  onclick: null, appendChild(){}, remove(){}, removeAttribute(){}, setAttribute(){},
+  classList: { _s: new Set(), add(c){ this._s.add(c); }, remove(c){ this._s.delete(c); },
+    contains(c){ return this._s.has(c); } } });
+const $ = id => (els[id] || (els[id] = makeEl(id)));
+const resetEls = () => { for (const k in els) delete els[k]; };
+const store = {};
+const LS = { getItem: k => (k in store ? store[k] : null),
+  setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
+const bundle = ['var state = {phase:"stopping", sessionId:"sess_x", userStop:true, lastSeq:9,',
+  '  reconnectTimer:5, reconnectFinal:false, timerIv:3, capture:null, recoverBusy:false,',
+  '  ws:{close(){}}, lock:{released:false, release(){this.released=true;}}};',
+  fn('setPhase'), fn('stopCapture'), fn('stopTimer'), fn('clearSessionStorage'),
+  fn('releaseLiveLock'), fn('barChip'), fn('disarmReconnectChip'),
+  fn('showEndSuccess'), fn('showEndFailure'), fn('onStopped'), fn('retryFinalize'),
+  'const snap = () => JSON.stringify({title:$("endTitle").textContent, sub:$("endSub").textContent,',
+  '  linkHidden:$("endLink").hidden, linkPrimary:$("endLink").classList.contains("primary"),',
+  '  href:$("endLink").href, newGhost:$("endNew").classList.contains("ghost"),',
+  '  retryHidden:$("endRetry").hidden, retryDisabled:$("endRetry").disabled,',
+  '  retryText:$("endRetry").textContent, noteHidden:$("endRetryNote").hidden,',
+  '  noteText:$("endRetryNote").textContent, wrapHidden:$("endwrap").hidden,',
+  '  phase:state.phase, recoverBusy:state.recoverBusy});',
+  'const out = {};',
+  'onStopped({job_id:"job_ok"}); out.success = snap();',
+  'resetEls();',
+  'onStopped({reason:"empty"}); out.empty = snap();',
+  'resetEls();',
+  'onStopped({reason:"finalize_failed", error:"磁盘满"}); out.failed = snap();',
+  'resetEls();',
+  'onStopped({}); out.legacy = snap();',            // 旧服务端:无 reason 无 job_id
+  'fetch = async () => ({ok:true, json: async () => ({recovered:["job_new"]})});',
+  'retryFinalize(); out.duringRetry = snap();',
+  'await new Promise(r => setTimeout(r, 10));',
+  'out.afterRetry = snap();',
+  'fetch = async () => ({ok:true, json: async () => ({recovered:[]})});',
+  'resetEls(); showEndFailure(); state.recoverBusy = false;',
+  'retryFinalize();',
+  'await new Promise(r => setTimeout(r, 10));',
+  'out.emptyRecover = snap();',
+  'fetch = async () => ({ok:false, status:500, json: async () => ({})});',
+  'resetEls(); showEndFailure("磁盘满"); state.recoverBusy = false;',
+  'retryFinalize();',
+  'await new Promise(r => setTimeout(r, 10));',
+  'out.httpFail = snap();',
+  'return JSON.stringify(out);'].join('\n');
+// await 不能出现在普通 Function 体:用 AsyncFunction 构造器(其余协议与 WP3 向量同款)
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+const out = JSON.parse(
+  await new AsyncFunction('localStorage', '$', 'fetch', 'resetEls', bundle)(LS, $, null, resetEls));
+let fail = 0;
+const j = (s) => JSON.parse(s);
+const ok = (cond, what) => { if (!cond){ console.error('FAIL ' + what); fail++; } };
+const S = j(out.success);
+ok(S.title === '文稿已生成', '成功态标题:got ' + S.title);
+ok(S.linkHidden === false && S.linkPrimary === true, '成功态 endLink 未升主按钮');
+ok(S.newGhost === true, '成功态「开始新会话」未降 ghost');
+ok(S.href === '/#job_ok', '成功态深链 href:got ' + S.href);
+ok(S.retryHidden === true && S.wrapHidden === false, '成功态寻回按钮须隐藏、结束卡须亮');
+ok(S.phase === 'ended', '成功态相位置 ended');
+const E = j(out.empty);
+ok(E.title === '本場没有录到语音', '空会话标题:got ' + E.title);
+ok(E.sub.indexOf('会话已结束,未生成文稿') >= 0, '空会话 sub 缺「会话已结束,未生成文稿」');
+ok(E.linkHidden === true, '空会话不得显示打开文稿');
+ok(E.title.indexOf('没有录到语音') >= 0 && E.title !== '文稿生成失败,录音已保留', '空会话误落失败态文案');
+const F = j(out.failed);
+ok(F.title === '文稿生成失败,录音已保留', '失败态标题:got ' + F.title);
+ok(F.sub.indexOf('磁盘满') >= 0, '失败态 sub 缺 error 摘要');
+ok(F.sub.indexOf('录音仍在服务端,重启转写服务后会自动转为任务') >= 0, '失败态 sub 缺寻回文案');
+ok(F.retryHidden === false && F.linkHidden === true, '失败态按钮显隐错');
+const L = j(out.legacy);
+ok(L.title === '文稿生成失败,录音已保留', '旧服务端兼容:无 reason 无 job_id 应按失败态,got ' + L.title);
+ok(L.title.indexOf('没有录到语音') < 0, '旧服务端兼容:绝不误报「没有录到语音」');
+ok(L.sub.indexOf('录音仍在服务端') >= 0, '旧服务端兼容:缺寻回文案');
+const D = j(out.duringRetry);
+ok(D.retryDisabled === true && D.retryText === '正在寻回…', '寻回进行中态缺失(防连点)');
+ok(D.recoverBusy === true, '寻回进行中 recoverBusy 未置位');
+const A = j(out.afterRetry);
+ok(A.title === '文稿已生成' && A.href === '/#job_new', '寻回成功未原位转成功态');
+ok(A.linkPrimary === true && A.retryHidden === true, '寻回成功后主按钮形态/寻回按钮显隐错');
+ok(A.noteHidden === true, '寻回成功后就地提示未收起');
+const ER = j(out.emptyRecover);
+ok(ER.title === '文稿生成失败,录音已保留', '空寻回结果不得离开失败态:got ' + ER.title);
+ok(ER.noteHidden === false && ER.noteText.indexOf('暂未寻回') >= 0, '空寻回结果缺就地提示');
+ok(ER.retryDisabled === false, '空寻回结果后按钮未还原可再点');
+const H = j(out.httpFail);
+ok(H.title === '文稿生成失败,录音已保留', '请求失败不得离开失败态');
+ok(H.noteHidden === false && H.noteText.indexOf('重试失败') >= 0, '请求失败缺就地提示');
+ok(H.retryDisabled === false, '请求失败后按钮未还原可再点');
+console.log(fail === 0 ? 'WP6_STOPPED_VECTOR_OK' : fail + ' FAILED');
+process.exit(fail === 0 ? 0 : 1);
+'''
+
+
+@unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
+class WP6StoppedBranchesVector(unittest.TestCase):
+    """WP6 行为向量:stopped 三分支 + 旧服务端兼容 + 寻回按钮态机,全部真跑。
+    静态钉只看得见「字面在」,分派归属、原位转成功态、防连点与就地提示语义
+    必须执行才知道(与 WP3TakenOverReopenVector 同款协议)。"""
+
+    def test_vector_green(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile('w', suffix='.mjs', delete=False,
+                                         encoding='utf-8') as f:
+            f.write(WP6_STOPPED_VECTOR_MJS)
+            vec = f.name
+        try:
+            env = dict(os.environ, ELECTRON_RUN_AS_NODE='1')
+            proc = subprocess.run([str(ELECTRON), vec, str(LIVE_JS)], env=env,
+                                  capture_output=True, timeout=60, cwd=str(BASE))
+            self.assertEqual(proc.returncode, 0, 'WP6 三分支向量未全绿:%s%s'
+                             % (proc.stdout.decode('utf-8', 'replace'),
+                                proc.stderr.decode('utf-8', 'replace')[:600]))
+            self.assertIn('WP6_STOPPED_VECTOR_OK', proc.stdout.decode('utf-8', 'replace'))
         finally:
             os.unlink(vec)
 
