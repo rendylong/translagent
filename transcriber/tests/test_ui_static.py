@@ -23,8 +23,28 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 INDEX = BASE / 'static' / 'index.html'
+LIVE_HTML = BASE / 'static' / 'live.html'
+LIVE_JS = BASE / 'static' / 'live.js'
 VECTORS = BASE / 'tests' / 'test_ui_route_vectors.mjs'
 AGENTS = BASE.parent / 'AGENTS.md'
+
+
+def _js_fn(src, name):
+    """抠出 JS 源里 `function name(...) {…}` 的函数体(花括号配平,先例同款);
+    找不到函数返回 None。"""
+    m = re.search(r'function %s\s*\(' % re.escape(name), src)
+    if not m:
+        return None
+    start = src.index('{', m.end())
+    depth = 0
+    for i in range(start, len(src)):
+        if src[i] == '{':
+            depth += 1
+        elif src[i] == '}':
+            depth -= 1
+            if depth == 0:
+                return src[start:i + 1]
+    return None
 
 
 def _find_electron():
@@ -235,6 +255,164 @@ class LiveActionRowPins(unittest.TestCase):
         字样;须提及动作行元素。具体措辞不钉,防文档微调即碎。"""
         self.assertNotIn('三个 Tab', self.agents)
         self.assertIn('liveRow', self.agents)
+
+
+class WP4LivePrivacyPins(unittest.TestCase):
+    """WP4 翻译默认与隐私文案静态钉子(Task 5,spec WP4 全节 + WP7 表 7.8)。
+
+    翻译默认从「英文」改「不翻译」:外发必须显式选择(隐私立身产品的默认值纪律);
+    旧默认 zh>en 一次性迁移,表单恢复与 resume 两条读取路径都要覆盖;note 随语言对
+    动态切换;无修正会话(started.llm===false 或 tgt==src)f1 句升定稿色(llm-off
+    根类);运行中 hint 只说音频,准确,原样保留。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = LIVE_HTML.read_text(encoding='utf-8')
+        cls.js = LIVE_JS.read_text(encoding='utf-8')
+
+    def _ftgt_block(self):
+        m = re.search(r'<select id="fTgt">(.*?)</select>', self.html, re.S)
+        self.assertTrue(m, '缺 #fTgt 下拉')
+        return m.group(1)
+
+    def test_ftgt_default_no_translate(self):
+        """fTgt 默认选中 value=""(不翻译):selected 落在空值项上,英文项不得再带
+        (旧默认残留)。只动 selected,选项集不动。"""
+        block = self._ftgt_block()
+        self.assertRegex(block, r'<option value=""[^>]*\bselected')
+        self.assertNotRegex(block, r'<option value="en"[^>]*\bselected',
+                            '「英文」仍是默认=外发仍是默认,违背 WP4 决策')
+
+    def test_note_dynamic_two_texts_and_instant_switch(self):
+        """note 两段精确文案(WP4 照抄,含标点)在 live.js;updateLangNote 存在且
+        fTgt change 即时切换。fSrc 变化同样会翻转 tgt==src 语义,须一并接线。"""
+        self.assertIn('识别与说话人分离即时可用,全程在本机完成;修正与翻译事件到达时自动上屏。',
+                      self.js, '不翻译侧文案缺失或被改写')
+        self.assertIn('识别与说话人分离在本机完成;修正与翻译会把窗口文本(不含音频、路径、人名)发送至外部 LLM 服务。',
+                      self.js, '翻译侧文案缺失或被改写')
+        self.assertRegex(self.js, r'function updateLangNote\s*\(')
+        self.assertIsNotNone(_js_fn(self.js, 'updateLangNote'))
+        self.assertIn("$('fTgt').addEventListener('change'", self.js)
+        self.assertIn("$('fSrc').addEventListener('change'", self.js)
+
+    def test_stop_chip_llm_false_hint_untouched(self):
+        """既有「未配置翻译密钥」stopChip 提示(started.llm===false 且 tgt≠src)保留。"""
+        self.assertIn('ev.llm === false', self.js)
+        self.assertIn('未配置翻译密钥', self.js)
+
+    def test_legacy_default_migration_both_read_paths(self):
+        """旧默认迁移:migrateLegacyLang 存在且做 removeItem('live.lang');
+        langFromStorage(表单恢复)与 tryAutoResume(resume)两条读取路径都调用。"""
+        self.assertRegex(self.js, r'function migrateLegacyLang\s*\(')
+        self.assertIn("localStorage.removeItem('live.lang')", self.js)
+        for fn in ('langFromStorage', 'tryAutoResume'):
+            body = _js_fn(self.js, fn)
+            self.assertIsNotNone(body, fn + ' 缺失')
+            self.assertIn('migrateLegacyLang()', body, fn + ' 未走旧默认迁移')
+
+    def test_llm_off_css_bar_and_panel(self):
+        """7.8 f1 升白:llm-off 下账本侧(f1 句 .stx)与面板侧(f1 条 .txt)选择器
+        都存在且生效色含 var(--lc-txt);选择器结构对齐真实 DOM 类名
+        (账本行 'srow f1' > .stx,面板条 'e f1' > .txt,均由 makeBarEl/makeEntryEl 拼出)。"""
+        self.assertRegex(self.html, r'\.llm-off \.blog \.srow\.f1 \.stx\{[^}]*var\(--lc-txt\)')
+        self.assertRegex(self.html, r'\.llm-off \.pbody \.e\.f1 \.txt\{[^}]*var\(--lc-txt\)')
+        self.assertIn("document.documentElement.classList.toggle('llm-off'", self.js)
+        # 两个加类时机:started(fresh start,拿得到 llm 旗标)与 tryAutoResume(resume 无
+        # started,按语言对判)。译文层 --lc-tr 不动(钉在 f1 句文本层,不含 .str/.tr)。
+        self.assertRegex(self.js, r"(?s)case 'started':.*?applyLlmOff")
+        resume_body = _js_fn(self.js, 'tryAutoResume')
+        self.assertIsNotNone(resume_body)
+        self.assertIn('applyLlmOff(', resume_body)
+
+    def test_stage_hint_audio_only_unchanged(self):
+        """:350 运行中 hint 只说音频,准确,原样保留(不许被隐私文案改波及)。"""
+        self.assertIn('字幕运行中 · 拖动顶部条移动 · 所有音频仅在本机处理', self.html)
+
+    def test_sub_privacy_copy_updated(self):
+        """:262 sub 统一为新口径「音频不出本机;开启翻译时…」;旧「不经任何外部服务」
+        从 live 页绝迹(hint 的「仅在本机」只指音频,允许保留,由上一钉看住)。"""
+        self.assertIn('音频不出本机;开启翻译时,识别文本交由外部 LLM 修正与翻译', self.html)
+        self.assertNotIn('不经任何外部服务', self.html)
+
+
+# langFromStorage/migrateLegacyLang 行为向量:从 live.js 源码抠真实函数(花括号配平,
+# splitSentences/applyRoute 先例),桩掉 localStorage 后跑迁移语义断言。
+# 曾抓到的回归:langFromStorage 沿用 migrateLegacyLang 返回的原值 → 键清了、表单仍
+# 回落 zh>en,迁移形同虚设——静态钉看不出来,必须行为级。
+WP4_LANG_VECTORS_MJS = r'''
+import { readFileSync } from 'node:fs';
+const src = readFileSync(process.argv[2], 'utf8');
+function fn(name){
+  const m = src.match(new RegExp('function ' + name + '\\s*\\('));
+  if (!m) throw new Error(name + ' missing');
+  const start = src.indexOf('{', m.index);
+  let depth = 0;
+  for (let i = start; i < src.length; i++){
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}'){ depth--; if (!depth) return src.slice(m.index, i + 1); }
+  }
+}
+const store = {};
+const LS = {
+  getItem: k => (k in store ? store[k] : null),
+  setItem: (k, v) => { store[k] = String(v); },
+  removeItem: k => { delete store[k]; },
+};
+const head = src.slice(src.indexOf('var LANG_OK'), src.indexOf('function langFromStorage'));
+const bundle = ["var LEGACY_DEFAULT_LANG = 'zh>en';", head,
+  fn('langFromStorage'), fn('migrateLegacyLang'), fn('langPairIsNoTranslate'),
+  'return {langFromStorage, migrateLegacyLang, langPairIsNoTranslate};'].join('\n');
+const { langFromStorage, migrateLegacyLang, langPairIsNoTranslate } =
+  new Function('localStorage', '$', bundle)(LS, () => '');
+let fail = 0;
+const eq = (a, b, what) => {
+  if (JSON.stringify(a) !== JSON.stringify(b)){
+    console.error('FAIL ' + what + '  got=' + JSON.stringify(a));
+    fail++;
+  }
+};
+store['live.lang'] = 'zh>en';
+eq(langFromStorage(), {src:'zh', tgt:''}, '旧默认 zh>en → 新默认不翻译');
+if ('live.lang' in store) { console.error('FAIL 旧默认键未清除'); fail++; }
+store['live.lang'] = 'zh>ja';
+eq(langFromStorage(), {src:'zh', tgt:'ja'}, '合法值 zh>ja 不动');
+if (store['live.lang'] !== 'zh>ja') { console.error('FAIL zh>ja 键被误清'); fail++; }
+delete store['live.lang'];
+eq(langFromStorage(), {src:'zh', tgt:''}, '无值 → 新默认不翻译');
+store['live.lang'] = 'xx>yy';
+eq(langFromStorage(), {src:'zh', tgt:''}, '非法值 → 新默认不翻译(不猜外发)');
+eq(langPairIsNoTranslate('zh>zh'), true, 'zh>zh 判不翻译');
+eq(langPairIsNoTranslate('zh>en'), false, 'zh>en 判翻译');
+eq(langPairIsNoTranslate(''), false, '空串不误判');
+store['live.lang'] = 'zh>en';
+eq(migrateLegacyLang(), 'zh>en', 'resume 路径:迁移返回原值(本次会话展示不被改写)');
+if ('live.lang' in store) { console.error('FAIL resume 路径键未清除'); fail++; }
+console.log(fail === 0 ? 'WP4_LANG_VECTORS_OK' : fail + ' VECTORS FAILED');
+process.exit(fail === 0 ? 0 : 1);
+'''
+
+
+@unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
+class WP4LangMigrationVectors(unittest.TestCase):
+    """旧默认迁移行为向量(表单路径弃用旧值走新默认、resume 路径保原值仅清键、
+    合法值不动、非法值不猜外发)。静态钉只看得见「调用了」,语义对不对必须真跑。"""
+
+    def test_vectors_green(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile('w', suffix='.mjs', delete=False,
+                                         encoding='utf-8') as f:
+            f.write(WP4_LANG_VECTORS_MJS)
+            vec = f.name
+        try:
+            env = dict(os.environ, ELECTRON_RUN_AS_NODE='1')
+            proc = subprocess.run([str(ELECTRON), vec, str(LIVE_JS)], env=env,
+                                  capture_output=True, timeout=60, cwd=str(BASE))
+            self.assertEqual(proc.returncode, 0, 'WP4 迁移行为向量未全绿:%s%s'
+                             % (proc.stdout.decode('utf-8', 'replace'),
+                                proc.stderr.decode('utf-8', 'replace')[:600]))
+            self.assertIn('WP4_LANG_VECTORS_OK', proc.stdout.decode('utf-8', 'replace'))
+        finally:
+            os.unlink(vec)
 
 
 @unittest.skipIf(electron_missing(), 'Electron 二进制不存在(.tools/electron),跳过断言向量')
