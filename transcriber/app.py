@@ -7,6 +7,7 @@
   source.<ext>   原始上传音频
   audio16k.wav   16kHz 单声道中间产物(播放与识别共用)
   whisper.json   whisper 原始分段
+  sensevoice.json SenseVoice 原始区段与文本(zh/ja/en 任务;引擎见 meta.asr_engine)
   transcript.json  合并结果 {segments: [{start_ms, end_ms, speaker, text}]};speaker 是簇号 int
   transcript.md  完成后落盘的文稿(改名/改说话人后重生成,Finder 定位用)
   dsegs.json     diarization 分段 [(start_s, end_s, speaker)](单人任务由语音区合并而来)
@@ -52,6 +53,10 @@ WHISPER_BIN = os.path.join(WHISPER_DIR, 'build', 'bin', 'whisper-cli')
 WHISPER_MODEL = os.path.join(WHISPER_DIR, 'models', 'ggml-large-v3-turbo.bin')
 SEG_MODEL = os.path.join(MODEL_DIR, 'sherpa-onnx-pyannote-segmentation-3-0', 'model.onnx')
 EMB_MODEL = os.path.join(MODEL_DIR, 'speaker_embedding_titanet.onnx')  # NeMo TitaNet-large;2026-10-23 实测英文双男声场景胜出,中文零退化,对比见 models/bench/
+SENSEVOICE_DIR = os.path.join(MODEL_DIR, 'sense-voice')
+SENSEVOICE_MODEL = os.path.join(SENSEVOICE_DIR, 'model.int8.onnx')   # SenseVoice-small int8
+SENSEVOICE_TOKENS = os.path.join(SENSEVOICE_DIR, 'tokens.txt')
+SILERO_VAD_MODEL = os.path.join(MODEL_DIR, 'silero-vad', 'silero_vad.onnx')
 
 STAGES = ['queued', 'converting', 'transcribing', 'diarizing', 'merging', 'done']
 TERMINAL = {'done', 'error'}
@@ -69,6 +74,14 @@ TAIL_WIN_S = 0.5      # 尾部静音判定的能量窗长
 TAIL_MARGIN_S = 0.75  # 裁剪点在最后一个有声窗之后保留的余量
 LOOP_MIN_RUN = 4      # 连续重复段数达到该值才认定静音幻觉循环
 LOOP_MAX_VARIANTS = 2  # 幻觉循环内允许的文本变体种数(同一句复述 / 带连接词的两种形态交替)
+
+SENSEVOICE_LANGS = {'zh', 'ja', 'en'}  # 离线转录走 SenseVoice(zh/ja 为准确率与零幻觉,en 为用户拍板 2026-10-26
+                                       # 实测对话体英文不落下风且免 GPU);auto 留 whisper——其逐窗 LID 对混语录音更稳
+VAD_CHUNK = 512                    # silero 窗长:整段喂 accept_waveform 只处理尾窗(sherpa-onnx 2.0.0 实测),必须按窗喂
+VAD_MAX_SPAN_S = 28.0              # silero 按此上限自动切段,规避 SenseVoice ~30s 输入上限
+SV_SLICE_PAD_S = 0.3               # 送识别的切片向两侧各放的余量,防词首词尾被 VAD 边界切掉
+SV_SPAN_GAP_S = 0.8                # 相邻语音区段间隙不超过此值则合并解码:句中思考停顿切碎上下文会伤识别
+                                    # (2026-10-26 实测「转录」被切成「转路」);真静音/噪声区间隙远大于此,不伤防幻觉
 
 app = Flask(__name__, static_folder=None)
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
@@ -570,7 +583,133 @@ def run_whisper(job_id, wav, language):
         data = json.load(f)
     segs = [{'start_ms': t['offsets']['from'], 'end_ms': t['offsets']['to'], 'text': t['text'].strip()}
             for t in data.get('transcription', []) if t.get('text', '').strip()]
-    segs = collapse_repeat_loops(segs)   # 静音幻觉循环折叠(whisper.json 保留原始分段供查证)
+    duration = segs[-1]['end_ms'] / 1000 if segs else 0
+    return duration, segs
+
+
+def sensevoice_available():
+    return os.path.isfile(SENSEVOICE_MODEL) and os.path.isfile(SENSEVOICE_TOKENS)
+
+
+def vad_speech_spans(x, sr=16000):
+    """silero-vad 找语音区段,返回 [(start_s, end_s)]。必须按 512 采样窗分块喂
+    accept_waveform——sherpa-onnx 2.0.0 整段喂只会处理最后一个窗(实测)。VAD 在
+    管线里是双重角色:给 SenseVoice 切 ≤28s 的输入段,并把静音/平稳底噪挡在解码器
+    外(能量法分不开的低信噪比尾噪 silero 能分,2026-10-26 实测:语音 -33dB 对
+    底噪 -35dB 的录音,VAD 区段精确贴合真实语音)。"""
+    import sherpa_onnx
+    cfg = sherpa_onnx.VadModelConfig()
+    cfg.silero_vad.model = SILERO_VAD_MODEL
+    cfg.silero_vad.min_speech_duration = 0.3
+    cfg.silero_vad.min_silence_duration = 0.5
+    cfg.silero_vad.max_speech_duration = VAD_MAX_SPAN_S
+    cfg.sample_rate = sr
+    vad = sherpa_onnx.VoiceActivityDetector(cfg, buffer_size_in_seconds=VAD_MAX_SPAN_S * 2 + 5)
+    for i in range(0, len(x), VAD_CHUNK):
+        vad.accept_waveform(x[i:i + VAD_CHUNK])
+    vad.flush()
+    spans = []
+    while not vad.empty():
+        seg = vad.front
+        spans.append((seg.start / sr, (seg.start + len(seg.samples)) / sr))
+        vad.pop()
+    return spans
+
+
+SV_SENT_END = '。!?!?;;\n'   # 句末标点(与前端断句同族口径,含全半角)
+
+
+_CJK = r'\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\u3005ー'
+
+
+def _tidy_sv_text(t):
+    """SenseVoice 输出清理:句末标点连写(实测会出现「。。」)折成单个;中日文
+    token 间的空格(实测日语会插)删除——CJK 字符间的空格不合法,直接去掉。"""
+    t = re.sub(r'([。!?;;])\1+', r'\1', t)
+    t = re.sub(rf'(?<=[{_CJK}])\s+(?=[{_CJK}])', '', t)
+    return t.strip()
+
+
+def merge_vad_spans(spans, max_gap=SV_SPAN_GAP_S, max_len=VAD_MAX_SPAN_S):
+    """相邻语音区段间隙 ≤max_gap 时合并成一个解码单元(总长 ≤max_len),返回新列表。
+    句中思考停顿若被 VAD 切开、各段独立解码,跨段的词会缺上下文而识别劣化。"""
+    out = []
+    for st, en in spans:
+        if out and st - out[-1][1] <= max_gap and en - out[-1][0] <= max_len:
+            out[-1][1] = max(out[-1][1], en)
+        else:
+            out.append([st, en])
+    return [(a, b) for a, b in out]
+
+
+def split_sv_sentences(text, token_texts, token_ts):
+    """一个 VAD 区段的识别文本按句末标点切成句级 [(text, start_s, end_s)],
+    时间戳取自 token 级 timestamps(相对区段切片起点)。token 与 text 逐字 1:1
+    (实测 zh 无 ITN 数字时成立)时精确对齐,否则按字符占比在首末 token 时间内插。"""
+    text = _tidy_sv_text(text)
+    pairs = [(t, s) for t, s in zip(token_texts, token_ts) if not t.startswith('<|')]
+    if not text or not pairs:
+        return []
+    bounds = []   # 每句 (char_a, char_b)
+    a = 0
+    for i, ch in enumerate(text):
+        if ch in SV_SENT_END:
+            bounds.append((a, i + 1))
+            a = i + 1
+    if a < len(text):
+        bounds.append((a, len(text)))
+    exact = len(pairs) == len(text)
+
+    def ts_at(pos):
+        if exact:
+            return pairs[min(pos, len(pairs) - 1)][1]
+        lo, hi = pairs[0][1], pairs[-1][1]
+        return lo + (hi - lo) * (pos / max(len(text) - 1, 1))
+
+    out = []
+    for ca, cb in bounds:
+        seg = text[ca:cb].strip()
+        if seg:
+            out.append((seg, ts_at(ca), ts_at(max(cb - 1, ca))))
+    return out
+
+
+def run_sensevoice(job_id, wav, language):
+    """zh/ja/en 离线转录走 SenseVoice-small(sherpa-onnx,CPU,实测 30s 音频解码
+    0.5s≈60 倍速):中文准确率显著高于 whisper,且非自回归解码器不在静音区产
+    「点赞订阅」类幻觉——静音已被 VAD 挡在解码之前。VAD 区段再按句末标点切句,
+    段落粒度与 whisper 相当。返回 (时长, wsegs),与 run_whisper 同构;原始区段与
+    文本落盘 sensevoice.json(查证角色等价 whisper.json)。"""
+    import sherpa_onnx
+    samples = read_wav_float(wav)
+    spans = merge_vad_spans(vad_speech_spans(samples))
+    raw, segs = [], []
+    if spans:
+        rec = sherpa_onnx.OfflineRecognizer.from_sense_voice(
+            model=SENSEVOICE_MODEL, tokens=SENSEVOICE_TOKENS, num_threads=4,
+            language={'zh': 'zh', 'ja': 'ja', 'en': 'en'}.get(language, ''), use_itn=True)
+        pad = int(SV_SLICE_PAD_S * 16000)
+        for i, (st, en) in enumerate(spans):
+            a = max(0, int(st * 16000) - pad)
+            b = min(len(samples), int(en * 16000) + pad)
+            stream = rec.create_stream()
+            stream.accept_waveform(16000, samples[a:b])
+            rec.decode_stream(stream)
+            r = stream.result
+            text = _tidy_sv_text(getattr(r, 'text', '') or '')
+            raw.append({'start': round(st, 3), 'end': round(en, 3), 'text': text})
+            off = a / 16000   # token timestamps 相对切片起点,平移到绝对时间
+            for sent, s0, s1 in split_sv_sentences(text, r.tokens, r.timestamps):
+                segs.append({'start_ms': int(round((off + s0) * 1000)),
+                             'end_ms': int(round(min(off + s1, en) * 1000)),
+                             'text': sent})
+            if i % 10 == 0:
+                write_meta(job_id, progress=5 + int(80 * (i + 1) / len(spans)))
+                if read_meta(job_id).get('cancel_requested'):
+                    raise RuntimeError('已放弃')
+    with open(os.path.join(job_dir(job_id), 'sensevoice.json'), 'w', encoding='utf-8') as f:
+        json.dump({'engine': 'sensevoice', 'language': language, 'spans': raw},
+                  f, ensure_ascii=False, indent=1)
     duration = segs[-1]['end_ms'] / 1000 if segs else 0
     return duration, segs
 
@@ -643,8 +782,23 @@ def process_job(job_id):
 
         if read_meta(job_id).get('cancel_requested'):
             raise RuntimeError('已放弃')
-        write_meta(job_id, status='transcribing', stage='语音转录(whisper)', progress=5)
-        duration, wsegs = run_whisper(job_id, wav, meta['language'])
+        # zh/ja/en 走 SenseVoice(模型缺失或加载异常回落 whisper);auto 仍走 whisper
+        if meta['language'] in SENSEVOICE_LANGS and sensevoice_available():
+            write_meta(job_id, status='transcribing', stage='语音转录(SenseVoice)', progress=5)
+            try:
+                duration, wsegs = run_sensevoice(job_id, wav, meta['language'])
+                write_meta(job_id, asr_engine='sensevoice')
+            except Exception:   # noqa: BLE001 模型损坏等意外回落 whisper,不让任务失败
+                if read_meta(job_id).get('cancel_requested'):
+                    raise
+                write_meta(job_id, status='transcribing', stage='语音转录(whisper)', progress=5)
+                duration, wsegs = run_whisper(job_id, wav, meta['language'])
+                write_meta(job_id, asr_engine='whisper')
+        else:
+            write_meta(job_id, status='transcribing', stage='语音转录(whisper)', progress=5)
+            duration, wsegs = run_whisper(job_id, wav, meta['language'])
+            write_meta(job_id, asr_engine='whisper')
+        wsegs = collapse_repeat_loops(wsegs)   # 静音幻觉循环折叠(原始分段在 whisper.json/sensevoice.json)
         if not wsegs:
             raise RuntimeError('没有识别到任何语音内容')
 
